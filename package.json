@@ -12,6 +12,9 @@
       "require": "./dist/index.cjs"
     }
   },
+  "bin": {
+    "evalanche-mcp": "./dist/mcp/cli.mjs"
+  },
   "files": [
     "dist"
   ],

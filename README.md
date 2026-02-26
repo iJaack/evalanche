@@ -147,6 +147,86 @@ The x402 payment protocol enables pay-per-request API access. `payAndFetch` hand
 4. Creates a signed payment proof
 5. Retries the request with the payment proof
 
+## MCP Server
+
+Evalanche includes an MCP (Model Context Protocol) server, so AI agent frameworks can use it as a tool provider.
+
+### Stdio mode (default — for Claude Desktop, Cursor, etc.)
+
+```bash
+AGENT_PRIVATE_KEY=0x... evalanche-mcp
+```
+
+### HTTP mode
+
+```bash
+AGENT_PRIVATE_KEY=0x... evalanche-mcp --http --port 3402
+```
+
+### Claude Desktop config (`claude_desktop_config.json`)
+
+```json
+{
+  "mcpServers": {
+    "evalanche": {
+      "command": "npx",
+      "args": ["evalanche-mcp"],
+      "env": {
+        "AGENT_PRIVATE_KEY": "0x...",
+        "AGENT_ID": "1599",
+        "AVALANCHE_NETWORK": "avalanche"
+      }
+    }
+  }
+}
+```
+
+### Environment variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `AGENT_PRIVATE_KEY` | Yes* | Agent wallet private key |
+| `AGENT_MNEMONIC` | Yes* | BIP-39 mnemonic (alternative) |
+| `AGENT_ID` | No | ERC-8004 agent ID (enables identity resolution) |
+| `AGENT_REGISTRY` | No | Custom ERC-8004 registry address |
+| `AVALANCHE_NETWORK` | No | `avalanche` (default) or `fuji` |
+| `AVALANCHE_RPC_URL` | No | Custom RPC URL |
+
+\* One of `AGENT_PRIVATE_KEY` or `AGENT_MNEMONIC` is required.
+
+### Available MCP tools
+
+| Tool | Description |
+|------|-------------|
+| `get_address` | Get agent wallet address |
+| `get_balance` | Get AVAX balance |
+| `resolve_identity` | Resolve this agent's ERC-8004 identity |
+| `resolve_agent` | Resolve any agent's ERC-8004 identity by ID |
+| `send_avax` | Send AVAX to an address |
+| `call_contract` | Call a contract method |
+| `sign_message` | Sign a message |
+| `pay_and_fetch` | x402 payment-gated HTTP request |
+| `submit_feedback` | Submit on-chain reputation feedback |
+| `get_network` | Get current network config |
+
+### Programmatic usage
+
+```typescript
+import { EvalancheMCPServer } from 'evalanche';
+
+const server = new EvalancheMCPServer({
+  privateKey: process.env.AGENT_PRIVATE_KEY,
+  network: 'avalanche',
+  identity: { agentId: '1599' },
+});
+
+// Stdio (standard MCP transport)
+server.startStdio();
+
+// Or HTTP
+server.startHTTP(3402);
+```
+
 ## License
 
 MIT

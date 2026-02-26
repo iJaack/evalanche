@@ -22,6 +22,9 @@ export { X402Client } from './x402/client';
 export { X402Facilitator } from './x402/facilitator';
 export type { PaymentRequirements, PayAndFetchOptions, PayAndFetchResult } from './x402/types';
 
+// MCP
+export { EvalancheMCPServer } from './mcp/server';
+
 // Utilities
 export { getNetworkConfig, NETWORKS } from './utils/networks';
 export type { NetworkConfig, NetworkOption } from './utils/networks';
