@@ -1,276 +1,255 @@
-# Evalanche — Agent Wallet SDK for Avalanche
+# Evalanche v0.2.0 — Avalanche Multi-VM Integration
 
-## What This Is
+## Overview
 
-`evalanche` is an npm package that gives AI agents a programmatic wallet with onchain identity (ERC-8004) and payment rails (x402). Think of it as "bankr but Avalanche-native with verifiable identity."
+Integrate `@avalabs/avalanchejs` v5 and `@avalabs/core-wallets-sdk` v3 to add native X-Chain, P-Chain support, cross-chain transfers, and P-Chain staking. Currently v0.1.0 only supports C-Chain via ethers v6.
 
-## Package Name
-`evalanche`
+## Dependencies to Add
 
-## Tech Stack
-- TypeScript (strict mode)
-- ethers v6
-- Node.js >= 18
-- Build: tsup (ESM + CJS)
-- Tests: vitest
-
-## Package Structure
-
-```
-evalanche/
-├── package.json
-├── tsconfig.json
-├── tsup.config.ts
-├── vitest.config.ts
-├── README.md
-├── LICENSE (MIT)
-├── src/
-│   ├── index.ts              # Public API exports
-│   ├── agent.ts              # Main Evalanche agent class
-│   ├── identity/
-│   │   ├── index.ts
-│   │   ├── resolver.ts       # ERC-8004 identity resolution
-│   │   ├── types.ts          # AgentIdentity, Declaration types
-│   │   └── constants.ts      # Registry addresses, ABIs
-│   ├── wallet/
-│   │   ├── index.ts
-│   │   ├── signer.ts         # Headless wallet signer (ethers v6)
-│   │   ├── transaction.ts    # Transaction builder + sender
-│   │   └── types.ts          # TransactionIntent, Result types
-│   ├── reputation/
-│   │   ├── index.ts
-│   │   ├── reporter.ts       # Submit reputation feedback on-chain
-│   │   └── types.ts          # Feedback types
-│   ├── x402/
-│   │   ├── index.ts
-│   │   ├── client.ts         # x402 payment-gated HTTP client
-│   │   ├── facilitator.ts    # x402 facilitator interaction
-│   │   └── types.ts          # Payment types
-│   └── utils/
-│       ├── networks.ts       # Avalanche network configs (C-Chain, Fuji)
-│       ├── cache.ts          # TTL cache utility
-│       └── errors.ts         # Custom error classes
-└── test/
-    ├── agent.test.ts
-    ├── identity/resolver.test.ts
-    ├── wallet/signer.test.ts
-    └── x402/client.test.ts
+```bash
+npm install @avalabs/avalanchejs@^5.0.0 @avalabs/core-wallets-sdk@^3.0.2
 ```
 
-## Core API Design
+Note: core-wallets-sdk has peer deps on ethers (already installed), bitcoinjs-lib, and ledger packages. We only need the Avalanche wallet parts, not Bitcoin/Ledger. Install with --legacy-peer-deps if needed.
+
+## What to Build
+
+### 1. src/avalanche/provider.ts — Avalanche Provider Wrapper
+
+Wraps `@avalabs/core-wallets-sdk`'s `JsonRpcProvider` (their custom one, NOT ethers).
 
 ```typescript
-import { Evalanche } from 'evalanche';
-
-// Initialize with private key or mnemonic
-const agent = new Evalanche({
-  // Wallet config
-  privateKey: process.env.AGENT_PRIVATE_KEY,
-  // OR: mnemonic: process.env.AGENT_MNEMONIC,
-  
-  // Identity config (optional — works without identity too)
-  identity: {
-    agentId: '1599',
-    registry: '0x8004A169FB4a3325136EB29fA0ceB6D2e539a432',
-  },
-  
-  // Network config
-  network: 'avalanche', // 'avalanche' | 'fuji' | { rpcUrl, chainId }
-});
-
-// Get agent info
-const address = agent.address;              // 0x0fE617...
-const identity = await agent.resolveIdentity(); // { agentId, registry, reputation, trustLevel }
-
-// Send transactions
-const tx = await agent.send({
-  to: '0x...',
-  value: '0.1',                             // human-readable AVAX
-  // OR: data: '0x...',                      // raw calldata
-});
-
-// Contract interactions
-const result = await agent.call({
-  contract: '0x...',
-  abi: ['function transfer(address to, uint256 amount)'],
-  method: 'transfer',
-  args: ['0x...', '1000000'],
-});
-
-// x402 payment-gated API calls
-const response = await agent.payAndFetch('https://api.example.com/data', {
-  maxPayment: '0.01',                        // max AVAX willing to pay
-});
-
-// Submit reputation feedback
-await agent.submitFeedback({
-  targetAgentId: '42',
-  taskRef: 'content-verification-001',
-  score: 85,
-  metadata: { contentHash: '0xabc...', verified: true },
-});
-
-// Sign messages (for auth flows)
-const signature = await agent.signMessage('Login to Eva Protocol');
+import { JsonRpcProvider as AvalancheProvider, MainnetContext, FujiContext } from '@avalabs/core-wallets-sdk';
 ```
 
-## Implementation Details
+- `createAvalancheProvider(network: 'avalanche' | 'fuji')` → returns their JsonRpcProvider
+- Expose PVMApi, AVMApi, EVMApi for chain-specific queries
+- Cache the provider instance (singleton per network)
 
-### 1. src/agent.ts — Main Class
+### 2. src/avalanche/signer.ts — Multi-VM Signer
 
-The `Evalanche` class is the main entry point. It:
-- Creates an ethers Wallet from private key or mnemonic
-- Connects to the specified network (AVAX C-Chain by default)
-- Lazily initializes the identity resolver if identity config provided
-- Exposes all methods for tx, signing, identity, reputation, x402
+Use `StaticSigner` from core-wallets-sdk for headless signing across all chains.
 
 ```typescript
-import { Wallet, JsonRpcProvider, parseEther, formatEther } from 'ethers';
-import { IdentityResolver } from './identity/resolver';
-import { ReputationReporter } from './reputation/reporter';
-import { X402Client } from './x402/client';
-import { TTLCache } from './utils/cache';
-import { getNetworkConfig } from './utils/networks';
-import type { EvalancheConfig, TransactionIntent, CallIntent, AgentIdentity, FeedbackSubmission } from './types';
-
-export class Evalanche {
-  readonly wallet: Wallet;
-  readonly provider: JsonRpcProvider;
-  readonly address: string;
-  
-  private identityResolver?: IdentityResolver;
-  private reputationReporter?: ReputationReporter;
-  private x402Client?: X402Client;
-
-  constructor(config: EvalancheConfig) {
-    const networkConfig = getNetworkConfig(config.network ?? 'avalanche');
-    this.provider = new JsonRpcProvider(networkConfig.rpcUrl);
-    
-    if (config.privateKey) {
-      this.wallet = new Wallet(config.privateKey, this.provider);
-    } else if (config.mnemonic) {
-      this.wallet = Wallet.fromPhrase(config.mnemonic).connect(this.provider);
-    } else {
-      throw new EvalancheError('Either privateKey or mnemonic is required');
-    }
-    
-    this.address = this.wallet.address;
-    
-    if (config.identity) {
-      this.identityResolver = new IdentityResolver(this.provider, config.identity);
-    }
-    
-    this.reputationReporter = new ReputationReporter(this.wallet);
-    this.x402Client = new X402Client(this.wallet);
-  }
-  
-  // ... methods as described in API above
-}
+import { StaticSigner } from '@avalabs/core-wallets-sdk';
 ```
 
-### 2. src/identity/resolver.ts
+StaticSigner is the right choice because:
+- Works with a single private key for X/P and a single key for C
+- No dynamic address derivation needed for agents (agents have one identity)
+- Can sign X-Chain, P-Chain, and C-Chain transactions
 
-Resolves ERC-8004 identity from on-chain registries. Same logic as the Core Extension service but standalone.
+Create:
+- `createAvalancheSigner(privateKey: string | Buffer, provider: AvalancheProvider)` → StaticSigner
+- Helper to derive X/P and C keys from a single private key or mnemonic
 
-- tokenURI() → agent metadata
-- getReputation() → 0-100 score
-- Trust level derivation (>=75 high, >=40 medium, <40 low)
-- 5-minute TTL cache
+### 3. src/avalanche/xchain.ts — X-Chain Operations
 
-### 3. src/identity/constants.ts
+X-Chain (AVM) operations using avalanchejs builders:
 
 ```typescript
-export const IDENTITY_REGISTRY = '0x8004A169FB4a3325136EB29fA0ceB6D2e539a432';
-export const REPUTATION_REGISTRY = '0x8004BAa17C55a88189AE136b182e5fdA19dE9b63';
-
-export const IDENTITY_ABI = [
-  'function tokenURI(uint256 agentId) view returns (string)',
-  'function ownerOf(uint256 agentId) view returns (address)',
-];
-
-export const REPUTATION_ABI = [
-  'function getReputation(uint256 agentId) view returns (uint256)',
-];
-
-// x402 reputation extension
-export const DOMAIN_SEPARATOR = 'x402:8004-reputation:v1';
+import { avm } from '@avalabs/avalanchejs';
 ```
 
-### 4. src/wallet/transaction.ts
+Methods:
+- `getXBalance(address: string)` → AVAX balance on X-Chain
+- `getXUTXOs(addresses: string[])` → UTXO set
+- `sendX(to: string, amount: bigint, utxos, signer)` → base tx, sign, submit
+- `exportFromX(amount: bigint, destination: 'P' | 'C', utxos, signer)` → export tx
+- `importToX(sourceChain: 'P' | 'C', utxos, signer)` → import tx
 
-Transaction builder that accepts human-readable inputs:
-- `value: '0.1'` → parseEther
-- Auto gas estimation
-- Auto nonce management
-- Returns tx hash + receipt
+### 4. src/avalanche/pchain.ts — P-Chain Operations + Staking
 
-### 5. src/x402/client.ts
-
-x402 payment-gated HTTP client:
-- Makes initial request, gets 402 Payment Required
-- Parses x402 payment requirements from response headers
-- Creates and signs payment
-- Retries with payment proof
-- Verifies response + submits reputation feedback if configured
-
-### 6. src/reputation/reporter.ts
-
-Submits reputation feedback on-chain after interactions:
-- Creates interaction hash: `keccak256(DOMAIN_SEPARATOR || taskRef || dataHash)`
-- Calls reputation contract to submit score
-- Non-blocking (fire and forget with optional await)
-
-### 7. src/utils/networks.ts
+P-Chain (PVM) operations using avalanchejs Etna builders:
 
 ```typescript
-export const NETWORKS = {
-  avalanche: {
-    rpcUrl: 'https://api.avax.network/ext/bc/C/rpc',
-    chainId: 43114,
-    name: 'Avalanche C-Chain',
-    explorer: 'https://snowtrace.io',
-  },
-  fuji: {
-    rpcUrl: 'https://api.avax-test.network/ext/bc/C/rpc',
-    chainId: 43113,
-    name: 'Avalanche Fuji Testnet',
-    explorer: 'https://testnet.snowtrace.io',
-  },
-};
+import { pvm, Context } from '@avalabs/avalanchejs';
 ```
 
-## README.md Content
+Methods:
+- `getPBalance(address: string)` → AVAX balance on P-Chain
+- `getPUTXOs(addresses: string[])` → UTXO set
+- `exportFromP(amount: bigint, destination: 'X' | 'C', utxos, signer)` → export tx
+- `importToP(sourceChain: 'X' | 'C', utxos, signer)` → import tx
+- `addDelegator(nodeId: string, stakeAmount: bigint, startDate: bigint, endDate: bigint, rewardAddress: string, utxos, signer)` → delegation tx
+- `addValidator(nodeId: string, stakeAmount: bigint, startDate: bigint, endDate: bigint, delegationFee: number, rewardAddress: string, utxos, signer)` → validation tx
+- `getStake(addresses: string[])` → current staked amount
+- `getCurrentValidators()` → validator list
+- `getMinStake()` → min stake amounts
 
-Write a proper README with:
-- Logo placeholder + name
-- One-line description: "Agent wallet SDK for Avalanche with onchain identity (ERC-8004) and payment rails (x402)"
-- Install: `npm install evalanche`
-- Quick start code example
-- API reference (all methods)
-- Architecture diagram (text-based)
-- ERC-8004 integration section
-- x402 integration section
-- License: MIT
+### 5. src/avalanche/crosschain.ts — Cross-Chain Transfer Orchestrator
+
+High-level cross-chain transfer that handles the export→import two-step flow:
+
+```typescript
+// User-facing API
+await agent.transfer({
+  from: 'C',
+  to: 'P',
+  amount: '25',  // 25 AVAX
+});
+```
+
+Implementation:
+- `transfer({ from: ChainAlias, to: ChainAlias, amount: string })` → orchestrates export + wait + import
+- Handles: C→X, C→P, X→C, X→P, P→C, P→X (all 6 directions)
+- For C-chain exports: uses EVMUnsignedTx (different from X/P unsigned tx format)
+- Waits for export tx confirmation before importing
+- Returns { exportHash, importHash }
+
+### 6. src/avalanche/index.ts — Barrel Export
+
+Export all avalanche-specific modules.
+
+### 7. Update src/agent.ts — Add Multi-VM Methods
+
+Add to the Evalanche class:
+
+```typescript
+// New properties
+readonly avalancheProvider?: AvalancheProvider;
+readonly avalancheSigner?: StaticSigner;
+
+// Cross-chain transfer
+async transfer(opts: { from: 'X' | 'P' | 'C'; to: 'X' | 'P' | 'C'; amount: string }): Promise<TransferResult>;
+
+// Staking
+async delegate(nodeId: string, amount: string, duration: number): Promise<TransactionResult>;
+async getStake(): Promise<StakeInfo>;
+
+// Multi-chain balances
+async getBalance(chain?: 'C' | 'X' | 'P'): Promise<BalanceInfo>;
+
+// X-Chain send
+async sendX(to: string, amount: string): Promise<TransactionResult>;
+```
+
+The constructor should create the AvalancheProvider and StaticSigner when a private key is provided. These are optional — if only ethers-based C-Chain is needed, they won't be initialized.
+
+### 8. Update src/mcp/server.ts — Add New MCP Tools
+
+Add these tools:
+- `get_balance_all` — Get AVAX balance across all chains (C, X, P)
+- `transfer_cross_chain` — Cross-chain transfer (C↔X↔P)
+- `delegate_stake` — Delegate AVAX to a validator
+- `get_stake` — Get current staking info
+- `get_validators` — List current validators
+- `send_x_chain` — Send AVAX on X-Chain
+
+### 9. Update Types
+
+New types needed:
+- `ChainAlias = 'X' | 'P' | 'C'`
+- `TransferResult = { exportHash: string; importHash: string }`
+- `StakeInfo = { staked: string; nodeId?: string; endTime?: number }`
+- `BalanceInfo = { chain: ChainAlias; balance: string; unit: string }`
+- `MultiChainBalance = { C: string; X: string; P: string; total: string }`
+
+### 10. Tests
+
+Add tests for:
+- `test/avalanche/provider.test.ts` — provider creation
+- `test/avalanche/xchain.test.ts` — X-Chain operations (mocked)
+- `test/avalanche/pchain.test.ts` — P-Chain operations (mocked) 
+- `test/avalanche/crosschain.test.ts` — cross-chain orchestration (mocked)
+- Update `test/agent.test.ts` — test new methods
+- Update `test/mcp/server.test.ts` — test new tools
+
+## Key API Details from @avalabs/avalanchejs
+
+### Building Transactions (PVM Etna Builder)
+
+```typescript
+import { pvm, Context, utils } from '@avalabs/avalanchejs';
+import { addTxSignatures } from '@avalabs/avalanchejs';
+
+// Get context and fee state
+const pvmApi = new pvm.PVMApi('https://api.avax.network');
+const feeState = await pvmApi.getFeeState();
+
+// Build add delegator tx
+const unsignedTx = pvm.e.newAddPermissionlessDelegatorTx({
+  feeState,
+  fromAddressesBytes: [addressBytes],
+  utxos: utxoSet,
+  nodeId: 'NodeID-...',
+  subnetId: pvm.PrimaryNetworkID.toString(), // Primary network
+  stakingAssetId: context.avaxAssetID,
+  weight: stakeAmount, // in nAVAX
+  start: BigInt(startTimestamp),
+  end: BigInt(endTimestamp),
+  rewardAddresses: [rewardAddressBytes],
+});
+
+// Sign
+await addTxSignatures({
+  unsignedTx,
+  privateKeys: [privateKeyBytes],
+});
+
+// Submit
+const signedTxBytes = unsignedTx.getSignedTx().toBytes();
+// Send via pvmApi.issueTx() or similar
+```
+
+### Key Utilities
+
+```typescript
+import { utils } from '@avalabs/avalanchejs';
+// utils.bech32ToBytes(address) — convert bech32 to bytes
+// utils.formatAddress(hrp, chain, bytes) — format bytes to bech32
+
+import { secp256k1 } from '@avalabs/avalanchejs';  
+// secp256k1.getPublicKey(privKeyBytes) — derive public key
+// secp256k1.publicKeyBytesToAddress(pubKey) — derive address bytes
+```
+
+### WalletAbstract Key Methods (from core-wallets-sdk)
+
+```typescript
+// These work on StaticSigner after construction:
+wallet.getAddresses('X')     // X-Chain addresses
+wallet.getAddresses('P')     // P-Chain addresses  
+wallet.getAddressEVM()       // C-Chain hex address
+wallet.getUTXOs('X')         // Get X-Chain UTXOs
+wallet.getUTXOs('P')         // Get P-Chain UTXOs
+wallet.exportX(amount, utxos, 'P')  // Export from X to P
+wallet.importP(utxos, 'X')          // Import to P from X
+wallet.addDelegator(utxos, nodeId, amount, start, end)
+wallet.addValidator(utxos, nodeId, amount, start, end, fee)
+wallet.signTx(request)       // Sign any X/P/C tx
+```
+
+## Implementation Strategy
+
+1. Install deps first
+2. Build provider.ts (foundation)
+3. Build signer.ts (uses provider)
+4. Build xchain.ts and pchain.ts (use signer + provider)
+5. Build crosschain.ts (orchestrates xchain + pchain)
+6. Update agent.ts (wire everything)
+7. Update MCP server
+8. Write tests
+9. Run typecheck + tests + build
 
 ## Rules
 
-- All code in TypeScript strict mode
-- ethers v6 syntax only
-- No browser APIs — Node.js only (headless)
-- Every public method has JSDoc comments
-- Error handling: custom EvalancheError class with error codes
-- All async methods return typed Promises
-- Export everything from src/index.ts
-- Package.json: name "evalanche", main + module + types fields
-- Build with tsup: ESM + CJS dual output
-- Tests with vitest, mock ethers for unit tests
-- Do NOT publish to npm. Just create the package locally.
+- Keep existing v0.1.0 functionality working (don't break C-Chain ethers flow)
+- All new code in TypeScript strict mode
+- JSDoc on all public methods
+- Handle errors with EvalancheError + appropriate error codes
+- The Avalanche multi-VM features are OPTIONAL — agent works C-Chain only if no private key for X/P derivation
+- Update package.json version to 0.2.0
+- Don't modify existing test files in ways that break them — ADD new tests
+- ethers v6 syntax only (already enforced)
+- Add new error codes to EvalancheErrorCode enum: XCHAIN_ERROR, PCHAIN_ERROR, CROSS_CHAIN_ERROR, STAKING_ERROR, UTXO_ERROR
 
 ## When Done
 
-After all files created, run:
-1. `npm install` (install deps)
+1. `npm install` (new deps)
 2. `npx tsc --noEmit` (typecheck)
-3. `npx vitest run` (tests)
-4. Fix any errors
-5. `git add -A && git commit -m "feat: evalanche v0.1.0 — agent wallet SDK for Avalanche"`
+3. `npx vitest run` (all tests)
+4. `npx tsup` (build)
+5. Fix any errors
+6. Update README.md roadmap to mark v0.2.0 items as done
+7. `git add -A && git commit -m "feat: evalanche v0.2.0 — multi-VM support (X-Chain, P-Chain, cross-chain, staking)"`

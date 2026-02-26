@@ -1,4 +1,4 @@
-import { JsonRpcProvider } from 'ethers';
+import { JsonRpcProvider, formatEther, parseEther } from 'ethers';
 import { IdentityResolver } from './identity/resolver';
 import { ReputationReporter } from './reputation/reporter';
 import { X402Client } from './x402/client';
@@ -12,6 +12,9 @@ import type { TransactionIntent, CallIntent, TransactionResult } from './wallet/
 import type { FeedbackSubmission } from './reputation/types';
 import type { PayAndFetchOptions, PayAndFetchResult } from './x402/types';
 import { EvalancheError, EvalancheErrorCode } from './utils/errors';
+// Avalanche multi-VM types only (actual imports are lazy to avoid loading
+// @avalabs/core-wallets-sdk at construction time — it has heavy native deps)
+import type { ChainAlias, TransferResult, MultiChainBalance, StakeInfo, ValidatorInfo, MinStakeAmounts } from './avalanche/types';
 
 /** Configuration for the Evalanche agent */
 export interface EvalancheConfig {
@@ -19,6 +22,8 @@ export interface EvalancheConfig {
   mnemonic?: string;
   identity?: IdentityConfig;
   network?: NetworkOption;
+  /** Enable multi-VM support (X-Chain, P-Chain). Requires mnemonic. */
+  multiVM?: boolean;
 }
 
 /**
@@ -33,17 +38,34 @@ export class Evalanche {
   /** The agent's wallet address */
   readonly address: string;
 
+  private readonly _networkOption: NetworkOption;
   private identityResolver?: IdentityResolver;
   private reputationReporter: ReputationReporter;
   private x402Client: X402Client;
   private transactionBuilder: TransactionBuilder;
+
+  // Multi-VM (v0.2.0) — types are `any` here because actual classes are lazy-loaded
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private avalancheProvider?: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private avalancheSigner?: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private _xChain?: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private _pChain?: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private _crossChain?: any;
+  private readonly _mnemonic?: string;
+  private readonly _multiVM: boolean;
+  private _multiVMInitialized = false;
 
   /**
    * Create a new Evalanche agent.
    * @param config - Agent configuration (private key or mnemonic, network, optional identity)
    */
   constructor(config: EvalancheConfig) {
-    const networkConfig = getNetworkConfig(config.network ?? 'avalanche');
+    this._networkOption = config.network ?? 'avalanche';
+    const networkConfig = getNetworkConfig(this._networkOption);
     this.provider = new JsonRpcProvider(networkConfig.rpcUrl);
 
     if (config.privateKey) {
@@ -66,6 +88,61 @@ export class Evalanche {
     this.reputationReporter = new ReputationReporter(this.wallet);
     this.x402Client = new X402Client(this.wallet);
     this.transactionBuilder = new TransactionBuilder(this.wallet);
+
+    // Store mnemonic for multi-VM lazy init
+    this._mnemonic = config.mnemonic;
+    this._multiVM = config.multiVM ?? false;
+  }
+
+  /**
+   * Lazily initialize multi-VM (Avalanche X/P-Chain) support.
+   * Uses dynamic imports to avoid loading @avalabs/core-wallets-sdk at construction time.
+   */
+  private async initMultiVM(): Promise<void> {
+    if (this._multiVMInitialized) return;
+
+    if (!this._mnemonic) {
+      throw new EvalancheError(
+        'Multi-VM requires a mnemonic (not just a private key). Pass mnemonic in EvalancheConfig.',
+        EvalancheErrorCode.INVALID_CONFIG,
+      );
+    }
+
+    const networkName = typeof this._networkOption === 'string'
+      ? (this._networkOption === 'fuji' ? 'fuji' : 'avalanche')
+      : 'avalanche';
+
+    // Dynamic imports to avoid loading heavy native deps at construction time
+    const { createAvalancheProvider } = await import('./avalanche/provider');
+    const { createAvalancheSigner } = await import('./avalanche/signer');
+    const { XChainOperations } = await import('./avalanche/xchain');
+    const { PChainOperations } = await import('./avalanche/pchain');
+    const { CrossChainTransfer } = await import('./avalanche/crosschain');
+
+    this.avalancheProvider = await createAvalancheProvider(networkName as 'avalanche' | 'fuji');
+    this.avalancheSigner = createAvalancheSigner(this._mnemonic, this.avalancheProvider);
+    this._xChain = new XChainOperations(this.avalancheSigner, this.avalancheProvider);
+    this._pChain = new PChainOperations(this.avalancheSigner, this.avalancheProvider);
+    this._crossChain = new CrossChainTransfer(this.avalancheSigner, this.avalancheProvider);
+    this._multiVMInitialized = true;
+  }
+
+  /**
+   * Get X-Chain operations (lazy-inits multi-VM on first call).
+   * @returns XChainOperations instance
+   */
+  async xChain(): Promise<{ getAddress(): string; getBalance(): Promise<bigint>; exportTo(amount: bigint, dest: 'P' | 'C'): Promise<string>; importFrom(source: 'P' | 'C'): Promise<string> }> {
+    await this.initMultiVM();
+    return this._xChain!;
+  }
+
+  /**
+   * Get P-Chain operations (lazy-inits multi-VM on first call).
+   * @returns PChainOperations instance
+   */
+  async pChain(): Promise<{ getAddress(): string; getBalance(): Promise<bigint>; exportTo(amount: bigint, dest: 'X' | 'C'): Promise<string>; importFrom(source: 'X' | 'C'): Promise<string>; addDelegator(nodeId: string, amount: bigint, start: bigint, end: bigint, reward?: string): Promise<string>; getStake(): Promise<StakeInfo[]>; getCurrentValidators(limit?: number): Promise<ValidatorInfo[]>; getMinStake(): Promise<MinStakeAmounts> }> {
+    await this.initMultiVM();
+    return this._pChain!;
   }
 
   /**
@@ -128,5 +205,109 @@ export class Evalanche {
    */
   async signMessage(message: string): Promise<string> {
     return this.wallet.signMessage(message);
+  }
+
+  // ── Multi-VM Methods (v0.2.0) ─────────────────────────────
+
+  /**
+   * Transfer AVAX between chains (C↔X↔P).
+   * Handles the full export→wait→import atomic flow.
+   * @param from - Source chain
+   * @param to - Destination chain
+   * @param amount - Amount in AVAX (human-readable, e.g. '25')
+   * @returns Export and import transaction IDs
+   */
+  async transfer(opts: {
+    from: ChainAlias;
+    to: ChainAlias;
+    amount: string;
+  }): Promise<TransferResult> {
+    await this.initMultiVM();
+    const amountNAvax = parseEther(opts.amount) / BigInt(1e9); // AVAX → nAVAX
+    return this._crossChain!.transfer(opts.from, opts.to, amountNAvax);
+  }
+
+  /**
+   * Delegate AVAX to a validator.
+   * @param nodeId - Validator node ID
+   * @param amount - Amount in AVAX (human-readable)
+   * @param durationDays - Delegation duration in days (min 14)
+   * @returns Transaction ID
+   */
+  async delegate(
+    nodeId: string,
+    amount: string,
+    durationDays: number,
+  ): Promise<string> {
+    const pChain = await this.pChain();
+    const amountNAvax = parseEther(amount) / BigInt(1e9);
+    const now = BigInt(Math.floor(Date.now() / 1000)) + BigInt(60); // start 1 min from now
+    const end = now + BigInt(durationDays * 86400);
+    return pChain.addDelegator(nodeId, amountNAvax, now, end);
+  }
+
+  /**
+   * Get staking info for this agent's P-Chain address.
+   * @returns Array of stake info
+   */
+  async getStake(): Promise<StakeInfo[]> {
+    const pChain = await this.pChain();
+    return pChain.getStake();
+  }
+
+  /**
+   * Get current validators on the Primary Network.
+   * @param limit - Max validators to return
+   * @returns Array of validator info
+   */
+  async getValidators(limit?: number): Promise<ValidatorInfo[]> {
+    const pChain = await this.pChain();
+    return pChain.getCurrentValidators(limit);
+  }
+
+  /**
+   * Get min stake amounts for validators and delegators.
+   */
+  async getMinStake(): Promise<MinStakeAmounts> {
+    const pChain = await this.pChain();
+    return pChain.getMinStake();
+  }
+
+  /**
+   * Get AVAX balance across all chains (C, X, P).
+   * @returns Multi-chain balance in AVAX (human-readable)
+   */
+  async getMultiChainBalance(): Promise<MultiChainBalance> {
+    await this.initMultiVM();
+
+    const [cBalanceWei, xBalanceNAvax, pBalanceNAvax] = await Promise.all([
+      this.provider.getBalance(this.address),
+      this._xChain!.getBalance(),
+      this._pChain!.getBalance(),
+    ]);
+
+    const cAvax = formatEther(cBalanceWei);
+    const xAvax = (Number(xBalanceNAvax) / 1e9).toFixed(9);
+    const pAvax = (Number(pBalanceNAvax) / 1e9).toFixed(9);
+    const total = (
+      parseFloat(cAvax) +
+      Number(xBalanceNAvax) / 1e9 +
+      Number(pBalanceNAvax) / 1e9
+    ).toFixed(9);
+
+    return { C: cAvax, X: xAvax, P: pAvax, total };
+  }
+
+  /**
+   * Get addresses across all chains.
+   * @returns Object with C, X, P addresses
+   */
+  async getAddresses(): Promise<{ C: string; X: string; P: string }> {
+    await this.initMultiVM();
+    return {
+      C: this.address,
+      X: this._xChain!.getAddress(),
+      P: this._pChain!.getAddress(),
+    };
   }
 }

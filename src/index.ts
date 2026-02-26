@@ -22,6 +22,20 @@ export { X402Client } from './x402/client';
 export { X402Facilitator } from './x402/facilitator';
 export type { PaymentRequirements, PayAndFetchOptions, PayAndFetchResult } from './x402/types';
 
+// Avalanche Multi-VM types (classes are lazy-loaded via dynamic import to avoid
+// pulling in @avalabs/core-wallets-sdk and its heavy native deps at import time)
+export type {
+  AvalancheProvider,
+  AvalancheSigner,
+  ChainAlias,
+  TransferResult,
+  BalanceInfo,
+  MultiChainBalance,
+  StakeInfo,
+  ValidatorInfo,
+  MinStakeAmounts,
+} from './avalanche';
+
 // MCP
 export { EvalancheMCPServer } from './mcp/server';
 

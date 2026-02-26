@@ -111,6 +111,46 @@ await agent.submitFeedback({
 
 Sign an arbitrary message with the agent's wallet key.
 
+## Multi-VM (X-Chain, P-Chain)
+
+Multi-VM support requires a **mnemonic** (not just a private key) to derive X/P-Chain keys.
+
+```typescript
+const agent = new Evalanche({
+  mnemonic: process.env.AGENT_MNEMONIC,
+  network: 'avalanche',
+  multiVM: true,
+});
+
+// Get balances across all chains
+const balances = await agent.getMultiChainBalance();
+// { C: '10.5', X: '0.0', P: '25.0', total: '35.5' }
+
+// Get addresses on all chains
+const addrs = await agent.getAddresses();
+// { C: '0x...', X: 'X-avax1...', P: 'P-avax1...' }
+
+// Cross-chain transfer (C→P for staking)
+const result = await agent.transfer({ from: 'C', to: 'P', amount: '25' });
+// { exportTxId: '...', importTxId: '...' }
+
+// Delegate to a validator (30 days)
+const txId = await agent.delegate('NodeID-...', '25', 30);
+
+// Check stake
+const stakes = await agent.getStake();
+
+// Query validators
+const validators = await agent.getValidators(10);
+
+// Direct chain access
+const xChain = await agent.xChain();
+const pChain = await agent.pChain();
+const xAddr = xChain.getAddress();
+```
+
+> **Note:** Avalanche dependencies (`@avalabs/core-wallets-sdk`) are lazy-loaded on first multi-VM call. If you only use C-Chain features, they're never loaded.
+
 ## Architecture
 
 ```
@@ -239,19 +279,21 @@ server.startHTTP(3402);
 
 ## Roadmap
 
-### v0.1.0 (current)
+### v0.1.0
 - ✅ C-Chain wallet (ethers v6) — send AVAX, call contracts, sign messages
 - ✅ ERC-8004 identity resolution — agent ID, reputation, trust levels
 - ✅ x402 payment-gated HTTP client — full 402 flow
 - ✅ On-chain reputation feedback submission
 - ✅ MCP server (stdio + HTTP) — 10 tools for AI frameworks
 
-### v0.2.0 (planned)
-- [ ] Integrate `@avalabs/avalanchejs` for native X-Chain and P-Chain support
-- [ ] Integrate `@avalabs/core-wallets-sdk` for Core-compatible account derivation
-- [ ] Cross-chain transfers (C→X, C→P, X→C)
-- [ ] P-Chain staking operations (delegate, validate)
-- [ ] Multi-VM transaction signing (EVM + AVM + PVM)
+### v0.2.0 (current)
+- ✅ Integrated `@avalabs/avalanchejs` v5 for native X-Chain and P-Chain support
+- ✅ Integrated `@avalabs/core-wallets-sdk` v3 for Core-compatible account derivation
+- ✅ Cross-chain transfers — all 6 directions (C↔X↔P) via atomic export/import
+- ✅ P-Chain staking — delegate to validators, query stake, get min amounts
+- ✅ Multi-VM signing via StaticSigner (EVM + AVM + PVM from one mnemonic)
+- ✅ Multi-chain balance queries (C + X + P totals)
+- ✅ Lazy-loaded Avalanche deps — zero overhead if only using C-Chain
 
 ### v0.3.0 (planned)
 - [ ] Subnet/L1 support — custom network configs with VM-specific signing
