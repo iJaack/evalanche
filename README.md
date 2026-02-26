@@ -2,6 +2,16 @@
 
 **Agent wallet SDK for Avalanche with onchain identity (ERC-8004) and payment rails (x402)**
 
+Evalanche gives AI agents a programmatic wallet on Avalanche with built-in onchain identity and payment capabilities — no browser, no popups, no human in the loop.
+
+## Background
+
+Evalanche's architecture is informed by [Ava Labs' Core Extension](https://github.com/ava-labs/core-extension) wallet — specifically its service-worker signing patterns, network management, and multi-secret-type design (mnemonic, Ledger, Fireblocks, seedless). We studied Core Extension's `WalletService`, `AccountsService`, and `NetworkService` to understand how Core handles transaction signing and account derivation, then rebuilt these patterns as a headless SDK optimized for agent use cases.
+
+**v0.1.0** focuses on C-Chain (EVM) via ethers v6. The [roadmap](#roadmap) includes integrating `@avalabs/avalanchejs` and `@avalabs/core-wallets-sdk` for native X-Chain/P-Chain support (AVAX transfers, staking, cross-chain operations) — bringing the full Core Wallet infrastructure into the headless agent context.
+
+A companion [Core Extension PR](https://github.com/iJaack/core-extension/tree/feat/erc8004-agent-identity) adds ERC-8004 agent identity resolution directly into the Core wallet approval UI, so humans can see an agent's on-chain reputation when approving transactions.
+
 ## Install
 
 ```bash
@@ -226,6 +236,28 @@ server.startStdio();
 // Or HTTP
 server.startHTTP(3402);
 ```
+
+## Roadmap
+
+### v0.1.0 (current)
+- ✅ C-Chain wallet (ethers v6) — send AVAX, call contracts, sign messages
+- ✅ ERC-8004 identity resolution — agent ID, reputation, trust levels
+- ✅ x402 payment-gated HTTP client — full 402 flow
+- ✅ On-chain reputation feedback submission
+- ✅ MCP server (stdio + HTTP) — 10 tools for AI frameworks
+
+### v0.2.0 (planned)
+- [ ] Integrate `@avalabs/avalanchejs` for native X-Chain and P-Chain support
+- [ ] Integrate `@avalabs/core-wallets-sdk` for Core-compatible account derivation
+- [ ] Cross-chain transfers (C→X, C→P, X→C)
+- [ ] P-Chain staking operations (delegate, validate)
+- [ ] Multi-VM transaction signing (EVM + AVM + PVM)
+
+### v0.3.0 (planned)
+- [ ] Subnet/L1 support — custom network configs with VM-specific signing
+- [ ] ICM (Interchain Messaging) integration
+- [ ] Agent-to-agent payment channels
+- [ ] Ledger/hardware wallet support (for human-supervised agent operations)
 
 ## License
 
