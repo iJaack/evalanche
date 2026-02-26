@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { Evalanche, EvalancheError, EvalancheErrorCode } from '../src/index';
+import { Evalanche, EvalancheError, EvalancheErrorCode, generateWallet } from '../src/index';
 
 // A deterministic test private key (DO NOT use in production)
 const TEST_PRIVATE_KEY = '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80';
@@ -57,6 +57,58 @@ describe('Evalanche', () => {
       });
 
       expect(agent.address).toBeDefined();
+    });
+  });
+
+  describe('generate (static factory)', () => {
+    it('should generate a new agent with a random wallet', () => {
+      const { agent, wallet } = Evalanche.generate({ network: 'fuji' });
+
+      expect(agent).toBeInstanceOf(Evalanche);
+      expect(agent.address).toBe(wallet.address);
+      expect(wallet.mnemonic).toBeDefined();
+      expect(wallet.mnemonic.split(' ')).toHaveLength(12);
+      expect(wallet.privateKey).toMatch(/^0x[0-9a-fA-F]{64}$/);
+      expect(wallet.address).toMatch(/^0x[0-9a-fA-F]{40}$/);
+    });
+
+    it('should generate unique wallets each time', () => {
+      const { wallet: w1 } = Evalanche.generate({ network: 'fuji' });
+      const { wallet: w2 } = Evalanche.generate({ network: 'fuji' });
+
+      expect(w1.address).not.toBe(w2.address);
+      expect(w1.mnemonic).not.toBe(w2.mnemonic);
+      expect(w1.privateKey).not.toBe(w2.privateKey);
+    });
+
+    it('should work with no options (defaults to avalanche mainnet)', () => {
+      const { agent, wallet } = Evalanche.generate();
+
+      expect(agent.address).toBe(wallet.address);
+      expect(agent.provider).toBeDefined();
+    });
+
+    it('should pass through identity and multiVM options', () => {
+      const { agent } = Evalanche.generate({
+        network: 'fuji',
+        identity: {
+          agentId: '1599',
+          registry: '0x8004A169FB4a3325136EB29fA0ceB6D2e539a432',
+        },
+        multiVM: true,
+      });
+
+      expect(agent.address).toBeDefined();
+    });
+  });
+
+  describe('generateWallet (standalone)', () => {
+    it('should return mnemonic, privateKey, and address', () => {
+      const w = generateWallet();
+
+      expect(w.mnemonic.split(' ')).toHaveLength(12);
+      expect(w.privateKey).toMatch(/^0x[0-9a-fA-F]{64}$/);
+      expect(w.address).toMatch(/^0x[0-9a-fA-F]{40}$/);
     });
   });
 

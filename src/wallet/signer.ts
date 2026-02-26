@@ -1,8 +1,44 @@
-import { Wallet, HDNodeWallet, JsonRpcProvider } from 'ethers';
+import { Wallet, HDNodeWallet, JsonRpcProvider, Mnemonic } from 'ethers';
 import { EvalancheError, EvalancheErrorCode } from '../utils/errors';
 
 /** A signer that can be either a Wallet or HDNodeWallet */
 export type AgentSigner = Wallet | HDNodeWallet;
+
+/** Result from wallet generation */
+export interface GeneratedWallet {
+  /** BIP-39 mnemonic phrase (12 words) */
+  mnemonic: string;
+  /** Hex-encoded private key (with 0x prefix) */
+  privateKey: string;
+  /** C-Chain address (0x...) */
+  address: string;
+}
+
+/**
+ * Generate a new random wallet with a BIP-39 mnemonic.
+ * Uses cryptographically secure randomness via ethers.js.
+ * @returns Generated wallet with mnemonic, private key, and address
+ */
+export function generateWallet(): GeneratedWallet {
+  try {
+    const wallet = Wallet.createRandom();
+    const mnemonic = wallet.mnemonic;
+    if (!mnemonic) {
+      throw new Error('Failed to generate mnemonic');
+    }
+    return {
+      mnemonic: mnemonic.phrase,
+      privateKey: wallet.privateKey,
+      address: wallet.address,
+    };
+  } catch (error) {
+    throw new EvalancheError(
+      'Failed to generate wallet',
+      EvalancheErrorCode.WALLET_ERROR,
+      error instanceof Error ? error : undefined,
+    );
+  }
+}
 
 /**
  * Create a wallet signer from a private key.

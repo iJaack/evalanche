@@ -3,8 +3,8 @@ import { IdentityResolver } from './identity/resolver';
 import { ReputationReporter } from './reputation/reporter';
 import { X402Client } from './x402/client';
 import { TransactionBuilder } from './wallet/transaction';
-import { createWalletFromPrivateKey, createWalletFromMnemonic } from './wallet/signer';
-import type { AgentSigner } from './wallet/signer';
+import { createWalletFromPrivateKey, createWalletFromMnemonic, generateWallet } from './wallet/signer';
+import type { AgentSigner, GeneratedWallet } from './wallet/signer';
 import { getNetworkConfig } from './utils/networks';
 import type { NetworkOption } from './utils/networks';
 import type { AgentIdentity, IdentityConfig } from './identity/types';
@@ -58,6 +58,25 @@ export class Evalanche {
   private readonly _mnemonic?: string;
   private readonly _multiVM: boolean;
   private _multiVMInitialized = false;
+
+  /**
+   * Generate a new agent with a fresh wallet — no human input required.
+   * Creates a cryptographically random BIP-39 mnemonic, derives keys,
+   * and returns a fully initialized Evalanche agent.
+   * @param options - Optional network, identity, and multiVM config
+   * @returns Object with the agent instance and the generated wallet details (mnemonic, privateKey, address)
+   */
+  static generate(options?: Omit<EvalancheConfig, 'privateKey' | 'mnemonic'>): {
+    agent: Evalanche;
+    wallet: GeneratedWallet;
+  } {
+    const generated = generateWallet();
+    const agent = new Evalanche({
+      ...options,
+      mnemonic: generated.mnemonic,
+    });
+    return { agent, wallet: generated };
+  }
 
   /**
    * Create a new Evalanche agent.

@@ -8,8 +8,8 @@ export { IDENTITY_REGISTRY, REPUTATION_REGISTRY, IDENTITY_ABI, REPUTATION_ABI, D
 export type { AgentIdentity, IdentityConfig, TrustLevel } from './identity/types';
 
 // Wallet
-export { createWalletFromPrivateKey, createWalletFromMnemonic } from './wallet/signer';
-export type { AgentSigner } from './wallet/signer';
+export { createWalletFromPrivateKey, createWalletFromMnemonic, generateWallet } from './wallet/signer';
+export type { AgentSigner, GeneratedWallet } from './wallet/signer';
 export { TransactionBuilder } from './wallet/transaction';
 export type { TransactionIntent, CallIntent, TransactionResult } from './wallet/types';
 
