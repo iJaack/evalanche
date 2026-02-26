@@ -5,6 +5,8 @@ import { X402Client } from './x402/client';
 import { TransactionBuilder } from './wallet/transaction';
 import { createWalletFromPrivateKey, createWalletFromMnemonic, generateWallet } from './wallet/signer';
 import type { AgentSigner, GeneratedWallet } from './wallet/signer';
+import { AgentKeystore } from './wallet/keystore';
+import type { KeystoreOptions, KeystoreInitResult } from './wallet/keystore';
 import { getNetworkConfig } from './utils/networks';
 import type { NetworkOption } from './utils/networks';
 import type { AgentIdentity, IdentityConfig } from './identity/types';
@@ -63,6 +65,11 @@ export class Evalanche {
    * Generate a new agent with a fresh wallet — no human input required.
    * Creates a cryptographically random BIP-39 mnemonic, derives keys,
    * and returns a fully initialized Evalanche agent.
+   *
+   * ⚠️ The returned wallet contains the plaintext mnemonic and private key.
+   * For non-custodial autonomous operation, use `Evalanche.boot()` instead —
+   * it encrypts and persists the key material automatically.
+   *
    * @param options - Optional network, identity, and multiVM config
    * @returns Object with the agent instance and the generated wallet details (mnemonic, privateKey, address)
    */
@@ -76,6 +83,48 @@ export class Evalanche {
       mnemonic: generated.mnemonic,
     });
     return { agent, wallet: generated };
+  }
+
+  /**
+   * Boot an autonomous, non-custodial agent.
+   *
+   * First call: generates a wallet, encrypts it, persists to disk.
+   * Subsequent calls: loads and decrypts the existing keystore.
+   *
+   * No human ever sees the private key or mnemonic. The agent manages
+   * its own key lifecycle with encrypted-at-rest storage.
+   *
+   * @param options - Network, identity, multiVM, and keystore config
+   * @returns Object with the agent instance and keystore init result
+   *
+   * @example
+   * ```ts
+   * const { agent, keystore } = await Evalanche.boot({ network: 'fuji' });
+   * console.log(agent.address);       // 0x...
+   * console.log(keystore.isNew);      // true on first run, false after
+   * console.log(keystore.keystorePath); // ~/.evalanche/keys/agent.json
+   * ```
+   */
+  static async boot(options?: Omit<EvalancheConfig, 'privateKey' | 'mnemonic'> & {
+    keystore?: KeystoreOptions;
+  }): Promise<{
+    agent: Evalanche;
+    keystore: KeystoreInitResult;
+  }> {
+    const store = new AgentKeystore(options?.keystore);
+    const initResult = await store.init();
+
+    // Load the decrypted wallet to get the mnemonic for multi-VM support
+    const wallet = await store.load();
+    const mnemonic = 'mnemonic' in wallet && wallet.mnemonic ? wallet.mnemonic.phrase : undefined;
+
+    const agent = new Evalanche({
+      ...options,
+      // Use mnemonic if available (for multi-VM), otherwise fall back to private key
+      ...(mnemonic ? { mnemonic } : { privateKey: wallet.privateKey }),
+    });
+
+    return { agent, keystore: initResult };
   }
 
   /**

@@ -10,6 +10,8 @@ export type { AgentIdentity, IdentityConfig, TrustLevel } from './identity/types
 // Wallet
 export { createWalletFromPrivateKey, createWalletFromMnemonic, generateWallet } from './wallet/signer';
 export type { AgentSigner, GeneratedWallet } from './wallet/signer';
+export { AgentKeystore } from './wallet/keystore';
+export type { KeystoreOptions, KeystoreInitResult } from './wallet/keystore';
 export { TransactionBuilder } from './wallet/transaction';
 export type { TransactionIntent, CallIntent, TransactionResult } from './wallet/types';
 
