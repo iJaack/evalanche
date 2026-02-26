@@ -16,7 +16,8 @@
     "evalanche-mcp": "./dist/mcp/cli.mjs"
   },
   "files": [
-    "dist"
+    "dist",
+    "skill"
   ],
   "scripts": {
     "build": "tsup",
@@ -40,7 +41,6 @@
   "dependencies": {
     "@avalabs/avalanchejs": "^5.0.0",
     "@avalabs/core-wallets-sdk": "^3.0.2",
-    "@ledgerhq/cryptoassets": "^13.39.1",
     "big.js": "^7.0.1",
     "ethers": "^6.13.0"
   },
@@ -48,5 +48,8 @@
     "tsup": "^8.0.0",
     "typescript": "^5.4.0",
     "vitest": "^1.6.0"
+  },
+  "overrides": {
+    "@ledgerhq/cryptoassets": "9.13.0"
   }
 }

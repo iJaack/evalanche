@@ -1,5 +1,3 @@
-#!/usr/bin/env node
-
 /**
  * Evalanche MCP Server CLI
  *
