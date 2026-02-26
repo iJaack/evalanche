@@ -1,10 +1,11 @@
 ---
 name: evalanche
 description: >
-  Agent wallet SDK for Avalanche with onchain identity (ERC-8004) and payment rails (x402).
-  Use when: sending AVAX, calling contracts, resolving agent identity, checking reputation,
-  making x402 payment-gated API calls, cross-chain transfers (C↔X↔P), delegating stake,
-  querying validators, signing messages.
+  Non-custodial agent wallet SDK for Avalanche with onchain identity (ERC-8004) and payment rails (x402).
+  Agents generate and manage their own keys — no human input required.
+  Use when: booting an autonomous agent wallet, sending AVAX, calling contracts, resolving agent identity,
+  checking reputation, making x402 payment-gated API calls, cross-chain transfers (C↔X↔P),
+  delegating stake, querying validators, signing messages.
   Don't use when: trading on DEXes (use bankr), bridging to non-Avalanche chains (use lifi-bridge),
   managing ENS (use moltbook scripts).
   Network: yes (Avalanche RPC). Cost: gas fees per transaction.
@@ -40,40 +41,49 @@ Headless wallet SDK with ERC-8004 identity and x402 payments. Works as CLI tools
 npm install -g evalanche
 ```
 
-### 2. Configure environment
+### 2. Boot (non-custodial — no config needed)
 ```bash
-# Required: wallet key (one of these)
-export AGENT_PRIVATE_KEY="0x..."       # For C-Chain only
-export AGENT_MNEMONIC="word1 word2..." # For multi-VM (X/P/C chains)
-
-# Optional: identity
-export AGENT_ID="1599"                  # ERC-8004 agent ID
-export AGENT_REGISTRY="0x8004A169FB4a3325136EB29fA0ceB6D2e539a432"
-
-# Optional: network
-export AVALANCHE_NETWORK="avalanche"    # or "fuji" for testnet
-export AVALANCHE_RPC_URL=""             # custom RPC (overrides network default)
+# Agent generates its own wallet, encrypts to ~/.evalanche/keys/agent.json
+# No env vars needed for first boot!
 ```
-
-### 3. Run as MCP server (optional)
-```bash
-# Stdio mode (for Claude Desktop, Cursor, etc.)
-evalanche-mcp
-
-# HTTP mode
-evalanche-mcp --http --port 3402
-```
-
-## Using as a Library (in scripts)
 
 ```javascript
 import { Evalanche } from 'evalanche';
 
+// First run: generates wallet + encrypts to disk
+// Every subsequent run: decrypts and loads existing wallet
+const { agent, keystore } = await Evalanche.boot({
+  network: 'avalanche',
+  identity: { agentId: '1599' },
+});
+
+console.log(agent.address);        // 0x... (same every time)
+console.log(keystore.isNew);       // true first time, false after
+```
+
+### 2b. With existing keys (optional)
+```bash
+export AGENT_PRIVATE_KEY="0x..."       # For C-Chain only
+export AGENT_MNEMONIC="word1 word2..." # For multi-VM (X/P/C chains)
+export AGENT_ID="1599"                  # ERC-8004 agent ID
+export AVALANCHE_NETWORK="avalanche"    # or "fuji" for testnet
+```
+
+```javascript
 const agent = new Evalanche({
   privateKey: process.env.AGENT_PRIVATE_KEY,
   network: 'avalanche',
   identity: { agentId: '1599' },
 });
+```
+
+### 3. Run as MCP server (optional)
+```bash
+# Stdio mode — uses boot() if no keys in env
+evalanche-mcp
+
+# HTTP mode
+evalanche-mcp --http --port 3402
 ```
 
 ## Available Tools (MCP)

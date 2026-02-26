@@ -2,13 +2,11 @@
 
 **Agent wallet SDK for Avalanche with onchain identity (ERC-8004) and payment rails (x402)**
 
-Evalanche gives AI agents a programmatic wallet on Avalanche with built-in onchain identity and payment capabilities — no browser, no popups, no human in the loop.
+Evalanche gives AI agents a **non-custodial** wallet on Avalanche with built-in onchain identity and payment capabilities — no browser, no popups, no human in the loop. The agent generates its own keys, encrypts them at rest, and manages its own key lifecycle.
 
 ## Background
 
 Evalanche's architecture is informed by [Ava Labs' Core Extension](https://github.com/ava-labs/core-extension) wallet — specifically its service-worker signing patterns, network management, and multi-secret-type design (mnemonic, Ledger, Fireblocks, seedless). We studied Core Extension's `WalletService`, `AccountsService`, and `NetworkService` to understand how Core handles transaction signing and account derivation, then rebuilt these patterns as a headless SDK optimized for agent use cases.
-
-**v0.1.0** focuses on C-Chain (EVM) via ethers v6. The [roadmap](#roadmap) includes integrating `@avalabs/avalanchejs` and `@avalabs/core-wallets-sdk` for native X-Chain/P-Chain support (AVAX transfers, staking, cross-chain operations) — bringing the full Core Wallet infrastructure into the headless agent context.
 
 A companion [Core Extension PR](https://github.com/iJaack/core-extension/tree/feat/erc8004-agent-identity) adds ERC-8004 agent identity resolution directly into the Core wallet approval UI, so humans can see an agent's on-chain reputation when approving transactions.
 
@@ -20,40 +18,82 @@ npm install evalanche
 
 ## Quick Start
 
+### Non-custodial (recommended) — agent manages its own keys
+
 ```typescript
 import { Evalanche } from 'evalanche';
 
-const agent = new Evalanche({
-  privateKey: process.env.AGENT_PRIVATE_KEY,
-  network: 'avalanche', // 'avalanche' | 'fuji' | { rpcUrl, chainId }
+// First run: generates wallet, encrypts to ~/.evalanche/keys/agent.json
+// Every subsequent run: decrypts and loads the same wallet
+const { agent, keystore } = await Evalanche.boot({
+  network: 'avalanche',
   identity: {
     agentId: '1599',
     registry: '0x8004A169FB4a3325136EB29fA0ceB6D2e539a432',
   },
 });
 
+console.log(agent.address);       // 0x... (same every time)
+console.log(keystore.isNew);      // true first run, false after
+console.log(keystore.keystorePath); // ~/.evalanche/keys/agent.json
+
 // Send AVAX
-const tx = await agent.send({
-  to: '0x...',
-  value: '0.1', // human-readable AVAX
-});
+await agent.send({ to: '0x...', value: '0.1' });
 
 // Sign messages
-const signature = await agent.signMessage('Hello from my agent');
+await agent.signMessage('Hello from my autonomous agent');
+```
+
+No human ever sees the private key or mnemonic. Keys are encrypted at rest with AES-128-CTR + scrypt (geth-compatible keystore format), password derived from machine-local entropy (chmod 600).
+
+### One-shot generation (returns plaintext keys)
+
+```typescript
+// For scripts or testing — caller is responsible for key storage
+const { agent, wallet } = Evalanche.generate({ network: 'fuji' });
+console.log(wallet.mnemonic);   // 12-word BIP-39
+console.log(wallet.privateKey); // 0x...
+console.log(wallet.address);    // 0x...
+```
+
+### Existing keys
+
+```typescript
+const agent = new Evalanche({
+  privateKey: process.env.AGENT_PRIVATE_KEY,
+  network: 'avalanche',
+});
 ```
 
 ## API Reference
 
+### `Evalanche.boot(options?): Promise<{ agent, keystore }>`
+
+**Non-custodial autonomous boot.** Generates or loads an encrypted keystore. No human input.
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `network` | `'avalanche' \| 'fuji' \| { rpcUrl, chainId }` | Network (default: `'avalanche'`) |
+| `identity` | `{ agentId, registry? }` | Optional ERC-8004 identity config |
+| `multiVM` | `boolean` | Enable X-Chain / P-Chain support |
+| `keystore.dir` | `string` | Keystore directory (default: `~/.evalanche/keys`) |
+| `keystore.filename` | `string` | Keystore filename (default: `agent.json`) |
+
+### `Evalanche.generate(options?): { agent, wallet }`
+
+**One-shot generation.** Returns plaintext keys — caller handles storage.
+
 ### `new Evalanche(config)`
 
-Create a new agent instance.
+Create an agent with existing keys.
 
 | Option | Type | Description |
 |--------|------|-------------|
 | `privateKey` | `string` | Hex-encoded private key |
 | `mnemonic` | `string` | BIP-39 mnemonic phrase |
-| `network` | `'avalanche' \| 'fuji' \| { rpcUrl, chainId }` | Network to connect to (default: `'avalanche'`) |
+| `network` | `'avalanche' \| 'fuji' \| { rpcUrl, chainId }` | Network (default: `'avalanche'`) |
 | `identity` | `{ agentId, registry? }` | Optional ERC-8004 identity config |
+| `multiVM` | `boolean` | Enable X-Chain / P-Chain support |
 
 ### `agent.address`
 
@@ -158,23 +198,24 @@ const xAddr = xChain.getAddress();
 │                  Evalanche                   │
 │                                             │
 │  ┌──────────┐ ┌──────────┐ ┌────────────┐  │
-│  │  Wallet   │ │ Identity │ │ Reputation │  │
-│  │  Signer   │ │ Resolver │ │  Reporter  │  │
+│  │ Keystore │ │ Identity │ │ Reputation │  │
+│  │(AES+scry)│ │ Resolver │ │  Reporter  │  │
 │  └────┬─────┘ └────┬─────┘ └─────┬──────┘  │
 │       │             │             │          │
 │  ┌────┴─────┐ ┌────┴─────┐       │          │
-│  │   Tx     │ │ ERC-8004 │       │          │
-│  │ Builder  │ │ Registry │       │          │
+│  │  Wallet  │ │ ERC-8004 │       │          │
+│  │  Signer  │ │ Registry │       │          │
 │  └────┬─────┘ └──────────┘       │          │
 │       │                           │          │
-│  ┌────┴──────────────────────────┴──────┐   │
-│  │            x402 Client               │   │
-│  │  (Pay-gated HTTP + Facilitator)      │   │
-│  └──────────────────────────────────────┘   │
-│                                             │
-│  ┌──────────────────────────────────────┐   │
-│  │   Avalanche C-Chain / Fuji Testnet   │   │
-│  └──────────────────────────────────────┘   │
+│  ┌────┴─────┐ ┌──────────────────┴──────┐   │
+│  │   Tx     │ │      x402 Client        │   │
+│  │ Builder  │ │ (Pay-gated HTTP + Fac.) │   │
+│  └────┬─────┘ └─────────────────────────┘   │
+│       │                                      │
+│  ┌────┴──────────────────────────────────┐  │
+│  │  C-Chain (EVM) │ X-Chain │ P-Chain    │  │
+│  │  ethers v6     │ avalanchejs v5       │  │
+│  └───────────────────────────────────────┘  │
 └─────────────────────────────────────────────┘
 ```
 
@@ -235,14 +276,15 @@ AGENT_PRIVATE_KEY=0x... evalanche-mcp --http --port 3402
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `AGENT_PRIVATE_KEY` | Yes* | Agent wallet private key |
-| `AGENT_MNEMONIC` | Yes* | BIP-39 mnemonic (alternative) |
+| `AGENT_PRIVATE_KEY` | No* | Agent wallet private key |
+| `AGENT_MNEMONIC` | No* | BIP-39 mnemonic (alternative) |
+| `AGENT_KEYSTORE_DIR` | No* | Path to keystore directory for `boot()` mode |
 | `AGENT_ID` | No | ERC-8004 agent ID (enables identity resolution) |
 | `AGENT_REGISTRY` | No | Custom ERC-8004 registry address |
 | `AVALANCHE_NETWORK` | No | `avalanche` (default) or `fuji` |
 | `AVALANCHE_RPC_URL` | No | Custom RPC URL |
 
-\* One of `AGENT_PRIVATE_KEY` or `AGENT_MNEMONIC` is required.
+\* Provide one of: `AGENT_PRIVATE_KEY`, `AGENT_MNEMONIC`, or `AGENT_KEYSTORE_DIR`. If none is set, the MCP server uses `boot()` mode with the default keystore path (`~/.evalanche/keys/agent.json`).
 
 ### Available MCP tools
 
@@ -286,7 +328,7 @@ server.startHTTP(3402);
 - ✅ On-chain reputation feedback submission
 - ✅ MCP server (stdio + HTTP) — 10 tools for AI frameworks
 
-### v0.2.0 (current)
+### v0.2.0
 - ✅ Integrated `@avalabs/avalanchejs` v5 for native X-Chain and P-Chain support
 - ✅ Integrated `@avalabs/core-wallets-sdk` v3 for Core-compatible account derivation
 - ✅ Cross-chain transfers — all 6 directions (C↔X↔P) via atomic export/import
@@ -295,7 +337,14 @@ server.startHTTP(3402);
 - ✅ Multi-chain balance queries (C + X + P totals)
 - ✅ Lazy-loaded Avalanche deps — zero overhead if only using C-Chain
 
-### v0.3.0 (planned)
+### v0.3.0 (current)
+- ✅ Non-custodial `AgentKeystore` — encrypted-at-rest key storage (AES-128-CTR + scrypt)
+- ✅ `Evalanche.boot()` — fully autonomous agent lifecycle (generate → encrypt → persist → reload)
+- ✅ `Evalanche.generate()` — one-shot wallet creation for scripts/testing
+- ✅ Machine-local entropy for password derivation (no human-set passwords)
+- ✅ `exportMnemonic()` for backup/migration only
+
+### v0.4.0 (planned)
 - [ ] Subnet/L1 support — custom network configs with VM-specific signing
 - [ ] ICM (Interchain Messaging) integration
 - [ ] Agent-to-agent payment channels
