@@ -99,6 +99,32 @@ All env vars are **optional**. Three modes of operation:
 2. **Explicit keys** (`AGENT_PRIVATE_KEY` or `AGENT_MNEMONIC`): You provide keys via env vars or secret management
 3. **Keystore path** (`AGENT_KEYSTORE_DIR`): Point to an existing keystore directory
 
+### OpenClaw External Secrets (Preferred when available)
+
+When evalanche runs inside an OpenClaw environment, `Evalanche.boot()` automatically resolves credentials via `openclaw secrets` — **no private keys ever touch env vars or config files**.
+
+**Priority order:**
+1. **OpenClaw secrets** (if `openclaw` CLI is on PATH + env var is a `@secret:` ref)
+2. **Raw env vars** (`AGENT_PRIVATE_KEY` / `AGENT_MNEMONIC` as plain values)
+3. **Encrypted keystore** (default — self-managed, no config needed)
+
+**Setup:**
+```bash
+# Store Eva's key in OpenClaw secrets
+openclaw secrets set eva-wallet-key --value "0x..."
+
+# Reference it in your .env (never the raw value)
+AGENT_PRIVATE_KEY=@secret:eva-wallet-key
+```
+
+**In code** — `boot()` returns `secretsSource` so you know where credentials came from:
+```typescript
+const { agent, keystore, secretsSource } = await Evalanche.boot({ network: 'avalanche' });
+console.log(secretsSource); // 'openclaw-secrets' | 'env' | 'keystore'
+```
+
+**Fallback:** If OpenClaw is not installed or the secret isn't found, evalanche falls back silently to the keystore — no errors, no config changes needed.
+
 ## Setup
 
 ### 1. Install

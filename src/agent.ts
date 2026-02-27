@@ -7,6 +7,7 @@ import { createWalletFromPrivateKey, createWalletFromMnemonic, generateWallet } 
 import type { AgentSigner, GeneratedWallet } from './wallet/signer';
 import { AgentKeystore } from './wallet/keystore';
 import type { KeystoreOptions, KeystoreInitResult } from './wallet/keystore';
+import { resolveAgentSecrets } from './secrets';
 import { getNetworkConfig } from './utils/networks';
 import type { NetworkOption } from './utils/networks';
 import type { AgentIdentity, IdentityConfig } from './identity/types';
@@ -110,7 +111,29 @@ export class Evalanche {
   }): Promise<{
     agent: Evalanche;
     keystore: KeystoreInitResult;
+    /** Where the credentials came from: 'openclaw-secrets' | 'env' | 'keystore' */
+    secretsSource: 'openclaw-secrets' | 'env' | 'keystore';
   }> {
+    // Resolve credentials: OpenClaw secrets (preferred) → env vars → keystore
+    const resolved = await resolveAgentSecrets();
+
+    if (resolved.source !== 'keystore') {
+      // Credentials resolved externally — build a dummy keystoreInitResult for API compat
+      const agent = new Evalanche({
+        ...options,
+        ...(resolved.mnemonic
+          ? { mnemonic: resolved.mnemonic }
+          : { privateKey: resolved.privateKey }),
+      });
+      const keystoreResult: KeystoreInitResult = {
+        address: agent.address,
+        keystorePath: '',
+        isNew: false,
+      };
+      return { agent, keystore: keystoreResult, secretsSource: resolved.source };
+    }
+
+    // Default: encrypted keystore flow
     const store = new AgentKeystore(options?.keystore);
     const initResult = await store.init();
 
@@ -124,7 +147,7 @@ export class Evalanche {
       ...(mnemonic ? { mnemonic } : { privateKey: wallet.privateKey }),
     });
 
-    return { agent, keystore: initResult };
+    return { agent, keystore: initResult, secretsSource: 'keystore' };
   }
 
   /**

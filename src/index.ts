@@ -46,3 +46,6 @@ export { getNetworkConfig, NETWORKS } from './utils/networks';
 export type { NetworkConfig, NetworkOption } from './utils/networks';
 export { TTLCache } from './utils/cache';
 export { EvalancheError, EvalancheErrorCode } from './utils/errors';
+// Secrets (OpenClaw integration)
+export { resolveAgentSecrets, parseSecretRef } from './secrets';
+export type { SecretsResolution } from './secrets';
