@@ -1,6 +1,6 @@
 {
   "name": "evalanche",
-  "version": "0.3.1",
+  "version": "0.3.3",
   "description": "Agent wallet SDK for Avalanche with onchain identity (ERC-8004) and payment rails (x402)",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
