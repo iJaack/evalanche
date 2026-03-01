@@ -8,13 +8,18 @@ import type { AgentSigner, GeneratedWallet } from './wallet/signer';
 import { AgentKeystore } from './wallet/keystore';
 import type { KeystoreOptions, KeystoreInitResult } from './wallet/keystore';
 import { resolveAgentSecrets } from './secrets';
-import { getNetworkConfig } from './utils/networks';
+import { getNetworkConfig, getChainConfigForNetwork } from './utils/networks';
 import type { NetworkOption } from './utils/networks';
+import type { ChainConfig } from './utils/chains';
+import { getAllChains } from './utils/chains';
 import type { AgentIdentity, IdentityConfig } from './identity/types';
 import type { TransactionIntent, CallIntent, TransactionResult } from './wallet/types';
 import type { FeedbackSubmission } from './reputation/types';
 import type { PayAndFetchOptions, PayAndFetchResult } from './x402/types';
 import { EvalancheError, EvalancheErrorCode } from './utils/errors';
+import { BridgeClient } from './bridge';
+import type { BridgeQuoteParams, BridgeQuote } from './bridge/lifi';
+import type { GasZipParams } from './bridge/gaszip';
 // Avalanche multi-VM types only (actual imports are lazy to avoid loading
 // @avalabs/core-wallets-sdk at construction time — it has heavy native deps)
 import type { ChainAlias, TransferResult, MultiChainBalance, StakeInfo, ValidatorInfo, MinStakeAmounts } from './avalanche/types';
@@ -25,13 +30,16 @@ export interface EvalancheConfig {
   mnemonic?: string;
   identity?: IdentityConfig;
   network?: NetworkOption;
-  /** Enable multi-VM support (X-Chain, P-Chain). Requires mnemonic. */
+  /** Enable multi-VM support (X-Chain, P-Chain). Requires mnemonic. Only applies on Avalanche networks. */
   multiVM?: boolean;
+  /** Override the default RPC for the selected chain */
+  rpcOverride?: string;
 }
 
 /**
  * Main Evalanche agent class — provides wallet, identity, transactions,
- * reputation, and x402 payment capabilities for AI agents on Avalanche.
+ * reputation, x402 payment, and cross-chain bridging capabilities for
+ * AI agents on any EVM chain.
  */
 export class Evalanche {
   /** The underlying ethers signer instance */
@@ -46,6 +54,7 @@ export class Evalanche {
   private reputationReporter: ReputationReporter;
   private x402Client: X402Client;
   private transactionBuilder: TransactionBuilder;
+  private _bridgeClient?: BridgeClient;
 
   // Multi-VM (v0.2.0) — types are `any` here because actual classes are lazy-loaded
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -100,7 +109,7 @@ export class Evalanche {
    *
    * @example
    * ```ts
-   * const { agent, keystore } = await Evalanche.boot({ network: 'fuji' });
+   * const { agent, keystore } = await Evalanche.boot({ network: 'base' });
    * console.log(agent.address);       // 0x...
    * console.log(keystore.isNew);      // true on first run, false after
    * console.log(keystore.keystorePath); // ~/.evalanche/keys/agent.json
@@ -151,13 +160,23 @@ export class Evalanche {
   }
 
   /**
+   * Get all supported chains.
+   * @param includeTestnets - Whether to include testnets (default: true)
+   * @returns Array of supported chain configs
+   */
+  static getSupportedChains(includeTestnets = true): ChainConfig[] {
+    return getAllChains(includeTestnets);
+  }
+
+  /**
    * Create a new Evalanche agent.
    * @param config - Agent configuration (private key or mnemonic, network, optional identity)
    */
   constructor(config: EvalancheConfig) {
     this._networkOption = config.network ?? 'avalanche';
     const networkConfig = getNetworkConfig(this._networkOption);
-    this.provider = new JsonRpcProvider(networkConfig.rpcUrl);
+    const rpcUrl = config.rpcOverride ?? networkConfig.rpcUrl;
+    this.provider = new JsonRpcProvider(rpcUrl);
 
     if (config.privateKey) {
       this.wallet = createWalletFromPrivateKey(config.privateKey, this.provider);
@@ -199,9 +218,17 @@ export class Evalanche {
       );
     }
 
+    // Multi-VM only works on Avalanche networks
     const networkName = typeof this._networkOption === 'string'
       ? (this._networkOption === 'fuji' ? 'fuji' : 'avalanche')
       : 'avalanche';
+
+    if (typeof this._networkOption === 'string' && this._networkOption !== 'avalanche' && this._networkOption !== 'fuji') {
+      throw new EvalancheError(
+        `Multi-VM (X/P-Chain) is only supported on Avalanche networks, not '${this._networkOption}'`,
+        EvalancheErrorCode.INVALID_CONFIG,
+      );
+    }
 
     // Dynamic imports to avoid loading heavy native deps at construction time
     const { createAvalancheProvider } = await import('./avalanche/provider');
@@ -253,7 +280,7 @@ export class Evalanche {
 
   /**
    * Send a simple transaction (value transfer or raw data).
-   * @param intent - Transaction intent with to address and human-readable AVAX value
+   * @param intent - Transaction intent with to address and human-readable value
    * @returns Transaction hash and receipt
    */
   async send(intent: TransactionIntent): Promise<TransactionResult> {
@@ -296,6 +323,83 @@ export class Evalanche {
    */
   async signMessage(message: string): Promise<string> {
     return this.wallet.signMessage(message);
+  }
+
+  // ── Bridge Methods (v0.4.0) ─────────────────────────────
+
+  /** Get or create the bridge client (lazy-initialized) */
+  private getBridgeClient(): BridgeClient {
+    if (!this._bridgeClient) {
+      this._bridgeClient = new BridgeClient(this.wallet);
+    }
+    return this._bridgeClient;
+  }
+
+  /**
+   * Get a bridge quote for a cross-chain transfer (without executing).
+   * @param params - Bridge quote parameters
+   * @returns Best available bridge quote
+   */
+  async getBridgeQuote(params: BridgeQuoteParams): Promise<BridgeQuote> {
+    return this.getBridgeClient().bridge(params);
+  }
+
+  /**
+   * Get multiple bridge route options from Li.Fi.
+   * @param params - Bridge quote parameters
+   * @returns Array of available bridge quotes sorted by recommendation
+   */
+  async getBridgeRoutes(params: BridgeQuoteParams): Promise<BridgeQuote[]> {
+    return this.getBridgeClient().getBridgeRoutes(params);
+  }
+
+  /**
+   * Bridge tokens cross-chain via Li.Fi. Gets a quote and executes it.
+   * @param params - Bridge quote parameters
+   * @returns Transaction hash and status
+   */
+  async bridgeTokens(params: BridgeQuoteParams): Promise<{ txHash: string; status: string }> {
+    const client = this.getBridgeClient();
+    const quote = await client.bridge(params);
+    return client.executeBridge(quote);
+  }
+
+  /**
+   * Fund an address with gas on a destination chain via Gas.zip.
+   * @param params - Gas funding parameters
+   * @returns Transaction hash
+   */
+  async fundDestinationGas(params: GasZipParams): Promise<{ txHash: string }> {
+    return this.getBridgeClient().fundGas(params, this.wallet);
+  }
+
+  /**
+   * Get info about the current chain from the registry.
+   * @returns Chain config if available, otherwise basic network info
+   */
+  getChainInfo(): ChainConfig | { id: number; name: string } {
+    const chainConfig = getChainConfigForNetwork(this._networkOption);
+    if (chainConfig) return chainConfig;
+
+    const networkConfig = getNetworkConfig(this._networkOption);
+    return {
+      id: networkConfig.chainId,
+      name: networkConfig.name,
+    };
+  }
+
+  /**
+   * Create a new Evalanche instance on a different network.
+   * Preserves the same keys but connects to a different chain.
+   * @param network - Target network
+   * @returns New Evalanche instance connected to the target network
+   */
+  switchNetwork(network: NetworkOption): Evalanche {
+    return new Evalanche({
+      ...(this._mnemonic ? { mnemonic: this._mnemonic } : { privateKey: this.wallet.privateKey }),
+      network,
+      multiVM: this._multiVM,
+    });
   }
 
   // ── Multi-VM Methods (v0.2.0) ─────────────────────────────

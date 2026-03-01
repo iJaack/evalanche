@@ -60,6 +60,127 @@ describe('Evalanche', () => {
     });
   });
 
+  describe('multi-chain network support', () => {
+    it('should create agent on Ethereum', () => {
+      const agent = new Evalanche({
+        privateKey: TEST_PRIVATE_KEY,
+        network: 'ethereum',
+      });
+      expect(agent.address).toBe('0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266');
+    });
+
+    it('should create agent on Base', () => {
+      const agent = new Evalanche({
+        privateKey: TEST_PRIVATE_KEY,
+        network: 'base',
+      });
+      expect(agent.address).toBe('0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266');
+    });
+
+    it('should create agent on Arbitrum', () => {
+      const agent = new Evalanche({
+        privateKey: TEST_PRIVATE_KEY,
+        network: 'arbitrum',
+      });
+      expect(agent.address).toBe('0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266');
+    });
+
+    it('should create agent on Optimism', () => {
+      const agent = new Evalanche({
+        privateKey: TEST_PRIVATE_KEY,
+        network: 'optimism',
+      });
+      expect(agent.address).toBe('0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266');
+    });
+
+    it('should create agent on Polygon', () => {
+      const agent = new Evalanche({
+        privateKey: TEST_PRIVATE_KEY,
+        network: 'polygon',
+      });
+      expect(agent.address).toBe('0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266');
+    });
+
+    it('should create agent on BSC', () => {
+      const agent = new Evalanche({
+        privateKey: TEST_PRIVATE_KEY,
+        network: 'bsc',
+      });
+      expect(agent.address).toBe('0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266');
+    });
+
+    it('should throw for unknown network name', () => {
+      expect(() => new Evalanche({
+        privateKey: TEST_PRIVATE_KEY,
+        // @ts-expect-error Testing invalid network
+        network: 'nonexistent',
+      })).toThrow('Unknown network');
+    });
+
+    it('should support rpcOverride', () => {
+      const agent = new Evalanche({
+        privateKey: TEST_PRIVATE_KEY,
+        network: 'ethereum',
+        rpcOverride: 'http://localhost:8545',
+      });
+      expect(agent.address).toBeDefined();
+    });
+  });
+
+  describe('getChainInfo', () => {
+    it('should return full chain config for known chain', () => {
+      const agent = new Evalanche({
+        privateKey: TEST_PRIVATE_KEY,
+        network: 'base',
+      });
+
+      const info = agent.getChainInfo();
+      expect('currency' in info).toBe(true);
+      if ('currency' in info) {
+        expect(info.name).toBe('Base');
+        expect(info.id).toBe(8453);
+        expect(info.currency.symbol).toBe('ETH');
+      }
+    });
+
+    it('should return basic info for custom network', () => {
+      const agent = new Evalanche({
+        privateKey: TEST_PRIVATE_KEY,
+        network: { rpcUrl: 'http://localhost:8545', chainId: 31337 },
+      });
+
+      const info = agent.getChainInfo();
+      expect(info.id).toBe(31337);
+    });
+  });
+
+  describe('switchNetwork', () => {
+    it('should return new agent on different network', () => {
+      const agent = new Evalanche({
+        privateKey: TEST_PRIVATE_KEY,
+        network: 'ethereum',
+      });
+
+      const baseAgent = agent.switchNetwork('base');
+      expect(baseAgent.address).toBe(agent.address);
+
+      const baseInfo = baseAgent.getChainInfo();
+      expect('currency' in baseInfo && baseInfo.name).toBe('Base');
+    });
+  });
+
+  describe('getSupportedChains (static)', () => {
+    it('should return all supported chains', () => {
+      const chains = Evalanche.getSupportedChains();
+      expect(chains.length).toBeGreaterThanOrEqual(21);
+    });
+
+    it('should filter out testnets', () => {
+      const mainnets = Evalanche.getSupportedChains(false);
+      expect(mainnets.every(c => !c.isTestnet)).toBe(true);
+    });
+  });
+
   describe('generate (static factory)', () => {
     it('should generate a new agent with a random wallet', () => {
       const { agent, wallet } = Evalanche.generate({ network: 'fuji' });
@@ -99,6 +220,11 @@ describe('Evalanche', () => {
       });
 
       expect(agent.address).toBeDefined();
+    });
+
+    it('should work with non-Avalanche chains', () => {
+      const { agent, wallet } = Evalanche.generate({ network: 'base' });
+      expect(agent.address).toBe(wallet.address);
     });
   });
 

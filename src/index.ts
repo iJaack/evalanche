@@ -24,6 +24,15 @@ export { X402Client } from './x402/client';
 export { X402Facilitator } from './x402/facilitator';
 export type { PaymentRequirements, PayAndFetchOptions, PayAndFetchResult } from './x402/types';
 
+// Bridge (v0.4.0)
+export { BridgeClient, LiFiClient, GasZipClient, NATIVE_TOKEN } from './bridge';
+export type { BridgeQuoteParams, BridgeQuote } from './bridge/lifi';
+export type { GasZipParams, GasZipQuote } from './bridge/gaszip';
+
+// Chain Registry (v0.4.0)
+export { CHAINS, CHAIN_ALIASES, getChainById, getChainByAlias, getPrimaryRpc, getAllChains } from './utils/chains';
+export type { ChainConfig } from './utils/chains';
+
 // Avalanche Multi-VM types (classes are lazy-loaded via dynamic import to avoid
 // pulling in @avalabs/core-wallets-sdk and its heavy native deps at import time)
 export type {
@@ -43,7 +52,7 @@ export { EvalancheMCPServer } from './mcp/server';
 
 // Utilities
 export { getNetworkConfig, NETWORKS } from './utils/networks';
-export type { NetworkConfig, NetworkOption } from './utils/networks';
+export type { NetworkConfig, NetworkOption, ChainName } from './utils/networks';
 export { TTLCache } from './utils/cache';
 export { EvalancheError, EvalancheErrorCode } from './utils/errors';
 // Secrets (OpenClaw integration)

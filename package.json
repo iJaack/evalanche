@@ -1,7 +1,7 @@
 {
   "name": "evalanche",
-  "version": "0.3.4",
-  "description": "Agent wallet SDK for Avalanche with onchain identity (ERC-8004) and payment rails (x402)",
+  "version": "0.4.0",
+  "description": "Multi-EVM agent wallet SDK with onchain identity (ERC-8004), payment rails (x402), and cross-chain bridging (Li.Fi + Gas.zip)",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -27,10 +27,17 @@
   },
   "keywords": [
     "avalanche",
+    "ethereum",
+    "base",
+    "arbitrum",
     "agent",
     "wallet",
     "erc-8004",
     "x402",
+    "bridge",
+    "cross-chain",
+    "lifi",
+    "gas-zip",
     "web3",
     "ai-agent"
   ],

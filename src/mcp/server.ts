@@ -2,7 +2,9 @@ import { Evalanche } from '../agent';
 import type { EvalancheConfig } from '../agent';
 import { IdentityResolver } from '../identity/resolver';
 import { EvalancheError } from '../utils/errors';
-import { NETWORKS } from '../utils/networks';
+import { getNetworkConfig } from '../utils/networks';
+import { getAllChains } from '../utils/chains';
+import { NATIVE_TOKEN } from '../bridge/lifi';
 import { createServer, type IncomingMessage, type ServerResponse } from 'http';
 
 /** MCP tool definition */
@@ -40,7 +42,7 @@ const TOOLS: MCPTool[] = [
   },
   {
     name: 'get_balance',
-    description: 'Get the AVAX balance of the agent wallet (or any address)',
+    description: 'Get the native token balance of the agent wallet (or any address) on the current chain',
     inputSchema: {
       type: 'object',
       properties: {
@@ -67,12 +69,12 @@ const TOOLS: MCPTool[] = [
   },
   {
     name: 'send_avax',
-    description: 'Send AVAX to an address. Value is in human-readable AVAX (e.g. "0.1").',
+    description: 'Send native tokens to an address. Value is in human-readable units (e.g. "0.1").',
     inputSchema: {
       type: 'object',
       properties: {
         to: { type: 'string', description: 'Destination address' },
-        value: { type: 'string', description: 'Amount in AVAX (e.g. "0.1")' },
+        value: { type: 'string', description: 'Amount in native token (e.g. "0.1")' },
       },
       required: ['to', 'value'],
     },
@@ -91,7 +93,7 @@ const TOOLS: MCPTool[] = [
         },
         method: { type: 'string', description: 'Method name to call' },
         args: { type: 'array', description: 'Method arguments' },
-        value: { type: 'string', description: 'AVAX to send with call (optional)' },
+        value: { type: 'string', description: 'Native token to send with call (optional)' },
       },
       required: ['contract', 'abi', 'method'],
     },
@@ -114,7 +116,7 @@ const TOOLS: MCPTool[] = [
       type: 'object',
       properties: {
         url: { type: 'string', description: 'URL to fetch' },
-        maxPayment: { type: 'string', description: 'Maximum AVAX willing to pay (e.g. "0.01")' },
+        maxPayment: { type: 'string', description: 'Maximum willing to pay in native token (e.g. "0.01")' },
         method: { type: 'string', description: 'HTTP method (default: GET)' },
         headers: { type: 'object', description: 'Additional HTTP headers' },
         body: { type: 'string', description: 'Request body' },
@@ -140,6 +142,100 @@ const TOOLS: MCPTool[] = [
     name: 'get_network',
     description: 'Get the current network configuration',
     inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'get_supported_chains',
+    description: 'List all supported EVM chains with IDs, names, RPCs, and explorers',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        includeTestnets: { type: 'boolean', description: 'Include testnets (default: true)' },
+      },
+    },
+  },
+  {
+    name: 'get_chain_info',
+    description: 'Get detailed info about the current chain or a specified chain',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        chainId: { type: 'number', description: 'Chain ID to look up (defaults to current chain)' },
+      },
+    },
+  },
+  {
+    name: 'get_bridge_quote',
+    description: 'Get a bridge quote for cross-chain token transfer via Li.Fi (does not execute)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fromChainId: { type: 'number', description: 'Source chain ID' },
+        toChainId: { type: 'number', description: 'Destination chain ID' },
+        fromToken: { type: 'string', description: 'Source token address (use "native" for native gas token)' },
+        toToken: { type: 'string', description: 'Destination token address (use "native" for native gas token)' },
+        fromAmount: { type: 'string', description: 'Amount to send (human-readable, e.g. "0.1")' },
+        slippage: { type: 'number', description: 'Slippage tolerance as decimal (default: 0.03 = 3%)' },
+      },
+      required: ['fromChainId', 'toChainId', 'fromToken', 'toToken', 'fromAmount'],
+    },
+  },
+  {
+    name: 'get_bridge_routes',
+    description: 'Get all available bridge route options for a cross-chain transfer via Li.Fi',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fromChainId: { type: 'number', description: 'Source chain ID' },
+        toChainId: { type: 'number', description: 'Destination chain ID' },
+        fromToken: { type: 'string', description: 'Source token address (use "native" for native gas token)' },
+        toToken: { type: 'string', description: 'Destination token address (use "native" for native gas token)' },
+        fromAmount: { type: 'string', description: 'Amount to send (human-readable, e.g. "0.1")' },
+        slippage: { type: 'number', description: 'Slippage tolerance as decimal (default: 0.03 = 3%)' },
+      },
+      required: ['fromChainId', 'toChainId', 'fromToken', 'toToken', 'fromAmount'],
+    },
+  },
+  {
+    name: 'bridge_tokens',
+    description: 'Bridge tokens between chains using Li.Fi (gets quote and executes the transaction)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fromChainId: { type: 'number', description: 'Source chain ID' },
+        toChainId: { type: 'number', description: 'Destination chain ID' },
+        fromToken: { type: 'string', description: 'Source token address (use "native" for native gas token)' },
+        toToken: { type: 'string', description: 'Destination token address (use "native" for native gas token)' },
+        fromAmount: { type: 'string', description: 'Amount to send (human-readable, e.g. "0.1")' },
+        toAddress: { type: 'string', description: 'Receiver address (defaults to agent address)' },
+        slippage: { type: 'number', description: 'Slippage tolerance as decimal (default: 0.03 = 3%)' },
+      },
+      required: ['fromChainId', 'toChainId', 'fromToken', 'toToken', 'fromAmount'],
+    },
+  },
+  {
+    name: 'fund_destination_gas',
+    description: 'Send gas to a destination chain via Gas.zip (cheap cross-chain gas funding)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fromChainId: { type: 'number', description: 'Source chain ID' },
+        toChainId: { type: 'number', description: 'Destination chain ID' },
+        toAddress: { type: 'string', description: 'Recipient address on destination chain (defaults to agent address)' },
+        destinationGasAmount: { type: 'string', description: 'Amount of gas to receive on destination (e.g. "0.01")' },
+      },
+      required: ['fromChainId', 'toChainId'],
+    },
+  },
+  {
+    name: 'switch_network',
+    description: 'Switch to a different EVM network (returns new network info)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        network: { type: 'string', description: 'Network name (e.g. "ethereum", "base", "arbitrum", "optimism", "polygon")' },
+      },
+      required: ['network'],
+    },
   },
 ];
 
@@ -169,7 +265,7 @@ export class EvalancheMCPServer {
             capabilities: { tools: {} },
             serverInfo: {
               name: 'evalanche',
-              version: '0.1.0',
+              version: '0.4.0',
             },
           });
 
@@ -192,6 +288,11 @@ export class EvalancheMCPServer {
     }
   }
 
+  /** Normalize token address — convert "native" shorthand to the zero address */
+  private normalizeToken(token: string): string {
+    return token.toLowerCase() === 'native' ? NATIVE_TOKEN : token;
+  }
+
   /** Handle a tools/call request */
   private async handleToolCall(
     id: string | number,
@@ -211,7 +312,9 @@ export class EvalancheMCPServer {
           const addr = (args.address as string) || this.agent.address;
           const balance = await this.agent.provider.getBalance(addr);
           const { formatEther } = await import('ethers');
-          result = { address: addr, balance: formatEther(balance), unit: 'AVAX' };
+          const chainInfo = this.agent.getChainInfo();
+          const symbol = 'currency' in chainInfo ? chainInfo.currency.symbol : 'ETH';
+          result = { address: addr, balance: formatEther(balance), unit: symbol };
           break;
         }
 
@@ -281,10 +384,124 @@ export class EvalancheMCPServer {
           const networkName = typeof this.config.network === 'string'
             ? this.config.network
             : 'custom';
-          const networkConfig = typeof this.config.network === 'string'
-            ? NETWORKS[this.config.network ?? 'avalanche']
-            : this.config.network;
-          result = { network: networkName, ...networkConfig };
+          const chainInfo = this.agent.getChainInfo();
+          result = { network: networkName, ...chainInfo };
+          break;
+        }
+
+        case 'get_supported_chains': {
+          const includeTestnets = (args.includeTestnets as boolean) ?? true;
+          const chains = getAllChains(includeTestnets);
+          result = {
+            count: chains.length,
+            chains: chains.map(c => ({
+              id: c.id,
+              name: c.name,
+              shortName: c.shortName,
+              currency: c.currency.symbol,
+              explorer: c.explorer,
+              isTestnet: c.isTestnet ?? false,
+            })),
+          };
+          break;
+        }
+
+        case 'get_chain_info': {
+          if (args.chainId) {
+            const { getChainById } = await import('../utils/chains');
+            const chain = getChainById(args.chainId as number);
+            if (!chain) {
+              result = { error: `Unknown chain ID: ${args.chainId}` };
+            } else {
+              result = chain;
+            }
+          } else {
+            result = this.agent.getChainInfo();
+          }
+          break;
+        }
+
+        case 'get_bridge_quote': {
+          const quote = await this.agent.getBridgeQuote({
+            fromChainId: args.fromChainId as number,
+            toChainId: args.toChainId as number,
+            fromToken: this.normalizeToken(args.fromToken as string),
+            toToken: this.normalizeToken(args.toToken as string),
+            fromAmount: args.fromAmount as string,
+            fromAddress: this.agent.address,
+            slippage: args.slippage as number | undefined,
+          });
+          result = {
+            id: quote.id,
+            fromChainId: quote.fromChainId,
+            toChainId: quote.toChainId,
+            fromAmount: quote.fromAmount,
+            toAmount: quote.toAmount,
+            estimatedGas: quote.estimatedGas,
+            estimatedTime: quote.estimatedTime,
+            tool: quote.tool,
+          };
+          break;
+        }
+
+        case 'get_bridge_routes': {
+          const routes = await this.agent.getBridgeRoutes({
+            fromChainId: args.fromChainId as number,
+            toChainId: args.toChainId as number,
+            fromToken: this.normalizeToken(args.fromToken as string),
+            toToken: this.normalizeToken(args.toToken as string),
+            fromAmount: args.fromAmount as string,
+            fromAddress: this.agent.address,
+            slippage: args.slippage as number | undefined,
+          });
+          result = {
+            count: routes.length,
+            routes: routes.map(r => ({
+              id: r.id,
+              fromAmount: r.fromAmount,
+              toAmount: r.toAmount,
+              estimatedGas: r.estimatedGas,
+              estimatedTime: r.estimatedTime,
+              tool: r.tool,
+            })),
+          };
+          break;
+        }
+
+        case 'bridge_tokens': {
+          const txResult = await this.agent.bridgeTokens({
+            fromChainId: args.fromChainId as number,
+            toChainId: args.toChainId as number,
+            fromToken: this.normalizeToken(args.fromToken as string),
+            toToken: this.normalizeToken(args.toToken as string),
+            fromAmount: args.fromAmount as string,
+            fromAddress: this.agent.address,
+            toAddress: args.toAddress as string | undefined,
+            slippage: args.slippage as number | undefined,
+          });
+          result = txResult;
+          break;
+        }
+
+        case 'fund_destination_gas': {
+          const txResult = await this.agent.fundDestinationGas({
+            fromChainId: args.fromChainId as number,
+            toChainId: args.toChainId as number,
+            toAddress: (args.toAddress as string) || this.agent.address,
+            destinationGasAmount: args.destinationGasAmount as string | undefined,
+          });
+          result = txResult;
+          break;
+        }
+
+        case 'switch_network': {
+          const networkName = args.network as string;
+          // Validate the network name
+          const networkConfig = getNetworkConfig(networkName as EvalancheConfig['network'] & string);
+          // Recreate agent on the new network
+          this.config = { ...this.config, network: networkName as EvalancheConfig['network'] & string };
+          this.agent = new Evalanche(this.config);
+          result = { network: networkName, ...networkConfig, address: this.agent.address };
           break;
         }
 
