@@ -47,6 +47,10 @@ export type {
   MinStakeAmounts,
 } from './avalanche';
 
+// Swap (v0.5.0)
+export { ArenaSwapClient, ARENA_TOKEN_MANAGER, ARENA_TOKEN } from './swap';
+export type { ArenaTokenInfo, ArenaSwapResult } from './swap';
+
 // MCP
 export { EvalancheMCPServer } from './mcp/server';
 
