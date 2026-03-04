@@ -1,6 +1,7 @@
 import { Evalanche } from '../agent';
 import type { EvalancheConfig } from '../agent';
 import { IdentityResolver } from '../identity/resolver';
+import { ArenaSwapClient } from '../swap/arena';
 import { EvalancheError } from '../utils/errors';
 import { getNetworkConfig } from '../utils/networks';
 import { getAllChains } from '../utils/chains';
@@ -237,6 +238,55 @@ const TOOLS: MCPTool[] = [
       required: ['network'],
     },
   },
+  {
+    name: 'arena_buy',
+    description: 'Buy Arena community tokens on Avalanche C-Chain. Spends $ARENA to purchase community tokens via the bonding curve.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        tokenAddress: { type: 'string', description: 'ERC-20 address of the Arena community token to buy' },
+        amount: { type: 'string', description: 'Amount of community tokens to buy (human-readable, e.g. "100")' },
+        maxArenaSpend: { type: 'string', description: 'Maximum $ARENA willing to spend (human-readable, e.g. "50")' },
+      },
+      required: ['tokenAddress', 'amount', 'maxArenaSpend'],
+    },
+  },
+  {
+    name: 'arena_sell',
+    description: 'Sell Arena community tokens on Avalanche C-Chain. Sells community tokens for $ARENA via the bonding curve.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        tokenAddress: { type: 'string', description: 'ERC-20 address of the Arena community token to sell' },
+        amount: { type: 'string', description: 'Amount of community tokens to sell (human-readable, e.g. "100")' },
+        minArenaReceive: { type: 'string', description: 'Minimum $ARENA to accept (slippage guard, human-readable, e.g. "10")' },
+      },
+      required: ['tokenAddress', 'amount', 'minArenaReceive'],
+    },
+  },
+  {
+    name: 'arena_token_info',
+    description: 'Get info about an Arena community token (name, supply, tokenId) by its ERC-20 address',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        tokenAddress: { type: 'string', description: 'ERC-20 address of the Arena community token' },
+      },
+      required: ['tokenAddress'],
+    },
+  },
+  {
+    name: 'arena_buy_cost',
+    description: 'Calculate the $ARENA cost to buy a given amount of an Arena community token (read-only, does not execute)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        tokenAddress: { type: 'string', description: 'ERC-20 address of the Arena community token' },
+        amount: { type: 'string', description: 'Amount of community tokens to price (human-readable, e.g. "100")' },
+      },
+      required: ['tokenAddress', 'amount'],
+    },
+  },
 ];
 
 /**
@@ -265,7 +315,7 @@ export class EvalancheMCPServer {
             capabilities: { tools: {} },
             serverInfo: {
               name: 'evalanche',
-              version: '0.4.0',
+              version: '0.5.0',
             },
           });
 
@@ -502,6 +552,58 @@ export class EvalancheMCPServer {
           this.config = { ...this.config, network: networkName as EvalancheConfig['network'] & string };
           this.agent = new Evalanche(this.config);
           result = { network: networkName, ...networkConfig, address: this.agent.address };
+          break;
+        }
+
+        case 'arena_buy': {
+          const { parseUnits, formatUnits } = await import('ethers');
+          const swap = new ArenaSwapClient(this.agent.wallet);
+          const swapResult = await swap.buyArenaToken(
+            args.tokenAddress as string,
+            parseUnits(args.amount as string, 18),
+            parseUnits(args.maxArenaSpend as string, 18),
+          );
+          result = { txHash: swapResult.txHash, success: swapResult.success, tokenId: swapResult.tokenId.toString() };
+          break;
+        }
+
+        case 'arena_sell': {
+          const { parseUnits } = await import('ethers');
+          const swap = new ArenaSwapClient(this.agent.wallet);
+          const swapResult = await swap.sellArenaToken(
+            args.tokenAddress as string,
+            parseUnits(args.amount as string, 18),
+            parseUnits(args.minArenaReceive as string, 18),
+          );
+          result = { txHash: swapResult.txHash, success: swapResult.success, tokenId: swapResult.tokenId.toString() };
+          break;
+        }
+
+        case 'arena_token_info': {
+          const swap = new ArenaSwapClient(this.agent.wallet);
+          const tokenId = await swap.getArenaTokenId(args.tokenAddress as string);
+          const info = await swap.getTokenInfo(tokenId);
+          result = {
+            tokenId: tokenId.toString(),
+            tokenAddress: info.tokenAddress,
+            protocolFee: info.protocolFee,
+            creatorFee: info.creatorFee,
+            referralFee: info.referralFee,
+            tokenCreationBuyFee: info.tokenCreationBuyFee.toString(),
+            curveScaler: info.curveScaler.toString(),
+            a: info.a,
+          };
+          break;
+        }
+
+        case 'arena_buy_cost': {
+          const { parseUnits, formatUnits } = await import('ethers');
+          const swap = new ArenaSwapClient(this.agent.wallet);
+          const cost = await swap.calculateBuyCost(
+            args.tokenAddress as string,
+            parseUnits(args.amount as string, 18),
+          );
+          result = { costArena: formatUnits(cost, 18), costWei: cost.toString() };
           break;
         }
 

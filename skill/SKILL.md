@@ -170,6 +170,14 @@ AVALANCHE_NETWORK=base evalanche-mcp
 | `get_chain_info` | Get details for a specific chain |
 | `switch_network` | Switch to different EVM chain |
 
+### Arena DEX (Avalanche)
+| Tool | Description |
+|------|-------------|
+| `arena_buy` | Buy Arena community tokens via bonding curve (spends $ARENA) |
+| `arena_sell` | Sell Arena community tokens for $ARENA |
+| `arena_token_info` | Get token info (fees, curve params) by address |
+| `arena_buy_cost` | Calculate $ARENA cost for a given buy amount (read-only) |
+
 ### Bridging
 | Tool | Description |
 |------|-------------|
