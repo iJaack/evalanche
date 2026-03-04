@@ -9,7 +9,7 @@ description: >
   resolving agent identity, checking reputation, making x402 payment-gated API calls,
   bridging tokens cross-chain (Li.Fi), funding gas on destination chains (Gas.zip),
   cross-chain transfers (Avalanche C↔X↔P), delegating stake, querying validators, signing messages.
-  Don't use when: trading on DEXes (use bankr), managing ENS (use moltbook scripts).
+  Don't use when: managing ENS (use moltbook scripts).
   Network: yes (EVM RPCs via Routescan + public fallbacks). Cost: gas fees per transaction.
 metadata:
   {
