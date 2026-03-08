@@ -287,6 +287,107 @@ const TOOLS: MCPTool[] = [
       required: ['tokenAddress', 'amount'],
     },
   },
+  {
+    name: 'dydx_get_markets',
+    description: 'List all available dYdX perpetual markets with oracle prices and leverage info',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'dydx_has_market',
+    description: 'Check whether a specific dYdX perpetual market exists (e.g. AKT-USD)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ticker: { type: 'string', description: 'Perpetual market ticker (e.g. AKT-USD)' },
+      },
+      required: ['ticker'],
+    },
+  },
+  {
+    name: 'dydx_get_balance',
+    description: 'Get USDC equity balance on the default dYdX subaccount',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'dydx_get_positions',
+    description: 'Get all open dYdX perpetual positions',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'dydx_place_market_order',
+    description: 'Place a dYdX market order (BUY/SELL)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        market: { type: 'string', description: 'Perpetual market ticker (e.g. ETH-USD)' },
+        side: { type: 'string', description: 'Order side: BUY or SELL' },
+        size: { type: 'string', description: 'Order size in base asset units' },
+        reduceOnly: { type: 'boolean', description: 'Set to true to only reduce an existing position' },
+      },
+      required: ['market', 'side', 'size'],
+    },
+  },
+  {
+    name: 'dydx_place_limit_order',
+    description: 'Place a dYdX limit order',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        market: { type: 'string', description: 'Perpetual market ticker (e.g. ETH-USD)' },
+        side: { type: 'string', description: 'Order side: BUY or SELL' },
+        size: { type: 'string', description: 'Order size in base asset units' },
+        price: { type: 'string', description: 'Limit price' },
+        timeInForce: { type: 'string', description: 'Time in force: GTT, FOK, or IOC' },
+        goodTilSeconds: { type: 'number', description: 'Good-til unix timestamp in seconds' },
+        reduceOnly: { type: 'boolean', description: 'Set to true to only reduce position size' },
+        postOnly: { type: 'boolean', description: 'Set to true to avoid taker execution' },
+      },
+      required: ['market', 'side', 'size', 'price'],
+    },
+  },
+  {
+    name: 'dydx_cancel_order',
+    description: 'Cancel an open dYdX order by encoded orderId from dydx_get_orders',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        orderId: { type: 'string', description: 'Encoded order ID from dydx_get_orders' },
+      },
+      required: ['orderId'],
+    },
+  },
+  {
+    name: 'dydx_close_position',
+    description: 'Close an open dYdX perpetual position with a reduce-only market order',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        market: { type: 'string', description: 'Perpetual market ticker to close' },
+      },
+      required: ['market'],
+    },
+  },
+  {
+    name: 'dydx_get_orders',
+    description: 'List dYdX subaccount orders (optionally filter by status)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        status: { type: 'string', description: 'Optional order status filter (e.g. OPEN, FILLED, CANCELED)' },
+      },
+    },
+  },
+  {
+    name: 'find_perp_market',
+    description: 'Search for a perpetual market ticker across all connected perp venues',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ticker: { type: 'string', description: 'Perpetual market ticker to search (e.g. AKT-USD)' },
+      },
+      required: ['ticker'],
+    },
+  },
   // Platform CLI tools (v0.6.0) — require platform-cli binary
   {
     name: 'platform_cli_available',
@@ -429,7 +530,7 @@ export class EvalancheMCPServer {
             capabilities: { tools: {} },
             serverInfo: {
               name: 'evalanche',
-              version: '0.6.0',
+              version: '0.7.0',
             },
           });
 
@@ -718,6 +819,89 @@ export class EvalancheMCPServer {
             parseUnits(args.amount as string, 18),
           );
           result = { costArena: formatUnits(cost, 18), costWei: cost.toString() };
+          break;
+        }
+
+        case 'dydx_get_markets': {
+          const dydx = await this.agent.dydx();
+          const markets = await dydx.getMarkets();
+          result = { count: markets.length, markets };
+          break;
+        }
+
+        case 'dydx_has_market': {
+          const dydx = await this.agent.dydx();
+          const exists = await dydx.hasMarket(args.ticker as string);
+          result = { ticker: args.ticker, exists };
+          break;
+        }
+
+        case 'dydx_get_balance': {
+          const dydx = await this.agent.dydx();
+          const balance = await dydx.getBalance();
+          result = { balance, unit: 'USDC' };
+          break;
+        }
+
+        case 'dydx_get_positions': {
+          const dydx = await this.agent.dydx();
+          const positions = await dydx.getPositions();
+          result = { count: positions.length, positions };
+          break;
+        }
+
+        case 'dydx_place_market_order': {
+          const dydx = await this.agent.dydx();
+          const orderId = await dydx.placeMarketOrder({
+            market: args.market as string,
+            side: args.side as 'BUY' | 'SELL',
+            size: args.size as string,
+            reduceOnly: args.reduceOnly as boolean | undefined,
+          });
+          result = { orderId };
+          break;
+        }
+
+        case 'dydx_place_limit_order': {
+          const dydx = await this.agent.dydx();
+          const orderId = await dydx.placeLimitOrder({
+            market: args.market as string,
+            side: args.side as 'BUY' | 'SELL',
+            size: args.size as string,
+            price: args.price as string,
+            timeInForce: args.timeInForce as 'GTT' | 'FOK' | 'IOC' | undefined,
+            goodTilSeconds: args.goodTilSeconds as number | undefined,
+            reduceOnly: args.reduceOnly as boolean | undefined,
+            postOnly: args.postOnly as boolean | undefined,
+          });
+          result = { orderId };
+          break;
+        }
+
+        case 'dydx_cancel_order': {
+          const dydx = await this.agent.dydx();
+          await dydx.cancelOrder(args.orderId as string);
+          result = { success: true };
+          break;
+        }
+
+        case 'dydx_close_position': {
+          const dydx = await this.agent.dydx();
+          const orderId = await dydx.closePosition(args.market as string);
+          result = { orderId };
+          break;
+        }
+
+        case 'dydx_get_orders': {
+          const dydx = await this.agent.dydx();
+          const orders = await dydx.getOrders(args.status as string | undefined);
+          result = { count: orders.length, orders };
+          break;
+        }
+
+        case 'find_perp_market': {
+          const match = await this.agent.findPerpMarket(args.ticker as string);
+          result = match;
           break;
         }
 

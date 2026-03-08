@@ -20,6 +20,7 @@ import { EvalancheError, EvalancheErrorCode } from './utils/errors';
 import { BridgeClient } from './bridge';
 import type { BridgeQuoteParams, BridgeQuote } from './bridge/lifi';
 import type { GasZipParams } from './bridge/gaszip';
+import type { DydxClient, PerpMarket } from './perps';
 // Avalanche multi-VM types only (actual imports are lazy to avoid loading
 // @avalabs/core-wallets-sdk at construction time — it has heavy native deps)
 import type { ChainAlias, TransferResult, MultiChainBalance, StakeInfo, ValidatorInfo, MinStakeAmounts } from './avalanche/types';
@@ -56,6 +57,7 @@ export class Evalanche {
   private x402Client: X402Client;
   private transactionBuilder: TransactionBuilder;
   private _bridgeClient?: BridgeClient;
+  private _dydxClient?: DydxClient;
 
   // Multi-VM (v0.2.0) — types are `any` here because actual classes are lazy-loaded
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -373,6 +375,49 @@ export class Evalanche {
    */
   async fundDestinationGas(params: GasZipParams): Promise<{ txHash: string }> {
     return this.getBridgeClient().fundGas(params, this.wallet);
+  }
+
+  /**
+   * Get or create the dYdX perpetuals client (lazy-initialized).
+   *
+   * Requires mnemonic because dYdX derives Cosmos keys from BIP-39.
+   */
+  async dydx(): Promise<DydxClient> {
+    if (!this._mnemonic) {
+      throw new EvalancheError(
+        'dYdX requires a mnemonic (not just a private key). Pass mnemonic in EvalancheConfig.',
+        EvalancheErrorCode.INVALID_CONFIG,
+      );
+    }
+
+    if (!this._dydxClient) {
+      const { DydxClient } = await import('./perps/dydx/client');
+      this._dydxClient = new DydxClient(this._mnemonic);
+      await this._dydxClient.connect();
+    }
+
+    return this._dydxClient;
+  }
+
+  /**
+   * Find a perpetual market ticker across connected perp venues.
+   */
+  async findPerpMarket(ticker: string): Promise<{ venue: string; market: PerpMarket } | null> {
+    try {
+      const dydx = await this.dydx();
+      const markets = await dydx.getMarkets();
+      const match = markets.find((market) => market.ticker.toUpperCase() === ticker.toUpperCase());
+      if (match) {
+        return { venue: dydx.name, market: match };
+      }
+      return null;
+    } catch (cause) {
+      throw new EvalancheError(
+        `Failed to find perpetual market: ${ticker}`,
+        EvalancheErrorCode.PERPS_ERROR,
+        cause instanceof Error ? cause : undefined,
+      );
+    }
   }
 
   /**

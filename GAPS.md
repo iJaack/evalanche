@@ -48,3 +48,15 @@
   - P-Chain direct send, chain creation, node info
   - 10 new MCP tools, 34 new tests
 - **Status:** RESOLVED
+
+## Gap Resolved: dYdX v4 Perpetuals Integration
+- **Date:** 2026-03-08
+- **Context:** Needed perpetual futures trading support beyond EVM spot flows.
+- **Solution:** Added dYdX v4 integration in Evalanche v0.7.0.
+- **What was added:**
+  - `DydxClient` wrapper with wallet derivation from mnemonic
+  - Perp venue abstractions and dYdX market/position/order types
+  - `Evalanche.dydx()` lazy initializer + `findPerpMarket()` helper
+  - 10 new MCP tools for dYdX markets, balances, orders, and positions
+  - Unit tests for dYdX client/types and MCP tool coverage
+- **Status:** RESOLVED

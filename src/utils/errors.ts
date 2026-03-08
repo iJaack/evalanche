@@ -27,6 +27,8 @@ export enum EvalancheErrorCode {
   PLATFORM_CLI_ERROR = 'PLATFORM_CLI_ERROR',
   SUBNET_ERROR = 'SUBNET_ERROR',
   L1_VALIDATOR_ERROR = 'L1_VALIDATOR_ERROR',
+  DYDX_ERROR = 'DYDX_ERROR',
+  PERPS_ERROR = 'PERPS_ERROR',
 }
 
 /** Custom error class for all Evalanche SDK errors */

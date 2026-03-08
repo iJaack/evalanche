@@ -65,6 +65,17 @@ export type {
 export { ArenaSwapClient, ARENA_TOKEN_MANAGER, ARENA_TOKEN } from './swap';
 export type { ArenaTokenInfo, ArenaSwapResult } from './swap';
 
+// Perpetuals (v0.7.0)
+export { DydxClient } from './perps';
+export type {
+  PerpVenue,
+  MarketOrderParams,
+  LimitOrderParams,
+  PerpPosition,
+  PerpMarket,
+  DydxSubaccount,
+} from './perps';
+
 // MCP
 export { EvalancheMCPServer } from './mcp/server';
 

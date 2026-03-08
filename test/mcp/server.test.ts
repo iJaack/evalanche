@@ -51,7 +51,7 @@ describe('EvalancheMCPServer', () => {
     const result = res.result as { protocolVersion: string; serverInfo: { name: string; version: string } };
     expect(result.protocolVersion).toBe('2024-11-05');
     expect(result.serverInfo.name).toBe('evalanche');
-    expect(result.serverInfo.version).toBe('0.6.0');
+    expect(result.serverInfo.version).toBe('0.7.0');
   });
 
   it('lists tools including new bridge/chain tools', async () => {
@@ -93,6 +93,77 @@ describe('EvalancheMCPServer', () => {
     expect(names).toContain('l1_disable_validator');
     expect(names).toContain('node_info');
     expect(names).toContain('pchain_send');
+
+    // New v0.7.0 dYdX perps tools
+    expect(names).toContain('dydx_get_markets');
+    expect(names).toContain('dydx_has_market');
+    expect(names).toContain('dydx_get_balance');
+    expect(names).toContain('dydx_get_positions');
+    expect(names).toContain('dydx_place_market_order');
+    expect(names).toContain('dydx_place_limit_order');
+    expect(names).toContain('dydx_cancel_order');
+    expect(names).toContain('dydx_close_position');
+    expect(names).toContain('dydx_get_orders');
+    expect(names).toContain('find_perp_market');
+  });
+
+  it('handles dydx_get_markets', async () => {
+    const mockDydx = {
+      getMarkets: vi.fn().mockResolvedValue([{ ticker: 'ETH-USD', oraclePrice: '3000' }]),
+    };
+    const agent = (server as unknown as { agent: { dydx: ReturnType<typeof vi.fn> } }).agent;
+    agent.dydx = vi.fn().mockResolvedValue(mockDydx);
+
+    const res = await server.handleRequest({
+      jsonrpc: '2.0',
+      id: 20,
+      method: 'tools/call',
+      params: { name: 'dydx_get_markets', arguments: {} },
+    });
+    const result = res.result as { content: Array<{ text: string }> };
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.count).toBe(1);
+    expect(parsed.markets[0].ticker).toBe('ETH-USD');
+  });
+
+  it('handles dydx_place_market_order', async () => {
+    const mockDydx = {
+      placeMarketOrder: vi.fn().mockResolvedValue('ETH-USD:123:32'),
+    };
+    const agent = (server as unknown as { agent: { dydx: ReturnType<typeof vi.fn> } }).agent;
+    agent.dydx = vi.fn().mockResolvedValue(mockDydx);
+
+    const res = await server.handleRequest({
+      jsonrpc: '2.0',
+      id: 21,
+      method: 'tools/call',
+      params: {
+        name: 'dydx_place_market_order',
+        arguments: { market: 'ETH-USD', side: 'BUY', size: '0.1' },
+      },
+    });
+    const result = res.result as { content: Array<{ text: string }> };
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.orderId).toBe('ETH-USD:123:32');
+  });
+
+  it('handles find_perp_market', async () => {
+    const agent = (server as unknown as { agent: { findPerpMarket: ReturnType<typeof vi.fn> } }).agent;
+    agent.findPerpMarket = vi.fn().mockResolvedValue({
+      venue: 'dydx',
+      market: { ticker: 'ETH-USD' },
+    });
+
+    const res = await server.handleRequest({
+      jsonrpc: '2.0',
+      id: 22,
+      method: 'tools/call',
+      params: { name: 'find_perp_market', arguments: { ticker: 'ETH-USD' } },
+    });
+    const result = res.result as { content: Array<{ text: string }> };
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.venue).toBe('dydx');
+    expect(parsed.market.ticker).toBe('ETH-USD');
   });
 
   it('handles get_address', async () => {
