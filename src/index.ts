@@ -26,7 +26,7 @@ export type { PaymentRequirements, PayAndFetchOptions, PayAndFetchResult } from 
 
 // Bridge (v0.4.0)
 export { BridgeClient, LiFiClient, GasZipClient, NATIVE_TOKEN } from './bridge';
-export type { BridgeQuoteParams, BridgeQuote } from './bridge/lifi';
+export type { BridgeQuoteParams, BridgeQuote, TransferStatus, TransferStatusParams, LiFiToken, LiFiChain, LiFiTools, LiFiGasPrices, LiFiGasSuggestion, LiFiConnection } from './bridge/lifi';
 export type { GasZipParams, GasZipQuote } from './bridge/gaszip';
 
 // Chain Registry (v0.4.0)

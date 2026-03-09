@@ -14,6 +14,59 @@ const LIFI_API = 'https://li.quest/v1';
 /** Native token address constant used by Li.Fi */
 export const NATIVE_TOKEN = '0x0000000000000000000000000000000000000000';
 
+export interface TransferStatus {
+  status: 'NOT_FOUND' | 'PENDING' | 'DONE' | 'FAILED';
+  substatus?: string;
+  receiving?: { txHash: string; amount: string; token: string; chainId: number };
+}
+
+export interface TransferStatusParams {
+  txHash: string;
+  bridge?: string;
+  fromChainId: number;
+  toChainId: number;
+}
+
+export interface LiFiToken {
+  address: string;
+  symbol: string;
+  decimals: number;
+  name: string;
+  priceUSD?: string;
+  chainId: number;
+}
+
+export interface LiFiChain {
+  id: number;
+  key: string;
+  name: string;
+  chainType: string;
+  nativeToken?: { symbol: string; decimals: number; address: string };
+}
+
+export interface LiFiTools {
+  bridges: Array<{ key: string; name: string; logoURI?: string }>;
+  exchanges: Array<{ key: string; name: string; logoURI?: string }>;
+}
+
+export interface LiFiGasPrices {
+  [chainId: string]: Record<string, string>;
+}
+
+export interface LiFiGasSuggestion {
+  standard: string;
+  fast: string;
+  slow: string;
+  [key: string]: string;
+}
+
+export interface LiFiConnection {
+  fromChainId: number;
+  toChainId: number;
+  fromTokens: LiFiToken[];
+  toTokens: LiFiToken[];
+}
+
 /** Parameters for requesting a bridge quote */
 export interface BridgeQuoteParams {
   /** Source chain ID */
@@ -190,6 +243,133 @@ export class LiFiClient {
         error instanceof Error ? error : undefined,
       );
     }
+  }
+
+  async checkTransferStatus(params: TransferStatusParams): Promise<TransferStatus> {
+    const searchParams = new URLSearchParams({
+      txHash: params.txHash,
+      fromChain: params.fromChainId.toString(),
+      toChain: params.toChainId.toString(),
+    });
+    if (params.bridge) searchParams.set('bridge', params.bridge);
+
+    const res = await fetch(`${LIFI_API}/status?${searchParams}`);
+    if (!res.ok) {
+      const body = await res.text().catch(() => 'Unknown error');
+      throw new EvalancheError(
+        `Li.Fi status check failed (${res.status}): ${body}`,
+        EvalancheErrorCode.LIFI_STATUS_ERROR,
+      );
+    }
+    const data = await res.json() as Record<string, unknown>;
+    return data as unknown as TransferStatus;
+  }
+
+  async getSwapQuote(params: BridgeQuoteParams): Promise<BridgeQuote> {
+    if (params.fromChainId !== params.toChainId) {
+      throw new EvalancheError(
+        'getSwapQuote requires same-chain (fromChainId must equal toChainId). Use getQuote for cross-chain.',
+        EvalancheErrorCode.LIFI_SWAP_FAILED,
+      );
+    }
+    return this.getQuote(params);
+  }
+
+  async getTokens(chainIds: number[]): Promise<Record<string, LiFiToken[]>> {
+    const res = await fetch(`${LIFI_API}/tokens?chains=${chainIds.join(',')}`);
+    if (!res.ok) {
+      const body = await res.text().catch(() => 'Unknown error');
+      throw new EvalancheError(
+        `Li.Fi get tokens failed (${res.status}): ${body}`,
+        EvalancheErrorCode.LIFI_TOKEN_ERROR,
+      );
+    }
+    const data = await res.json() as { tokens: Record<string, LiFiToken[]> };
+    return data.tokens;
+  }
+
+  async getToken(chainId: number, address: string): Promise<LiFiToken> {
+    const res = await fetch(`${LIFI_API}/token?chain=${chainId}&token=${address}`);
+    if (!res.ok) {
+      const body = await res.text().catch(() => 'Unknown error');
+      throw new EvalancheError(
+        `Li.Fi get token failed (${res.status}): ${body}`,
+        EvalancheErrorCode.LIFI_TOKEN_ERROR,
+      );
+    }
+    return await res.json() as LiFiToken;
+  }
+
+  async getChains(chainTypes?: string[]): Promise<LiFiChain[]> {
+    const url = chainTypes?.length
+      ? `${LIFI_API}/chains?chainTypes=${chainTypes.join(',')}`
+      : `${LIFI_API}/chains`;
+    const res = await fetch(url);
+    if (!res.ok) {
+      const body = await res.text().catch(() => 'Unknown error');
+      throw new EvalancheError(
+        `Li.Fi get chains failed (${res.status}): ${body}`,
+        EvalancheErrorCode.LIFI_API_ERROR,
+      );
+    }
+    const data = await res.json() as { chains: LiFiChain[] };
+    return data.chains;
+  }
+
+  async getTools(): Promise<LiFiTools> {
+    const res = await fetch(`${LIFI_API}/tools`);
+    if (!res.ok) {
+      const body = await res.text().catch(() => 'Unknown error');
+      throw new EvalancheError(
+        `Li.Fi get tools failed (${res.status}): ${body}`,
+        EvalancheErrorCode.LIFI_API_ERROR,
+      );
+    }
+    return await res.json() as LiFiTools;
+  }
+
+  async getGasPrices(): Promise<LiFiGasPrices> {
+    const res = await fetch(`${LIFI_API}/gas/prices`);
+    if (!res.ok) {
+      const body = await res.text().catch(() => 'Unknown error');
+      throw new EvalancheError(
+        `Li.Fi gas prices failed (${res.status}): ${body}`,
+        EvalancheErrorCode.LIFI_API_ERROR,
+      );
+    }
+    return await res.json() as LiFiGasPrices;
+  }
+
+  async getGasSuggestion(chainId: number): Promise<LiFiGasSuggestion> {
+    const res = await fetch(`${LIFI_API}/gas/suggestion?chain=${chainId}`);
+    if (!res.ok) {
+      const body = await res.text().catch(() => 'Unknown error');
+      throw new EvalancheError(
+        `Li.Fi gas suggestion failed (${res.status}): ${body}`,
+        EvalancheErrorCode.LIFI_API_ERROR,
+      );
+    }
+    return await res.json() as LiFiGasSuggestion;
+  }
+
+  async getConnections(params: { fromChainId: number; toChainId: number; fromToken?: string; toToken?: string }): Promise<LiFiConnection[]> {
+    const searchParams = new URLSearchParams({
+      fromChain: params.fromChainId.toString(),
+      toChain: params.toChainId.toString(),
+    });
+    if (params.fromToken) searchParams.set('fromToken', params.fromToken);
+    if (params.toToken) searchParams.set('toToken', params.toToken);
+
+    const res = await fetch(`${LIFI_API}/connections?${searchParams}`);
+    if (!res.ok) {
+      const body = await res.text().catch(() => 'Unknown error');
+      throw new EvalancheError(
+        `Li.Fi connections failed (${res.status}): ${body}`,
+        EvalancheErrorCode.LIFI_API_ERROR,
+      );
+    }
+    const data = await res.json() as { connections: LiFiConnection[] };
+    return data.connections;
   }
 
   /** Parse a Li.Fi /quote response into a BridgeQuote */

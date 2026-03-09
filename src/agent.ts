@@ -18,7 +18,7 @@ import type { FeedbackSubmission } from './reputation/types';
 import type { PayAndFetchOptions, PayAndFetchResult } from './x402/types';
 import { EvalancheError, EvalancheErrorCode } from './utils/errors';
 import { BridgeClient } from './bridge';
-import type { BridgeQuoteParams, BridgeQuote } from './bridge/lifi';
+import type { BridgeQuoteParams, BridgeQuote, TransferStatusParams, TransferStatus, LiFiToken, LiFiChain, LiFiTools, LiFiGasPrices, LiFiGasSuggestion, LiFiConnection } from './bridge/lifi';
 import type { GasZipParams } from './bridge/gaszip';
 import type { DydxClient, PerpMarket } from './perps';
 // Avalanche multi-VM types only (actual imports are lazy to avoid loading
@@ -366,6 +366,48 @@ export class Evalanche {
     const client = this.getBridgeClient();
     const quote = await client.bridge(params);
     return client.executeBridge(quote);
+  }
+
+  async checkBridgeStatus(params: TransferStatusParams): Promise<TransferStatus> {
+    return this.getBridgeClient().checkTransferStatus(params);
+  }
+
+  async getSwapQuote(params: BridgeQuoteParams): Promise<BridgeQuote> {
+    return this.getBridgeClient().getSwapQuote(params);
+  }
+
+  async swap(params: BridgeQuoteParams): Promise<{ txHash: string; status: string }> {
+    const client = this.getBridgeClient();
+    const quote = await client.getSwapQuote(params);
+    return client.executeSwap(quote);
+  }
+
+  async getTokens(chainIds: number[]): Promise<Record<string, LiFiToken[]>> {
+    return this.getBridgeClient().getTokens(chainIds);
+  }
+
+  async getToken(chainId: number, address: string): Promise<LiFiToken> {
+    return this.getBridgeClient().getToken(chainId, address);
+  }
+
+  async getLiFiChains(chainTypes?: string[]): Promise<LiFiChain[]> {
+    return this.getBridgeClient().getChains(chainTypes);
+  }
+
+  async getLiFiTools(): Promise<LiFiTools> {
+    return this.getBridgeClient().getTools();
+  }
+
+  async getGasPrices(): Promise<LiFiGasPrices> {
+    return this.getBridgeClient().getGasPrices();
+  }
+
+  async getGasSuggestion(chainId: number): Promise<LiFiGasSuggestion> {
+    return this.getBridgeClient().getGasSuggestion(chainId);
+  }
+
+  async getLiFiConnections(params: { fromChainId: number; toChainId: number; fromToken?: string; toToken?: string }): Promise<LiFiConnection[]> {
+    return this.getBridgeClient().getConnections(params);
   }
 
   /**

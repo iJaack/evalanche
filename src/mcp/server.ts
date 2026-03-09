@@ -388,6 +388,135 @@ const TOOLS: MCPTool[] = [
       required: ['ticker'],
     },
   },
+  // Li.Fi cross-chain liquidity SDK tools (v0.8.0)
+  {
+    name: 'check_bridge_status',
+    description: 'Check status of a cross-chain transfer via Li.Fi',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        txHash: { type: 'string', description: 'Transaction hash to check' },
+        bridge: { type: 'string', description: 'Bridge name (optional)' },
+        fromChainId: { type: 'number', description: 'Source chain ID' },
+        toChainId: { type: 'number', description: 'Destination chain ID' },
+      },
+      required: ['txHash', 'fromChainId', 'toChainId'],
+    },
+  },
+  {
+    name: 'lifi_swap_quote',
+    description: 'Get a same-chain swap quote via Li.Fi DEX aggregation (does not execute)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        chainId: { type: 'number', description: 'Chain ID for the swap' },
+        fromToken: { type: 'string', description: 'Source token address (use "native" for native gas token)' },
+        toToken: { type: 'string', description: 'Destination token address' },
+        fromAmount: { type: 'string', description: 'Amount to swap (human-readable, e.g. "1.0")' },
+        slippage: { type: 'number', description: 'Slippage tolerance as decimal (default: 0.03 = 3%)' },
+      },
+      required: ['chainId', 'fromToken', 'toToken', 'fromAmount'],
+    },
+  },
+  {
+    name: 'lifi_swap',
+    description: 'Execute a same-chain swap via Li.Fi DEX aggregation',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        chainId: { type: 'number', description: 'Chain ID for the swap' },
+        fromToken: { type: 'string', description: 'Source token address (use "native" for native gas token)' },
+        toToken: { type: 'string', description: 'Destination token address' },
+        fromAmount: { type: 'string', description: 'Amount to swap (human-readable, e.g. "1.0")' },
+        slippage: { type: 'number', description: 'Slippage tolerance as decimal (default: 0.03 = 3%)' },
+      },
+      required: ['chainId', 'fromToken', 'toToken', 'fromAmount'],
+    },
+  },
+  {
+    name: 'lifi_get_tokens',
+    description: 'List all known tokens on specified chains via Li.Fi',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        chainIds: { type: 'array', items: { type: 'number' }, description: 'Chain IDs to get tokens for' },
+      },
+      required: ['chainIds'],
+    },
+  },
+  {
+    name: 'lifi_get_token',
+    description: 'Get specific token info (name, symbol, decimals, price) via Li.Fi',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        chainId: { type: 'number', description: 'Chain ID' },
+        tokenAddress: { type: 'string', description: 'Token contract address' },
+      },
+      required: ['chainId', 'tokenAddress'],
+    },
+  },
+  {
+    name: 'lifi_get_chains',
+    description: 'List all chains supported by Li.Fi',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        chainTypes: { type: 'array', items: { type: 'string' }, description: 'Filter by chain types (e.g. ["EVM"])' },
+      },
+    },
+  },
+  {
+    name: 'lifi_get_tools',
+    description: 'List all available bridges and DEX aggregators on Li.Fi',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'lifi_gas_prices',
+    description: 'Get gas prices across all supported chains via Li.Fi',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'lifi_gas_suggestion',
+    description: 'Get gas price suggestion for a specific chain via Li.Fi',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        chainId: { type: 'number', description: 'Chain ID to get gas suggestion for' },
+      },
+      required: ['chainId'],
+    },
+  },
+  {
+    name: 'lifi_get_connections',
+    description: 'Get possible token transfer connections between chains via Li.Fi',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fromChainId: { type: 'number', description: 'Source chain ID' },
+        toChainId: { type: 'number', description: 'Destination chain ID' },
+        fromToken: { type: 'string', description: 'Source token address (optional filter)' },
+        toToken: { type: 'string', description: 'Destination token address (optional filter)' },
+      },
+      required: ['fromChainId', 'toChainId'],
+    },
+  },
+  {
+    name: 'lifi_compose',
+    description: 'Execute a cross-chain DeFi Composer operation via Li.Fi — bridge + deposit into vault/stake/lend in one transaction. Supports Morpho, Aave V3, Euler, Pendle, Lido wstETH, EtherFi, and more.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fromChainId: { type: 'number', description: 'Source chain ID' },
+        toChainId: { type: 'number', description: 'Destination chain ID' },
+        fromToken: { type: 'string', description: 'Source token address (use "native" for native gas token)' },
+        toVaultToken: { type: 'string', description: 'Vault/staking token address on destination chain' },
+        fromAmount: { type: 'string', description: 'Amount to send (human-readable, e.g. "1.0")' },
+        slippage: { type: 'number', description: 'Slippage tolerance as decimal (default: 0.03 = 3%)' },
+      },
+      required: ['fromChainId', 'toChainId', 'fromToken', 'toVaultToken', 'fromAmount'],
+    },
+  },
   // Platform CLI tools (v0.6.0) — require platform-cli binary
   {
     name: 'platform_cli_available',
@@ -530,7 +659,7 @@ export class EvalancheMCPServer {
             capabilities: { tools: {} },
             serverInfo: {
               name: 'evalanche',
-              version: '0.7.0',
+              version: '0.8.0',
             },
           });
 
@@ -902,6 +1031,112 @@ export class EvalancheMCPServer {
         case 'find_perp_market': {
           const match = await this.agent.findPerpMarket(args.ticker as string);
           result = match;
+          break;
+        }
+
+        // Li.Fi cross-chain liquidity SDK tools (v0.8.0)
+        case 'check_bridge_status': {
+          result = await this.agent.checkBridgeStatus({
+            txHash: args.txHash as string,
+            bridge: args.bridge as string | undefined,
+            fromChainId: args.fromChainId as number,
+            toChainId: args.toChainId as number,
+          });
+          break;
+        }
+
+        case 'lifi_swap_quote': {
+          const chainId = args.chainId as number;
+          const quote = await this.agent.getSwapQuote({
+            fromChainId: chainId,
+            toChainId: chainId,
+            fromToken: this.normalizeToken(args.fromToken as string),
+            toToken: this.normalizeToken(args.toToken as string),
+            fromAmount: args.fromAmount as string,
+            fromAddress: this.agent.address,
+            slippage: args.slippage as number | undefined,
+          });
+          result = {
+            id: quote.id,
+            fromChainId: quote.fromChainId,
+            toChainId: quote.toChainId,
+            fromAmount: quote.fromAmount,
+            toAmount: quote.toAmount,
+            estimatedGas: quote.estimatedGas,
+            estimatedTime: quote.estimatedTime,
+            tool: quote.tool,
+          };
+          break;
+        }
+
+        case 'lifi_swap': {
+          const chainId = args.chainId as number;
+          result = await this.agent.swap({
+            fromChainId: chainId,
+            toChainId: chainId,
+            fromToken: this.normalizeToken(args.fromToken as string),
+            toToken: this.normalizeToken(args.toToken as string),
+            fromAmount: args.fromAmount as string,
+            fromAddress: this.agent.address,
+            slippage: args.slippage as number | undefined,
+          });
+          break;
+        }
+
+        case 'lifi_get_tokens': {
+          const tokens = await this.agent.getTokens(args.chainIds as number[]);
+          result = { tokens };
+          break;
+        }
+
+        case 'lifi_get_token': {
+          result = await this.agent.getToken(args.chainId as number, args.tokenAddress as string);
+          break;
+        }
+
+        case 'lifi_get_chains': {
+          const chains = await this.agent.getLiFiChains(args.chainTypes as string[] | undefined);
+          result = { count: chains.length, chains };
+          break;
+        }
+
+        case 'lifi_get_tools': {
+          result = await this.agent.getLiFiTools();
+          break;
+        }
+
+        case 'lifi_gas_prices': {
+          result = await this.agent.getGasPrices();
+          break;
+        }
+
+        case 'lifi_gas_suggestion': {
+          result = await this.agent.getGasSuggestion(args.chainId as number);
+          break;
+        }
+
+        case 'lifi_get_connections': {
+          const connections = await this.agent.getLiFiConnections({
+            fromChainId: args.fromChainId as number,
+            toChainId: args.toChainId as number,
+            fromToken: args.fromToken as string | undefined,
+            toToken: args.toToken as string | undefined,
+          });
+          result = { count: connections.length, connections };
+          break;
+        }
+
+        case 'lifi_compose': {
+          const txResult = await this.agent.bridgeTokens({
+            fromChainId: args.fromChainId as number,
+            toChainId: args.toChainId as number,
+            fromToken: this.normalizeToken(args.fromToken as string),
+            toToken: this.normalizeToken(args.toVaultToken as string),
+            fromAmount: args.fromAmount as string,
+            fromAddress: this.agent.address,
+            slippage: args.slippage as number | undefined,
+          });
+          result = txResult;
           break;
         }
 

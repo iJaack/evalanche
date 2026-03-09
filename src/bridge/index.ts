@@ -3,13 +3,13 @@
  */
 
 export { LiFiClient, NATIVE_TOKEN } from './lifi';
-export type { BridgeQuoteParams, BridgeQuote } from './lifi';
+export type { BridgeQuoteParams, BridgeQuote, TransferStatus, TransferStatusParams, LiFiToken, LiFiChain, LiFiTools, LiFiGasPrices, LiFiGasSuggestion, LiFiConnection } from './lifi';
 export { GasZipClient } from './gaszip';
 export type { GasZipParams, GasZipQuote } from './gaszip';
 
 import type { AgentSigner } from '../wallet/signer';
 import { LiFiClient } from './lifi';
-import type { BridgeQuoteParams, BridgeQuote } from './lifi';
+import type { BridgeQuoteParams, BridgeQuote, TransferStatus, TransferStatusParams, LiFiToken, LiFiChain, LiFiTools, LiFiGasPrices, LiFiGasSuggestion, LiFiConnection } from './lifi';
 import { GasZipClient } from './gaszip';
 import type { GasZipParams, GasZipQuote } from './gaszip';
 
@@ -69,5 +69,45 @@ export class BridgeClient {
    */
   async fundGas(params: GasZipParams, signer: AgentSigner): Promise<{ txHash: string }> {
     return this.gaszip.fundGas(params, signer);
+  }
+
+  async checkTransferStatus(params: TransferStatusParams): Promise<TransferStatus> {
+    return this.lifi.checkTransferStatus(params);
+  }
+
+  async getSwapQuote(params: BridgeQuoteParams): Promise<BridgeQuote> {
+    return this.lifi.getSwapQuote(params);
+  }
+
+  async executeSwap(quote: BridgeQuote): Promise<{ txHash: string; status: string }> {
+    return this.lifi.execute(quote);
+  }
+
+  async getTokens(chainIds: number[]): Promise<Record<string, LiFiToken[]>> {
+    return this.lifi.getTokens(chainIds);
+  }
+
+  async getToken(chainId: number, address: string): Promise<LiFiToken> {
+    return this.lifi.getToken(chainId, address);
+  }
+
+  async getChains(chainTypes?: string[]): Promise<LiFiChain[]> {
+    return this.lifi.getChains(chainTypes);
+  }
+
+  async getTools(): Promise<LiFiTools> {
+    return this.lifi.getTools();
+  }
+
+  async getGasPrices(): Promise<LiFiGasPrices> {
+    return this.lifi.getGasPrices();
+  }
+
+  async getGasSuggestion(chainId: number): Promise<LiFiGasSuggestion> {
+    return this.lifi.getGasSuggestion(chainId);
+  }
+
+  async getConnections(params: { fromChainId: number; toChainId: number; fromToken?: string; toToken?: string }): Promise<LiFiConnection[]> {
+    return this.lifi.getConnections(params);
   }
 }
