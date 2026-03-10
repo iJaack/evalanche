@@ -51,7 +51,7 @@ describe('EvalancheMCPServer', () => {
     const result = res.result as { protocolVersion: string; serverInfo: { name: string; version: string } };
     expect(result.protocolVersion).toBe('2024-11-05');
     expect(result.serverInfo.name).toBe('evalanche');
-    expect(result.serverInfo.version).toBe('0.8.0');
+    expect(result.serverInfo.version).toBe('0.9.0');
   });
 
   it('lists tools including new bridge/chain tools', async () => {
@@ -81,6 +81,8 @@ describe('EvalancheMCPServer', () => {
     expect(names).toContain('bridge_tokens');
     expect(names).toContain('fund_destination_gas');
     expect(names).toContain('switch_network');
+    expect(names).toContain('approve_and_call');
+    expect(names).toContain('upgrade_proxy');
 
     // New v0.6.0 platform-cli tools
     expect(names).toContain('platform_cli_available');

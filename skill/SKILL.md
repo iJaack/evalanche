@@ -78,7 +78,7 @@ metadata:
 
 # Evalanche — Multi-EVM Agent Wallet
 
-Headless wallet SDK with ERC-8004 identity, x402 payments, Li.Fi cross-chain liquidity (bridging + DEX aggregation + DeFi Composer), Gas.zip gas funding, and dYdX v4 perpetuals. Works on 21+ EVM chains. 52 MCP tools. Works as CLI or MCP server.
+Headless wallet SDK with ERC-8004 identity, x402 payments, Li.Fi cross-chain liquidity (bridging + DEX aggregation + DeFi Composer), Gas.zip gas funding, dYdX v4 perpetuals, and contract interaction helpers (approve-and-call + UUPS upgrade). Works on 21+ EVM chains. 54 MCP tools. Works as CLI or MCP server.
 
 **Source:** https://github.com/iJaack/evalanche
 **License:** MIT
@@ -184,6 +184,12 @@ AVALANCHE_NETWORK=base evalanche-mcp
 | `arena_sell` | Sell Arena community tokens for $ARENA |
 | `arena_token_info` | Get token info (fees, curve params) by address |
 | `arena_buy_cost` | Calculate $ARENA cost for a given buy amount (read-only) |
+
+### Contract Interaction Helpers (v0.9.0)
+| Tool | Description |
+|------|-------------|
+| `approve_and_call` | Approve ERC-20 spending, then execute a follow-up contract call |
+| `upgrade_proxy` | Upgrade a UUPS proxy via `upgradeToAndCall` |
 
 ### Bridging & Cross-Chain
 | Tool | Description |

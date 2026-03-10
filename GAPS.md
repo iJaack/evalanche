@@ -13,7 +13,12 @@
   - Support for Trader Joe V2.1 / LFJ router as fallback
   - Generic swap interface: `swap(tokenIn, tokenOut, amount, slippage)`
 - **Priority:** HIGH — blocks agent self-funding on Avalanche
-- **Status:** OPEN
+- **Status:** RESOLVED (v0.5.0)
+- **Resolution shipped in v0.5.0:**
+  - Added `src/swap/arena.ts` with `ArenaSwapClient` for ArenaTokenManager integration
+  - Implemented `buyArenaToken()` and `sellArenaToken()` flows against Arena bonding curve
+  - Added `calculateBuyCost()` quoting helper for pre-trade cost checks
+  - Added 4 MCP tools: `arena_buy`, `arena_sell`, `arena_token_info`, `arena_buy_cost`
 
 ## Gap 2: Arena Token ID Lookup
 - **Date:** 2026-03-04
@@ -24,7 +29,12 @@
   - Cache results locally after first lookup
   - ArenaTokenManager impl ABI has `getTokenInfo(uint256)` returning struct with `tokenAddress`
 - **Priority:** MEDIUM — needed for Gap 1
-- **Status:** OPEN
+- **Status:** RESOLVED (v0.5.0)
+- **Resolution shipped in v0.5.0:**
+  - Implemented `getArenaTokenId(tokenAddress)` in `src/swap/arena.ts`
+  - Added token ID scanning over `getTokenInfo(uint256)` with batch parallelization
+  - Added module-level TTL cache for address → tokenId lookups
+  - Exposed `getTokenInfo(tokenId)` for direct token metadata retrieval
 
 ## Gap 3: Contract Interaction Helpers
 - **Date:** 2026-03-04  

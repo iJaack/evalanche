@@ -454,6 +454,8 @@ AGENT_PRIVATE_KEY=0x... evalanche-mcp --http --port 3402
 | `arena_sell` | Sell Arena community tokens |
 | `arena_token_info` | Get Arena token info |
 | `arena_buy_cost` | Calculate Arena buy cost |
+| `approve_and_call` | Approve ERC-20 and execute follow-up contract call |
+| `upgrade_proxy` | Execute UUPS `upgradeToAndCall` proxy upgrade |
 | `dydx_get_markets` | List dYdX perpetual markets |
 | `dydx_has_market` | Check if perp market exists |
 | `dydx_get_balance` | Get dYdX USDC balance |
@@ -569,7 +571,7 @@ AGENT_PRIVATE_KEY=0x... evalanche-mcp --http --port 3402
 - `findPerpMarket(ticker)` — search across all connected perp venues
 - 10 new MCP tools (37 total), 164 tests
 
-### v0.8.0 (current)
+### v0.8.0
 - **Full Li.Fi cross-chain liquidity SDK** — expanded from bridge-only to complete integration
 - Same-chain DEX swaps via Li.Fi (31+ DEX aggregators on any chain)
 - Transfer status tracking (poll PENDING/DONE/FAILED after bridge tx)
@@ -581,7 +583,13 @@ AGENT_PRIVATE_KEY=0x... evalanche-mcp --http --port 3402
 - **DeFi Composer/Zaps** — one-tx cross-chain DeFi (bridge + deposit into Morpho/Aave V3/Euler/Pendle/Lido/EtherFi/etc.)
 - 11 new MCP tools (52 total), 180 tests
 
-### v0.9.0 (planned)
+### v0.9.0 (current)
+- Contract interaction helpers: `approveAndCall()` and `upgradeProxy()`
+- New MCP tools: `approve_and_call`, `upgrade_proxy`
+- Gap 1 and Gap 2 marked resolved in `GAPS.md`
+- 2 new MCP tools (54 total)
+
+### v1.0.0 (planned)
 - ICM (Interchain Messaging) integration
 - Agent-to-agent payment channels
 - Hyperliquid PerpVenue implementation

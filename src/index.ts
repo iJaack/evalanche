@@ -84,6 +84,8 @@ export { getNetworkConfig, NETWORKS } from './utils/networks';
 export type { NetworkConfig, NetworkOption, ChainName } from './utils/networks';
 export { TTLCache } from './utils/cache';
 export { EvalancheError, EvalancheErrorCode } from './utils/errors';
+export { approveAndCall, upgradeProxy } from './utils/contract-helpers';
+export type { ApproveAndCallData, ApproveAndCallResult, UpgradeProxyResult } from './utils/contract-helpers';
 // Secrets (OpenClaw integration)
 export { resolveAgentSecrets, parseSecretRef } from './secrets';
 export type { SecretsResolution } from './secrets';

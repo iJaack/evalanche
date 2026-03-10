@@ -2,6 +2,7 @@ import { Evalanche } from '../agent';
 import type { EvalancheConfig } from '../agent';
 import { IdentityResolver } from '../identity/resolver';
 import { ArenaSwapClient } from '../swap/arena';
+import { approveAndCall, upgradeProxy } from '../utils/contract-helpers';
 import { EvalancheError, EvalancheErrorCode } from '../utils/errors';
 import { getNetworkConfig } from '../utils/networks';
 import { getAllChains } from '../utils/chains';
@@ -285,6 +286,36 @@ const TOOLS: MCPTool[] = [
         amount: { type: 'string', description: 'Amount of community tokens to price (human-readable, e.g. "100")' },
       },
       required: ['tokenAddress', 'amount'],
+    },
+  },
+  {
+    name: 'approve_and_call',
+    description: 'Approve ERC-20 token spending, then execute a follow-up contract call in sequence',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        tokenAddress: { type: 'string', description: 'ERC-20 token address to approve' },
+        spenderAddress: { type: 'string', description: 'Address that receives approval (and call target by default)' },
+        amount: { type: 'string', description: 'Token amount in smallest unit (wei for 18-decimal tokens)' },
+        contractCallData: { type: 'string', description: 'Hex calldata (0x...) for the follow-up contract call' },
+        targetAddress: { type: 'string', description: 'Optional contract call target override (defaults to spenderAddress)' },
+        valueWei: { type: 'string', description: 'Optional native token value in wei to send with contract call' },
+        gasLimit: { type: 'string', description: 'Optional gas limit for follow-up contract call' },
+      },
+      required: ['tokenAddress', 'spenderAddress', 'amount', 'contractCallData'],
+    },
+  },
+  {
+    name: 'upgrade_proxy',
+    description: 'Upgrade a UUPS proxy via upgradeToAndCall(newImplementation, initData)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        proxyAddress: { type: 'string', description: 'UUPS proxy address' },
+        newImplementationAddress: { type: 'string', description: 'New implementation contract address' },
+        initData: { type: 'string', description: 'Optional initialization calldata (0x...); defaults to 0x' },
+      },
+      required: ['proxyAddress', 'newImplementationAddress'],
     },
   },
   {
@@ -659,7 +690,7 @@ export class EvalancheMCPServer {
             capabilities: { tools: {} },
             serverInfo: {
               name: 'evalanche',
-              version: '0.8.0',
+              version: '0.9.0',
             },
           });
 
@@ -948,6 +979,34 @@ export class EvalancheMCPServer {
             parseUnits(args.amount as string, 18),
           );
           result = { costArena: formatUnits(cost, 18), costWei: cost.toString() };
+          break;
+        }
+
+        case 'approve_and_call': {
+          const approveCallResult = await approveAndCall(
+            this.agent.wallet,
+            args.tokenAddress as string,
+            args.spenderAddress as string,
+            BigInt(args.amount as string),
+            {
+              to: (args.targetAddress as string | undefined) ?? (args.spenderAddress as string),
+              data: args.contractCallData as string,
+              value: args.valueWei ? BigInt(args.valueWei as string) : undefined,
+              gasLimit: args.gasLimit ? BigInt(args.gasLimit as string) : undefined,
+            },
+          );
+          result = approveCallResult;
+          break;
+        }
+
+        case 'upgrade_proxy': {
+          const upgradeResult = await upgradeProxy(
+            this.agent.wallet,
+            args.proxyAddress as string,
+            args.newImplementationAddress as string,
+            args.initData as string | undefined,
+          );
+          result = upgradeResult;
           break;
         }
 
