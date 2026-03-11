@@ -21,6 +21,5 @@ ENV MARKETPLACE_PORT=3141
 ENV MARKETPLACE_DB_PATH=/data/marketplace.db
 
 EXPOSE 3141
-VOLUME /data
 
 CMD ["node", "dist/marketplace/cli.mjs"]
