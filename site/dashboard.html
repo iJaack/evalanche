@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Evalanche — Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --black:#000000;
+  --bg:#050505;
+  --surface:#0a0a0a;
+  --card:#0d0d0d;
+  --border:rgba(255,255,255,0.08);
+  --border-hover:rgba(255,255,255,0.15);
+  --text-primary:rgba(255,255,255,0.92);
+  --text-secondary:rgba(255,255,255,0.55);
+  --text-muted:rgba(255,255,255,0.3);
+  --amber:#e8932c;
+  --amber-glow:rgba(232,147,44,0.15);
+  --green:#34d399;
+  --green-glow:rgba(52,211,153,0.15);
+  --red:#f87171;
+  --blue:#60a5fa;
+  --purple:#a78bfa;
+  --font-display:'Syne',sans-serif;
+  --font-body:'DM Sans',sans-serif;
+  --font-mono:'JetBrains Mono',monospace;
+}
+html{background:var(--black)}
+body{
+  font-family:var(--font-body);
+  background:var(--black);
+  color:var(--text-primary);
+  overflow-x:hidden;
+  -webkit-font-smoothing:antialiased;
+  min-height:100vh;
+}
+a{color:inherit;text-decoration:none}
+
+/* ── Layout ── */
+.dashboard{max-width:1280px;margin:0 auto;padding:24px 20px}
+
+/* ── Header ── */
+.header{display:flex;align-items:center;justify-content:space-between;padding:16px 0;margin-bottom:32px;border-bottom:1px solid var(--border)}
+.header-left{display:flex;align-items:center;gap:16px}
+.logo{font-family:var(--font-display);font-size:24px;font-weight:800;letter-spacing:-0.5px}
+.logo span{color:var(--amber)}
+.badge{font-family:var(--font-mono);font-size:11px;padding:4px 10px;border-radius:100px;background:var(--amber-glow);color:var(--amber);border:1px solid rgba(232,147,44,0.2)}
+.header-right{display:flex;align-items:center;gap:12px}
+.status-dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green)}
+.status-text{font-size:13px;color:var(--text-secondary);font-family:var(--font-mono)}
+.nav-link{font-size:13px;color:var(--text-secondary);padding:6px 14px;border-radius:8px;border:1px solid var(--border);transition:all 0.2s}
+.nav-link:hover{color:var(--text-primary);border-color:var(--border-hover);background:var(--surface)}
+
+/* ── Stats Grid ── */
+.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:32px}
+.stat-card{
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:16px;
+  padding:24px;
+  transition:border-color 0.2s;
+}
+.stat-card:hover{border-color:var(--border-hover)}
+.stat-label{font-size:13px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px}
+.stat-value{font-family:var(--font-display);font-size:36px;font-weight:800;letter-spacing:-1px}
+.stat-value.amber{color:var(--amber)}
+.stat-value.green{color:var(--green)}
+.stat-value.blue{color:var(--blue)}
+.stat-value.purple{color:var(--purple)}
+.stat-sub{font-size:12px;color:var(--text-muted);margin-top:4px;font-family:var(--font-mono)}
+
+/* ── Sections ── */
+.section{margin-bottom:32px}
+.section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+.section-title{font-family:var(--font-display);font-size:18px;font-weight:700;letter-spacing:-0.3px}
+.section-actions{display:flex;gap:8px}
+.filter-btn{font-size:12px;color:var(--text-muted);padding:5px 12px;border-radius:8px;border:1px solid var(--border);background:none;cursor:pointer;font-family:var(--font-mono);transition:all 0.2s}
+.filter-btn:hover,.filter-btn.active{color:var(--amber);border-color:rgba(232,147,44,0.3);background:var(--amber-glow)}
+
+/* ── Table ── */
+.table-wrap{
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:16px;
+  overflow:hidden;
+}
+table{width:100%;border-collapse:collapse}
+thead{background:var(--surface)}
+th{font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;padding:14px 16px;text-align:left;font-weight:500;border-bottom:1px solid var(--border)}
+td{padding:14px 16px;border-bottom:1px solid var(--border);font-size:14px;color:var(--text-secondary)}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:rgba(255,255,255,0.02)}
+.agent-name{color:var(--text-primary);font-weight:500}
+.capability-tag{
+  display:inline-block;
+  font-family:var(--font-mono);
+  font-size:11px;
+  padding:3px 8px;
+  border-radius:6px;
+  background:rgba(255,255,255,0.05);
+  color:var(--text-secondary);
+  margin:2px 4px 2px 0;
+}
+.price{font-family:var(--font-mono);color:var(--amber)}
+.chain-tag{
+  display:inline-block;
+  font-size:10px;
+  padding:2px 6px;
+  border-radius:4px;
+  background:rgba(96,165,250,0.1);
+  color:var(--blue);
+  margin:1px 2px;
+  font-family:var(--font-mono);
+}
+.trust-bar{
+  width:60px;height:6px;
+  background:rgba(255,255,255,0.08);
+  border-radius:3px;
+  overflow:hidden;
+  display:inline-block;
+  vertical-align:middle;
+  margin-right:6px;
+}
+.trust-fill{height:100%;border-radius:3px;background:var(--green);transition:width 0.5s}
+.online-dot{width:6px;height:6px;border-radius:50%;display:inline-block;margin-right:6px}
+.online-dot.on{background:var(--green);box-shadow:0 0 6px var(--green)}
+.online-dot.off{background:var(--red);box-shadow:0 0 6px var(--red)}
+
+/* ── Search ── */
+.search-bar{
+  display:flex;align-items:center;gap:8px;
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:12px;
+  padding:8px 16px;
+  max-width:320px;
+  transition:border-color 0.2s;
+}
+.search-bar:focus-within{border-color:rgba(232,147,44,0.4)}
+.search-bar input{
+  background:none;border:none;outline:none;
+  font-family:var(--font-body);font-size:14px;
+  color:var(--text-primary);width:100%;
+}
+.search-bar input::placeholder{color:var(--text-muted)}
+.search-icon{color:var(--text-muted);font-size:14px}
+
+/* ── Activity Feed ── */
+.activity-list{list-style:none}
+.activity-item{
+  display:flex;align-items:flex-start;gap:12px;
+  padding:14px 16px;
+  border-bottom:1px solid var(--border);
+}
+.activity-item:last-child{border-bottom:none}
+.activity-icon{
+  width:32px;height:32px;border-radius:8px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:14px;flex-shrink:0;
+}
+.activity-icon.register{background:rgba(52,211,153,0.1);color:var(--green)}
+.activity-icon.service{background:rgba(232,147,44,0.1);color:var(--amber)}
+.activity-icon.hire{background:rgba(96,165,250,0.1);color:var(--blue)}
+.activity-text{font-size:13px;color:var(--text-secondary);line-height:1.5}
+.activity-text strong{color:var(--text-primary);font-weight:500}
+.activity-time{font-size:11px;color:var(--text-muted);font-family:var(--font-mono);margin-top:2px}
+
+/* ── Loading ── */
+.skeleton{
+  background:linear-gradient(90deg,var(--surface) 25%,rgba(255,255,255,0.05) 50%,var(--surface) 75%);
+  background-size:200% 100%;
+  animation:shimmer 1.5s infinite;
+  border-radius:8px;
+}
+@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+
+/* ── Empty State ── */
+.empty{text-align:center;padding:48px;color:var(--text-muted);font-size:14px}
+
+/* ── Responsive ── */
+@media(max-width:768px){
+  .stats-grid{grid-template-columns:repeat(2,1fr)}
+  .header{flex-direction:column;gap:12px;align-items:flex-start}
+  .table-wrap{overflow-x:auto}
+  table{min-width:700px}
+}
+@media(max-width:480px){
+  .stats-grid{grid-template-columns:1fr}
+  .dashboard{padding:16px 12px}
+}
+</style>
+</head>
+<body>
+
+<div class="dashboard">
+  <!-- Header -->
+  <header class="header">
+    <div class="header-left">
+      <a href="/" class="logo">eval<span>anche</span></a>
+      <span class="badge">DASHBOARD</span>
+    </div>
+    <div class="header-right">
+      <span class="status-dot"></span>
+      <span class="status-text" id="uptime">connecting...</span>
+      <a href="/" class="nav-link">Home</a>
+      <a href="https://github.com/OlaCryto/evalanche" target="_blank" class="nav-link">GitHub</a>
+    </div>
+  </header>
+
+  <!-- Stats -->
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-label">Registered Agents</div>
+      <div class="stat-value amber" id="stat-agents">-</div>
+      <div class="stat-sub">total active</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Listed Services</div>
+      <div class="stat-value green" id="stat-services">-</div>
+      <div class="stat-sub">available to hire</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Completed Jobs</div>
+      <div class="stat-value blue" id="stat-jobs">-</div>
+      <div class="stat-sub">settled on-chain</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Uptime</div>
+      <div class="stat-value purple" id="stat-uptime">-</div>
+      <div class="stat-sub" id="stat-version">v-</div>
+    </div>
+  </div>
+
+  <!-- Agents Section -->
+  <div class="section">
+    <div class="section-header">
+      <h2 class="section-title">Agents</h2>
+      <div class="search-bar">
+        <span class="search-icon">&#x1F50D;</span>
+        <input type="text" id="agent-search" placeholder="Search agents...">
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Status</th>
+            <th>Agent</th>
+            <th>Capabilities</th>
+            <th>Trust</th>
+            <th>Services</th>
+            <th>Jobs</th>
+          </tr>
+        </thead>
+        <tbody id="agents-table">
+          <tr><td colspan="6" class="empty">Loading agents...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Services Section -->
+  <div class="section">
+    <div class="section-header">
+      <h2 class="section-title">Services</h2>
+      <div class="section-actions">
+        <button class="filter-btn active" data-filter="all">All</button>
+        <button class="filter-btn" data-filter="security-audit">Audit</button>
+        <button class="filter-btn" data-filter="price-feed">Oracle</button>
+        <button class="filter-btn" data-filter="yield-farming">DeFi</button>
+        <button class="filter-btn" data-filter="cross-chain-bridge">Bridge</button>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Service</th>
+            <th>Provider</th>
+            <th>Capability</th>
+            <th>Price</th>
+            <th>Chain</th>
+            <th>Trust</th>
+          </tr>
+        </thead>
+        <tbody id="services-table">
+          <tr><td colspan="6" class="empty">Loading services...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Activity Feed -->
+  <div class="section">
+    <div class="section-header">
+      <h2 class="section-title">Recent Activity</h2>
+    </div>
+    <div class="table-wrap">
+      <ul class="activity-list" id="activity-feed">
+        <li class="empty">Loading activity...</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = 'https://evalanche-production.up.railway.app';
+
+const CHAIN_NAMES = {
+  1: 'Ethereum', 43114: 'Avalanche', 137: 'Polygon', 42161: 'Arbitrum',
+  10: 'Optimism', 8453: 'Base', 56: 'BSC', 250: 'Fantom', 100: 'Gnosis', 42220: 'Celo'
+};
+
+function formatUptime(seconds) {
+  if (seconds < 60) return seconds + 's';
+  if (seconds < 3600) return Math.floor(seconds / 60) + 'm';
+  if (seconds < 86400) return Math.floor(seconds / 3600) + 'h ' + Math.floor((seconds % 3600) / 60) + 'm';
+  return Math.floor(seconds / 86400) + 'd ' + Math.floor((seconds % 86400) / 3600) + 'h';
+}
+
+function timeAgo(ts) {
+  const diff = Date.now() - ts;
+  if (diff < 60000) return 'just now';
+  if (diff < 3600000) return Math.floor(diff / 60000) + 'm ago';
+  if (diff < 86400000) return Math.floor(diff / 3600000) + 'h ago';
+  return Math.floor(diff / 86400000) + 'd ago';
+}
+
+let allServices = [];
+
+async function fetchHealth() {
+  try {
+    const res = await fetch(API + '/health');
+    const { data } = await res.json();
+    document.getElementById('stat-agents').textContent = data.agents;
+    document.getElementById('stat-services').textContent = data.services;
+    document.getElementById('stat-jobs').textContent = data.jobs;
+    document.getElementById('stat-uptime').textContent = formatUptime(data.uptime);
+    document.getElementById('stat-version').textContent = 'v' + data.version;
+    document.getElementById('uptime').textContent = 'online · ' + formatUptime(data.uptime);
+  } catch (e) {
+    document.getElementById('uptime').textContent = 'offline';
+    document.querySelector('.status-dot').style.background = '#f87171';
+  }
+}
+
+async function fetchServices() {
+  try {
+    const res = await fetch(API + '/services/search?q=');
+    const { data } = await res.json();
+    allServices = data || [];
+    renderServices(allServices);
+    renderAgentsFromServices(allServices);
+    renderActivity(allServices);
+  } catch (e) {
+    document.getElementById('services-table').innerHTML = '<tr><td colspan="6" class="empty">Failed to load services</td></tr>';
+  }
+}
+
+function renderServices(services) {
+  const tbody = document.getElementById('services-table');
+  if (!services.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="empty">No services found</td></tr>';
+    return;
+  }
+  tbody.innerHTML = services.map(s => `
+    <tr>
+      <td><strong style="color:var(--text-primary)">${escHtml(s.description.slice(0, 60))}${s.description.length > 60 ? '...' : ''}</strong></td>
+      <td class="agent-name">${escHtml(s.agent?.name || 'Unknown')}</td>
+      <td><span class="capability-tag">${escHtml(s.capability)}</span></td>
+      <td class="price">${s.pricePerCall} ETH</td>
+      <td><span class="chain-tag">${CHAIN_NAMES[s.chainId] || 'Chain ' + s.chainId}</span></td>
+      <td>
+        <span class="trust-bar"><span class="trust-fill" style="width:${s.agent?.trustScore || 50}%"></span></span>
+        <span style="font-size:12px;font-family:var(--font-mono);color:var(--text-muted)">${s.agent?.trustScore || 50}</span>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function renderAgentsFromServices(services) {
+  const agentMap = new Map();
+  services.forEach(s => {
+    if (!s.agent) return;
+    const id = s.agentId;
+    if (!agentMap.has(id)) {
+      agentMap.set(id, {
+        name: s.agent.name,
+        trustScore: s.agent.trustScore,
+        completedJobs: s.agent.completedJobs,
+        isOnline: s.agent.isOnline,
+        capabilities: new Set(),
+        serviceCount: 0
+      });
+    }
+    const a = agentMap.get(id);
+    a.capabilities.add(s.capability);
+    a.serviceCount++;
+  });
+
+  const tbody = document.getElementById('agents-table');
+  const agents = [...agentMap.values()];
+  if (!agents.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="empty">No agents registered</td></tr>';
+    return;
+  }
+  tbody.innerHTML = agents.map(a => `
+    <tr>
+      <td><span class="online-dot ${a.isOnline ? 'on' : 'off'}"></span>${a.isOnline ? 'Online' : 'Offline'}</td>
+      <td class="agent-name">${escHtml(a.name)}</td>
+      <td>${[...a.capabilities].map(c => `<span class="capability-tag">${escHtml(c)}</span>`).join('')}</td>
+      <td>
+        <span class="trust-bar"><span class="trust-fill" style="width:${a.trustScore}%"></span></span>
+        <span style="font-size:12px;font-family:var(--font-mono);color:var(--text-muted)">${a.trustScore}</span>
+      </td>
+      <td>${a.serviceCount}</td>
+      <td>${a.completedJobs}</td>
+    </tr>
+  `).join('');
+}
+
+function renderActivity(services) {
+  const feed = document.getElementById('activity-feed');
+  const items = services
+    .sort((a, b) => b.listedAt - a.listedAt)
+    .slice(0, 10)
+    .map(s => `
+      <li class="activity-item">
+        <div class="activity-icon service">&#9889;</div>
+        <div>
+          <div class="activity-text"><strong>${escHtml(s.agent?.name || 'Unknown')}</strong> listed <strong>${escHtml(s.capability)}</strong> at ${s.pricePerCall} ETH on ${CHAIN_NAMES[s.chainId] || 'Chain ' + s.chainId}</div>
+          <div class="activity-time">${timeAgo(s.listedAt)}</div>
+        </div>
+      </li>
+    `);
+  feed.innerHTML = items.length ? items.join('') : '<li class="empty">No activity yet</li>';
+}
+
+function escHtml(str) {
+  const d = document.createElement('div');
+  d.textContent = str;
+  return d.innerHTML;
+}
+
+// Filter buttons
+document.querySelectorAll('.filter-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const filter = btn.dataset.filter;
+    if (filter === 'all') {
+      renderServices(allServices);
+    } else {
+      renderServices(allServices.filter(s => s.capability === filter));
+    }
+  });
+});
+
+// Search
+document.getElementById('agent-search').addEventListener('input', (e) => {
+  const q = e.target.value.toLowerCase();
+  const filtered = allServices.filter(s =>
+    (s.agent?.name || '').toLowerCase().includes(q) ||
+    s.capability.toLowerCase().includes(q) ||
+    s.description.toLowerCase().includes(q)
+  );
+  renderServices(filtered);
+  renderAgentsFromServices(filtered);
+});
+
+// Init
+fetchHealth();
+fetchServices();
+
+// Auto-refresh every 30s
+setInterval(() => {
+  fetchHealth();
+  fetchServices();
+}, 30000);
+</script>
+
+</body>
+</html>
