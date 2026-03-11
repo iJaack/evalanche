@@ -64,10 +64,8 @@
     "@avalabs/core-wallets-sdk": "^3.0.2",
     "@dydxprotocol/v4-client-js": "^3.6.0",
     "big.js": "^7.0.1",
+    "better-sqlite3": "^12.6.2",
     "ethers": "^6.13.0"
-  },
-  "optionalDependencies": {
-    "better-sqlite3": "^12.6.2"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
