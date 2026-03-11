@@ -9,8 +9,8 @@ export default defineConfig([
     sourcemap: true,
     clean: true,
     target: 'node18',
-    // Keep Avalanche deps external — they're lazy-loaded at runtime
-    external: ['@avalabs/core-wallets-sdk', '@avalabs/avalanchejs'],
+    // Keep Avalanche deps + native modules external — resolved at runtime
+    external: ['@avalabs/core-wallets-sdk', '@avalabs/avalanchejs', 'better-sqlite3'],
   },
   {
     entry: ['src/mcp/cli.ts'],
