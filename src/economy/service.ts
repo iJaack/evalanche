@@ -220,8 +220,10 @@ export class AgentServiceHost {
         return { valid: false, reason: `Wrong chain: expected ${endpoint.chainId}, got ${payload.chainId}` };
       }
 
-      // Check payment amount is sufficient
-      if (!payload.amount || parseFloat(payload.amount) < parseFloat(endpoint.price)) {
+      // Check payment amount is sufficient (reject NaN / non-numeric values)
+      const paidAmount = Number(payload.amount);
+      const requiredAmount = Number(endpoint.price);
+      if (!Number.isFinite(paidAmount) || !Number.isFinite(requiredAmount) || paidAmount < requiredAmount) {
         return { valid: false, reason: `Insufficient payment: expected ${endpoint.price} ${endpoint.currency}, got ${payload.amount ?? '0'}` };
       }
 

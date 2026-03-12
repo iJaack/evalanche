@@ -381,12 +381,18 @@ export class MarketplaceDB {
     if (updates.status === 'completed' && !wasAlreadyCompleted) {
       const job = this.getJob(jobId);
       if (job) {
+        // Use BigInt-safe string addition to avoid SQLite INTEGER overflow on wei values
+        const agent = this.getAgent(job.agentId);
+        const currentVolume = BigInt(agent?.totalVolume ?? '0');
+        const addedVolume = BigInt(job.agreedPrice || '0');
+        const newVolume = (currentVolume + addedVolume).toString();
+
         this.db.prepare(`
           UPDATE agents SET
             completed_jobs = completed_jobs + 1,
-            total_volume = CAST(CAST(total_volume AS INTEGER) + CAST(? AS INTEGER) AS TEXT)
+            total_volume = ?
           WHERE agent_id = ?
-        `).run(job.agreedPrice, job.agentId);
+        `).run(newVolume, job.agentId);
         this.updateTrustScore(job.agentId);
       }
     }
@@ -423,7 +429,13 @@ export class MarketplaceDB {
     const jobs = this.db.prepare('SELECT COUNT(*) as count FROM jobs WHERE status = ?').get('completed') as { count: number };
     const online = this.db.prepare('SELECT COUNT(*) as count FROM agents WHERE is_online = 1').get() as { count: number };
 
-    const volumeRow = this.db.prepare('SELECT COALESCE(SUM(CAST(agreed_price AS INTEGER)), 0) as total FROM jobs WHERE status = ?').get('completed') as { total: number };
+    // Sum volumes using BigInt in JS to avoid SQLite INTEGER overflow on wei values
+    const priceRows = this.db.prepare('SELECT agreed_price FROM jobs WHERE status = ?').all('completed') as Array<{ agreed_price: string }>;
+    let totalVolume = BigInt(0);
+    for (const row of priceRows) {
+      try { totalVolume += BigInt(row.agreed_price || '0'); } catch { /* skip invalid */ }
+    }
+    const volumeRow = { total: totalVolume.toString() };
 
     const topCaps = this.db.prepare(`
       SELECT s.capability, COUNT(j.id) as job_count

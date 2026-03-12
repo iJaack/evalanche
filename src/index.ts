@@ -84,6 +84,7 @@ export {
   AgentServiceHost,
   NegotiationClient,
   SettlementClient,
+  EscrowClient,
   AgentMemory,
 } from './economy';
 export type {
@@ -100,6 +101,10 @@ export type {
   SimulationResult,
   Proposal,
   ProposalStatus,
+  EscrowInfo,
+  EscrowStatus,
+  EscrowDepositResult,
+  EscrowTxResult,
   InteractionRecord,
   InteractionType,
   AgentRelationship,
