@@ -111,6 +111,18 @@ export type {
   MemoryQuery,
 } from './economy';
 
+// Interop Layer (v1.1.0)
+export { InteropIdentityResolver } from './interop';
+export type {
+  AgentRegistration,
+  AgentServiceEntry,
+  EndpointVerification,
+  RegistrationBinding,
+  ServiceEndpoints,
+  TransportType,
+  TrustMode,
+} from './interop';
+
 // MCP
 export { EvalancheMCPServer } from './mcp/server';
 

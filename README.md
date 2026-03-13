@@ -1,8 +1,8 @@
 # Evalanche
 
-**Multi-EVM agent wallet SDK with onchain identity (ERC-8004), payment rails (x402), cross-chain liquidity (Li.Fi bridging + DEX aggregation + DeFi Composer), gas funding (Gas.zip), and perpetual futures (dYdX v4)**
+**Multi-EVM agent wallet SDK with onchain identity (ERC-8004), full agent identity resolution, payment rails (x402), cross-chain liquidity (Li.Fi bridging + DEX aggregation + DeFi Composer), gas funding (Gas.zip), agent economy layer, and perpetual futures (dYdX v4)**
 
-Evalanche gives AI agents a **non-custodial** wallet on **any EVM chain** — Ethereum, Base, Arbitrum, Optimism, Polygon, BSC, Avalanche, and 15+ more — with built-in onchain identity, payment capabilities, cross-chain bridging, same-chain DEX swaps (31+ aggregators), and one-click DeFi operations. No browser, no popups, no human in the loop.
+Evalanche gives AI agents a **non-custodial** wallet on **any EVM chain** — Ethereum, Base, Arbitrum, Optimism, Polygon, BSC, Avalanche, and 15+ more — with built-in onchain identity, ERC-8004 full registration resolution, payment capabilities, cross-chain bridging, same-chain DEX swaps (31+ aggregators), agent economy primitives (discovery, negotiation, settlement, escrow, memory), and one-click DeFi operations. No browser, no popups, no human in the loop.
 
 ## Install
 
@@ -388,6 +388,39 @@ On-chain agent identity on Avalanche C-Chain. Requires `identity` config:
 
 > **Note:** ERC-8004 identity features only work on Avalanche C-Chain (chain ID 43114).
 
+### Interop — Full ERC-8004 Identity Resolution (v1.1.0)
+
+Resolve full agent registration files from on-chain `agentURI`, discover service endpoints, verify domain bindings, and reverse-resolve agents from wallet addresses.
+
+```typescript
+const agent = new Evalanche({ privateKey: '0x...', network: 'avalanche' });
+
+// Resolve full agent registration (services, wallet, trust modes)
+const resolver = agent.interop();
+const registration = await resolver.resolveAgent(1599);
+// → { name, description, agentWallet, services: [...], active, x402Support, supportedTrust }
+
+// Get all service endpoints
+const services = await resolver.getServiceEndpoints(1599);
+// → [{ name: 'A2A', endpoint: 'https://...' }, { name: 'MCP', endpoint: '...' }]
+
+// Get preferred transport (A2A > XMTP > MCP > web)
+const preferred = await resolver.getPreferredTransport(1599);
+// → { transport: 'A2A', endpoint: 'https://agent.example.com/a2a' }
+
+// Get agent payment wallet
+const wallet = await resolver.resolveAgentWallet(1599);
+
+// Verify endpoint domain binding
+const verification = await resolver.verifyEndpointBinding(1599, 'https://agent.example.com/api');
+// → { verified: true }
+
+// Reverse resolve: find agent ID from wallet address
+const agentId = await resolver.resolveByWallet('0x...');
+```
+
+Supports `ipfs://`, `https://`, and `data:` URI schemes for agent registration files.
+
 ## MCP Server
 
 Evalanche includes an MCP server for AI agent frameworks.
@@ -477,6 +510,11 @@ AGENT_PRIVATE_KEY=0x... evalanche-mcp --http --port 3402
 | `lifi_gas_suggestion` | Get gas suggestion for a chain |
 | `lifi_get_connections` | Discover transfer paths between chains |
 | `lifi_compose` | Cross-chain DeFi Composer (bridge + vault/stake/lend) |
+| `resolve_agent_registration` | Resolve full ERC-8004 agent registration file |
+| `get_agent_services` | List service endpoints for an agent |
+| `get_agent_wallet` | Get agent payment wallet address |
+| `verify_agent_endpoint` | Verify endpoint domain binding |
+| `resolve_by_wallet` | Find agent ID from wallet address |
 
 ### Environment Variables
 
@@ -583,16 +621,30 @@ AGENT_PRIVATE_KEY=0x... evalanche-mcp --http --port 3402
 - **DeFi Composer/Zaps** — one-tx cross-chain DeFi (bridge + deposit into Morpho/Aave V3/Euler/Pendle/Lido/EtherFi/etc.)
 - 11 new MCP tools (52 total), 180 tests
 
-### v0.9.0 (current)
+### v0.9.0
 - Contract interaction helpers: `approveAndCall()` and `upgradeProxy()`
 - New MCP tools: `approve_and_call`, `upgrade_proxy`
 - Gap 1 and Gap 2 marked resolved in `GAPS.md`
 - 2 new MCP tools (54 total)
 
-### v1.0.0 (planned)
-- ICM (Interchain Messaging) integration
-- Agent-to-agent payment channels
-- Hyperliquid PerpVenue implementation
+### v1.0.0
+- **Agent Economy Layer** — spending policies, discovery, negotiation, settlement, escrow, persistent memory
+- 15 new MCP tools (69 total), 325 tests
+
+### v1.1.0 (current)
+- **ERC-8004 full identity resolution** — interop layer Phase 7
+- `InteropIdentityResolver`: resolve agent registration files from on-chain `agentURI`
+- Service endpoint discovery, preferred transport selection (A2A > XMTP > MCP > web)
+- Agent wallet resolution (on-chain metadata + registration file fallback)
+- Endpoint domain verification via `.well-known/agent-registration.json`
+- Reverse resolution: find agent ID from wallet address
+- Supports `ipfs://`, `https://`, `data:` URI schemes
+- 5 new MCP tools (74 total), 372 tests
+
+### v2.0 (planned)
+- A2A protocol support (Agent Cards, task lifecycle)
+- XMTP transport layer (wallet-bound async messaging)
+- Signed service manifests and canonical receipts
 
 ## License
 

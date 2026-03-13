@@ -815,4 +815,104 @@ describe('EvalancheMCPServer', () => {
     expect(names).toContain('get_transaction_history');
     expect(names).toContain('get_relationships');
   });
+
+  // ── Phase 7: Interop — ERC-8004 Identity Resolution MCP tools ──
+
+  it('lists all Phase 7 interop tools', async () => {
+    const res = await server.handleRequest({
+      jsonrpc: '2.0', id: 100, method: 'tools/list',
+    });
+    const names = (res.result as { tools: Array<{ name: string }> }).tools.map((t) => t.name);
+    expect(names).toContain('resolve_agent_registration');
+    expect(names).toContain('get_agent_services');
+    expect(names).toContain('get_agent_wallet');
+    expect(names).toContain('verify_agent_endpoint');
+    expect(names).toContain('resolve_by_wallet');
+  });
+
+  it('handles resolve_agent_registration', async () => {
+    const interopResolver = (server as unknown as { interopResolver: { resolveAgent: ReturnType<typeof vi.fn> } }).interopResolver;
+    interopResolver.resolveAgent = vi.fn().mockResolvedValue({
+      name: 'TestAgent',
+      agentWallet: '0xWallet',
+      services: [{ name: 'A2A', endpoint: 'https://example.com/a2a' }],
+      active: true,
+    });
+
+    const res = await server.handleRequest({
+      jsonrpc: '2.0', id: 101, method: 'tools/call',
+      params: { name: 'resolve_agent_registration', arguments: { agentId: '1599' } },
+    });
+    const parsed = JSON.parse((res.result as { content: Array<{ text: string }> }).content[0].text);
+    expect(parsed.name).toBe('TestAgent');
+    expect(parsed.services).toHaveLength(1);
+  });
+
+  it('handles get_agent_services', async () => {
+    const interopResolver = (server as unknown as { interopResolver: { getServiceEndpoints: ReturnType<typeof vi.fn> } }).interopResolver;
+    interopResolver.getServiceEndpoints = vi.fn().mockResolvedValue([
+      { name: 'A2A', endpoint: 'https://example.com/a2a' },
+      { name: 'web', endpoint: 'https://example.com' },
+    ]);
+
+    const res = await server.handleRequest({
+      jsonrpc: '2.0', id: 102, method: 'tools/call',
+      params: { name: 'get_agent_services', arguments: { agentId: '1599' } },
+    });
+    const parsed = JSON.parse((res.result as { content: Array<{ text: string }> }).content[0].text);
+    expect(parsed.count).toBe(2);
+    expect(parsed.services[0].name).toBe('A2A');
+  });
+
+  it('handles get_agent_wallet', async () => {
+    const interopResolver = (server as unknown as { interopResolver: { resolveAgentWallet: ReturnType<typeof vi.fn> } }).interopResolver;
+    interopResolver.resolveAgentWallet = vi.fn().mockResolvedValue('0xPaymentWallet');
+
+    const res = await server.handleRequest({
+      jsonrpc: '2.0', id: 103, method: 'tools/call',
+      params: { name: 'get_agent_wallet', arguments: { agentId: '1599' } },
+    });
+    const parsed = JSON.parse((res.result as { content: Array<{ text: string }> }).content[0].text);
+    expect(parsed.wallet).toBe('0xPaymentWallet');
+    expect(parsed.agentId).toBe('1599');
+  });
+
+  it('handles verify_agent_endpoint', async () => {
+    const interopResolver = (server as unknown as { interopResolver: { verifyEndpointBinding: ReturnType<typeof vi.fn> } }).interopResolver;
+    interopResolver.verifyEndpointBinding = vi.fn().mockResolvedValue({ verified: true });
+
+    const res = await server.handleRequest({
+      jsonrpc: '2.0', id: 104, method: 'tools/call',
+      params: { name: 'verify_agent_endpoint', arguments: { agentId: '1599', endpoint: 'https://example.com/api' } },
+    });
+    const parsed = JSON.parse((res.result as { content: Array<{ text: string }> }).content[0].text);
+    expect(parsed.verified).toBe(true);
+    expect(parsed.agentId).toBe('1599');
+  });
+
+  it('handles resolve_by_wallet with result', async () => {
+    const interopResolver = (server as unknown as { interopResolver: { resolveByWallet: ReturnType<typeof vi.fn> } }).interopResolver;
+    interopResolver.resolveByWallet = vi.fn().mockResolvedValue('42');
+
+    const res = await server.handleRequest({
+      jsonrpc: '2.0', id: 105, method: 'tools/call',
+      params: { name: 'resolve_by_wallet', arguments: { address: '0xSomeWallet' } },
+    });
+    const parsed = JSON.parse((res.result as { content: Array<{ text: string }> }).content[0].text);
+    expect(parsed.agentId).toBe('42');
+    expect(parsed.address).toBe('0xSomeWallet');
+  });
+
+  it('handles resolve_by_wallet with no result', async () => {
+    const interopResolver = (server as unknown as { interopResolver: { resolveByWallet: ReturnType<typeof vi.fn> } }).interopResolver;
+    interopResolver.resolveByWallet = vi.fn().mockResolvedValue(null);
+
+    const res = await server.handleRequest({
+      jsonrpc: '2.0', id: 106, method: 'tools/call',
+      params: { name: 'resolve_by_wallet', arguments: { address: '0xUnknown' } },
+    });
+    const parsed = JSON.parse((res.result as { content: Array<{ text: string }> }).content[0].text);
+    expect(parsed.agentId).toBeNull();
+    expect(parsed.message).toContain('No agent found');
+  });
 });

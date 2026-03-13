@@ -29,6 +29,7 @@ import type { DydxClient, PerpMarket } from './perps';
 // @avalabs/core-wallets-sdk at construction time — it has heavy native deps)
 import type { ChainAlias, TransferResult, MultiChainBalance, StakeInfo, ValidatorInfo, MinStakeAmounts } from './avalanche/types';
 import type { PlatformCLI as PlatformCLIType } from './avalanche/platform-cli';
+import type { InteropIdentityResolver as InteropResolverType } from './interop/identity';
 
 /** Configuration for the Evalanche agent */
 export interface EvalancheConfig {
@@ -79,6 +80,7 @@ export class Evalanche {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private _crossChain?: any;
   private _platformCLI?: PlatformCLIType;
+  private _interopResolver?: InteropResolverType;
   private readonly _mnemonic?: string;
   private readonly _multiVM: boolean;
   private _multiVMInitialized = false;
@@ -560,6 +562,21 @@ export class Evalanche {
     }
 
     return this._dydxClient;
+  }
+
+  /**
+   * Get or create the interop identity resolver (lazy-initialized).
+   * Resolves full ERC-8004 registration files, service endpoints,
+   * wallet addresses, and endpoint bindings.
+   */
+  interop(): InteropResolverType {
+    if (!this._interopResolver) {
+      // Lazy import to avoid loading interop module at construction time
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { InteropIdentityResolver } = require('./interop/identity') as typeof import('./interop/identity');
+      this._interopResolver = new InteropIdentityResolver(this.provider);
+    }
+    return this._interopResolver;
   }
 
   /**

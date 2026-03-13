@@ -12,6 +12,7 @@ import { AgentServiceHost } from '../economy/service';
 import { NegotiationClient } from '../economy/negotiation';
 import { SettlementClient } from '../economy/settlement';
 import { AgentMemory } from '../economy/memory';
+import { InteropIdentityResolver } from '../interop/identity';
 import { createServer, type IncomingMessage, type ServerResponse } from 'http';
 
 /** MCP tool definition */
@@ -869,6 +870,68 @@ const TOOLS: MCPTool[] = [
       },
     },
   },
+  // ── Phase 7: Interop — ERC-8004 Identity Resolution ──
+  {
+    name: 'resolve_agent_registration',
+    description: 'Resolve the full ERC-8004 agent registration file from on-chain agentURI. Returns services, wallet, trust modes, and activity status.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        agentId: { type: 'string', description: 'Agent token ID to resolve' },
+        agentRegistry: { type: 'string', description: 'Optional registry contract address override' },
+      },
+      required: ['agentId'],
+    },
+  },
+  {
+    name: 'get_agent_services',
+    description: 'List all service endpoints advertised by an agent in their ERC-8004 registration file.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        agentId: { type: 'string', description: 'Agent token ID' },
+        agentRegistry: { type: 'string', description: 'Optional registry contract address override' },
+      },
+      required: ['agentId'],
+    },
+  },
+  {
+    name: 'get_agent_wallet',
+    description: 'Get the payment wallet address for an agent from on-chain metadata or registration file.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        agentId: { type: 'string', description: 'Agent token ID' },
+        agentRegistry: { type: 'string', description: 'Optional registry contract address override' },
+      },
+      required: ['agentId'],
+    },
+  },
+  {
+    name: 'verify_agent_endpoint',
+    description: 'Verify that an agent endpoint has a valid domain binding via .well-known/agent-registration.json.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        agentId: { type: 'string', description: 'Agent token ID' },
+        endpoint: { type: 'string', description: 'Endpoint URL to verify' },
+        agentRegistry: { type: 'string', description: 'Optional registry contract address override' },
+      },
+      required: ['agentId', 'endpoint'],
+    },
+  },
+  {
+    name: 'resolve_by_wallet',
+    description: 'Find an agent ID from a wallet address by querying on-chain Transfer events.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        address: { type: 'string', description: 'Wallet address to look up' },
+        agentRegistry: { type: 'string', description: 'Optional registry contract address override' },
+      },
+      required: ['address'],
+    },
+  },
 ];
 
 /**
@@ -884,6 +947,7 @@ export class EvalancheMCPServer {
   private negotiation: NegotiationClient;
   private settlement: SettlementClient;
   private memory: AgentMemory;
+  private interopResolver: InteropIdentityResolver;
 
   constructor(config: EvalancheConfig) {
     this.config = config;
@@ -893,6 +957,7 @@ export class EvalancheMCPServer {
     this.negotiation = new NegotiationClient();
     this.settlement = new SettlementClient(this.agent.wallet, this.negotiation);
     this.memory = new AgentMemory(); // in-memory by default; can be swapped for file-backed
+    this.interopResolver = new InteropIdentityResolver(this.agent.provider);
   }
 
   /** Handle a JSON-RPC request and return a response */
@@ -1721,6 +1786,56 @@ export class EvalancheMCPServer {
             const all = this.memory.getAllRelationships();
             result = { relationships: all, count: all.length };
           }
+          break;
+        }
+
+        // ── Phase 7: Interop — ERC-8004 Identity Resolution ──
+
+        case 'resolve_agent_registration': {
+          const registration = await this.interopResolver.resolveAgent(
+            args.agentId as string,
+            args.agentRegistry as string | undefined,
+          );
+          result = registration;
+          break;
+        }
+
+        case 'get_agent_services': {
+          const services = await this.interopResolver.getServiceEndpoints(
+            args.agentId as string,
+            args.agentRegistry as string | undefined,
+          );
+          result = { agentId: args.agentId, services, count: services.length };
+          break;
+        }
+
+        case 'get_agent_wallet': {
+          const wallet = await this.interopResolver.resolveAgentWallet(
+            args.agentId as string,
+            args.agentRegistry as string | undefined,
+          );
+          result = { agentId: args.agentId, wallet };
+          break;
+        }
+
+        case 'verify_agent_endpoint': {
+          const verification = await this.interopResolver.verifyEndpointBinding(
+            args.agentId as string,
+            args.endpoint as string,
+            args.agentRegistry as string | undefined,
+          );
+          result = { agentId: args.agentId, endpoint: args.endpoint, ...verification };
+          break;
+        }
+
+        case 'resolve_by_wallet': {
+          const agentId = await this.interopResolver.resolveByWallet(
+            args.address as string,
+            args.agentRegistry as string | undefined,
+          );
+          result = agentId
+            ? { address: args.address, agentId }
+            : { address: args.address, agentId: null, message: 'No agent found for this address' };
           break;
         }
 
