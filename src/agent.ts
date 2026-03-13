@@ -17,6 +17,10 @@ import type { TransactionIntent, CallIntent, TransactionResult } from './wallet/
 import type { FeedbackSubmission } from './reputation/types';
 import type { PayAndFetchOptions, PayAndFetchResult } from './x402/types';
 import { EvalancheError, EvalancheErrorCode } from './utils/errors';
+import { PolicyEngine } from './economy/policies';
+import { simulateTransaction as simulate } from './economy/simulation';
+import type { SpendingPolicy, BudgetStatus, PendingTransaction } from './economy/types';
+import type { SimulationResult } from './economy/simulation';
 import { BridgeClient } from './bridge';
 import type { BridgeQuoteParams, BridgeQuote, TransferStatusParams, TransferStatus, LiFiToken, LiFiChain, LiFiTools, LiFiGasPrices, LiFiGasSuggestion, LiFiConnection } from './bridge/lifi';
 import type { GasZipParams } from './bridge/gaszip';
@@ -36,6 +40,8 @@ export interface EvalancheConfig {
   multiVM?: boolean;
   /** Override the default RPC for the selected chain */
   rpcOverride?: string;
+  /** Optional spending policy — enforces per-tx limits, budgets, and allowlists */
+  policy?: SpendingPolicy;
 }
 
 /**
@@ -58,6 +64,8 @@ export class Evalanche {
   private transactionBuilder: TransactionBuilder;
   private _bridgeClient?: BridgeClient;
   private _dydxClient?: DydxClient;
+  private _policyEngine?: PolicyEngine;
+  private readonly _chainId: number;
 
   // Multi-VM (v0.2.0) — types are `any` here because actual classes are lazy-loaded
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -181,6 +189,7 @@ export class Evalanche {
     const networkConfig = getNetworkConfig(this._networkOption);
     const rpcUrl = config.rpcOverride ?? networkConfig.rpcUrl;
     this.provider = new JsonRpcProvider(rpcUrl);
+    this._chainId = networkConfig.chainId;
 
     if (config.privateKey) {
       this.wallet = createWalletFromPrivateKey(config.privateKey, this.provider);
@@ -202,6 +211,11 @@ export class Evalanche {
     this.reputationReporter = new ReputationReporter(this.wallet);
     this.x402Client = new X402Client(this.wallet);
     this.transactionBuilder = new TransactionBuilder(this.wallet);
+
+    // Spending policy (optional)
+    if (config.policy) {
+      this._policyEngine = new PolicyEngine(config.policy);
+    }
 
     // Store mnemonic for multi-VM lazy init
     this._mnemonic = config.mnemonic;
@@ -284,20 +298,31 @@ export class Evalanche {
 
   /**
    * Send a simple transaction (value transfer or raw data).
+   * If a spending policy is set, the transaction is checked (and optionally simulated) before sending.
    * @param intent - Transaction intent with to address and human-readable value
    * @returns Transaction hash and receipt
    */
   async send(intent: TransactionIntent): Promise<TransactionResult> {
-    return this.transactionBuilder.send(intent);
+    await this._enforcePolicy(intent);
+    const result = await this.transactionBuilder.send(intent);
+    this._recordSpend(intent.to, intent.value ? parseEther(intent.value).toString() : '0', result.hash);
+    return result;
   }
 
   /**
    * Call a contract method (state-changing transaction).
+   * If a spending policy is set, the transaction is checked before sending.
    * @param intent - Contract call intent with ABI, method name, and args
    * @returns Transaction hash and receipt
    */
   async call(intent: CallIntent): Promise<TransactionResult> {
-    return this.transactionBuilder.call(intent);
+    await this._enforcePolicy({
+      to: intent.contract,
+      value: intent.value ? parseEther(intent.value).toString() : undefined,
+    });
+    const result = await this.transactionBuilder.call(intent);
+    this._recordSpend(intent.contract, intent.value ? parseEther(intent.value).toString() : '0', result.hash);
+    return result;
   }
 
   /**
@@ -327,6 +352,102 @@ export class Evalanche {
    */
   async signMessage(message: string): Promise<string> {
     return this.wallet.signMessage(message);
+  }
+
+  // ── Policy & Simulation (v1.0.0) ─────────────────────────
+
+  /**
+   * Get the current spending policy, or null if none is set.
+   */
+  getPolicy(): SpendingPolicy | null {
+    return this._policyEngine?.policy ?? null;
+  }
+
+  /**
+   * Set or replace the spending policy. Pass null to remove.
+   * Spend history is preserved when replacing policies.
+   */
+  setPolicy(policy: SpendingPolicy | null): void {
+    if (policy) {
+      if (this._policyEngine) {
+        this._policyEngine.updatePolicy(policy);
+      } else {
+        this._policyEngine = new PolicyEngine(policy);
+      }
+    } else {
+      this._policyEngine = undefined;
+    }
+  }
+
+  /**
+   * Get the current budget status (remaining hourly/daily budget, tx counts).
+   * Returns null if no policy is set.
+   */
+  getBudgetStatus(): BudgetStatus | null {
+    return this._policyEngine?.getBudgetStatus() ?? null;
+  }
+
+  /**
+   * Simulate a transaction without broadcasting it.
+   * Runs eth_call to detect reverts and estimate gas.
+   * @param intent - Transaction to simulate
+   * @returns Simulation result with success/failure, gas estimate, and revert reason
+   */
+  async simulateTransaction(intent: TransactionIntent): Promise<SimulationResult> {
+    const pending: PendingTransaction = {
+      to: intent.to,
+      value: intent.value ? parseEther(intent.value).toString() : undefined,
+      data: intent.data,
+      chainId: this._chainId,
+      gasLimit: intent.gasLimit,
+    };
+    return simulate(this.provider, pending);
+  }
+
+  /**
+   * Enforce the spending policy on a transaction intent.
+   * If simulateBeforeSend is enabled, also runs a simulation first.
+   * @internal
+   */
+  private async _enforcePolicy(intent: { to: string; value?: string; data?: string; gasLimit?: bigint }): Promise<void> {
+    if (!this._policyEngine) return;
+
+    const pending: PendingTransaction = {
+      to: intent.to,
+      value: intent.value ?? '0',
+      data: intent.data,
+      chainId: this._chainId,
+      gasLimit: intent.gasLimit,
+    };
+
+    // Optional pre-send simulation
+    if (this._policyEngine.policy.simulateBeforeSend) {
+      const simResult = await simulate(this.provider, pending);
+      if (!simResult.success) {
+        throw new EvalancheError(
+          `Transaction simulation reverted: ${simResult.revertReason ?? 'unknown reason'}`,
+          EvalancheErrorCode.SIMULATION_FAILED,
+        );
+      }
+    }
+
+    // Enforce spending limits / allowlists
+    this._policyEngine.enforce(pending);
+  }
+
+  /**
+   * Record a spend after a transaction is confirmed.
+   * @internal
+   */
+  private _recordSpend(to: string, amount: string, txHash: string): void {
+    if (!this._policyEngine) return;
+    this._policyEngine.recordSpend({
+      txHash,
+      amount,
+      to,
+      chainId: this._chainId,
+      timestamp: Date.now(),
+    });
   }
 
   // ── Bridge Methods (v0.4.0) ─────────────────────────────

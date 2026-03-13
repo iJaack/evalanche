@@ -1,8 +1,13 @@
 import { randomBytes } from 'crypto';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { Wallet, HDNodeWallet } from 'ethers';
 import { readFile, writeFile, mkdir, access, chmod } from 'fs/promises';
 import { dirname, join } from 'path';
 import { EvalancheError, EvalancheErrorCode } from '../utils/errors';
+
+const execFileAsync = promisify(execFile);
+const IS_WINDOWS = process.platform === 'win32';
 
 /** Options for the agent keystore */
 export interface KeystoreOptions {
@@ -151,12 +156,34 @@ export class AgentKeystore {
     // Generate machine-local entropy for password derivation
     const entropy = randomBytes(32).toString('hex');
     await writeFile(this.entropyPath, entropy, { mode: 0o600 });
-    await chmod(this.entropyPath, 0o600);
 
     const password = this.derivePassword(entropy);
     const encrypted = await wallet.encrypt(password);
     await writeFile(this.keystorePath, encrypted, { mode: 0o600 });
-    await chmod(this.keystorePath, 0o600);
+
+    // Restrict file access to owner only
+    await AgentKeystore.restrictFilePermissions(this.entropyPath);
+    await AgentKeystore.restrictFilePermissions(this.keystorePath);
+  }
+
+  /**
+   * Restrict a file to owner-only read/write.
+   * On Unix: chmod 600. On Windows: icacls to remove inherited permissions
+   * and grant access only to the current user.
+   */
+  static async restrictFilePermissions(filePath: string): Promise<void> {
+    if (IS_WINDOWS) {
+      const username = process.env.USERNAME ?? process.env.USER ?? '';
+      if (!username) return; // Can't determine user — skip silently
+      try {
+        // Remove all inherited permissions, then grant only current user full control
+        await execFileAsync('icacls', [filePath, '/inheritance:r', '/grant:r', `${username}:(R,W)`, '/q']);
+      } catch {
+        // Best-effort: icacls may not be available in all Windows environments
+      }
+    } else {
+      await chmod(filePath, 0o600);
+    }
   }
 
   /**

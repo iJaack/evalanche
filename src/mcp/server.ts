@@ -7,6 +7,11 @@ import { EvalancheError, EvalancheErrorCode } from '../utils/errors';
 import { getNetworkConfig } from '../utils/networks';
 import { getAllChains } from '../utils/chains';
 import { NATIVE_TOKEN } from '../bridge/lifi';
+import { DiscoveryClient } from '../economy/discovery';
+import { AgentServiceHost } from '../economy/service';
+import { NegotiationClient } from '../economy/negotiation';
+import { SettlementClient } from '../economy/settlement';
+import { AgentMemory } from '../economy/memory';
 import { createServer, type IncomingMessage, type ServerResponse } from 'http';
 
 /** MCP tool definition */
@@ -662,6 +667,208 @@ const TOOLS: MCPTool[] = [
       required: ['to', 'amountAvax'],
     },
   },
+  // Economy tools (v1.0.0)
+  {
+    name: 'get_budget',
+    description: 'Get the current spending budget status: remaining hourly/daily limits, transaction counts, and active policy. Returns null if no policy is set.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'set_policy',
+    description: 'Set or update the agent spending policy. Controls per-transaction limits, hourly/daily budgets, contract allowlists, and chain restrictions. Pass an empty object to remove the policy.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        maxPerTransaction: { type: 'string', description: 'Max native token value per tx in wei (e.g. "100000000000000000" = 0.1 ETH)' },
+        maxPerHour: { type: 'string', description: 'Max total spend in wei within a rolling 1-hour window' },
+        maxPerDay: { type: 'string', description: 'Max total spend in wei within a rolling 24-hour window' },
+        allowlistedChains: { type: 'array', items: { type: 'number' }, description: 'Array of permitted chain IDs (e.g. [8453, 43114])' },
+        allowlistedContracts: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              address: { type: 'string' },
+              selectors: { type: 'array', items: { type: 'string' } },
+            },
+            required: ['address'],
+          },
+          description: 'Array of permitted contract addresses with optional function selectors',
+        },
+        simulateBeforeSend: { type: 'boolean', description: 'If true, simulate every tx before sending (default: false)' },
+        dryRun: { type: 'boolean', description: 'If true, log violations but do not block (default: false)' },
+      },
+    },
+  },
+  {
+    name: 'simulate_tx',
+    description: 'Simulate a transaction without broadcasting it. Runs eth_call to detect reverts and estimate gas before spending anything.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        to: { type: 'string', description: 'Target address' },
+        value: { type: 'string', description: 'Value in human-readable units (e.g. "0.1" for 0.1 ETH/AVAX)' },
+        data: { type: 'string', description: 'Calldata hex (0x...)' },
+      },
+      required: ['to'],
+    },
+  },
+  {
+    name: 'register_service',
+    description: 'Register a service this agent offers, making it discoverable by other agents. Services are identified by capability name.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        capability: { type: 'string', description: 'Service name (e.g. "code-audit", "price-feed", "token-analysis")' },
+        description: { type: 'string', description: 'Short description of what the service does' },
+        endpoint: { type: 'string', description: 'x402-compatible URL where the service is available' },
+        pricePerCall: { type: 'string', description: 'Price per call in wei (native token)' },
+        chainId: { type: 'number', description: 'Chain ID where payments are accepted' },
+        tags: { type: 'array', items: { type: 'string' }, description: 'Optional tags for search filtering' },
+      },
+      required: ['capability', 'description', 'endpoint', 'pricePerCall', 'chainId'],
+    },
+  },
+  {
+    name: 'discover_agents',
+    description: 'Search for agents offering services matching your criteria. Filter by capability, reputation, price, chain, or tags.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        capability: { type: 'string', description: 'Capability to search for (substring match, e.g. "audit")' },
+        minReputation: { type: 'number', description: 'Minimum reputation score (0-100)' },
+        maxPrice: { type: 'string', description: 'Maximum price per call in wei' },
+        chainIds: { type: 'array', items: { type: 'number' }, description: 'Only return services on these chains' },
+        tags: { type: 'array', items: { type: 'string' }, description: 'Required tags (all must match)' },
+        limit: { type: 'number', description: 'Max results (default: 10)' },
+      },
+    },
+  },
+  {
+    name: 'resolve_agent_profile',
+    description: 'Get the full profile of an agent: on-chain ERC-8004 identity, reputation score, trust level, and registered services.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        agentId: { type: 'string', description: 'ERC-8004 agent ID to resolve' },
+      },
+      required: ['agentId'],
+    },
+  },
+  {
+    name: 'serve_endpoint',
+    description: 'Register a payment-gated endpoint that other agents can pay to use. This agent earns revenue when callers pay the x402 fee.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'URL path (e.g. "/audit", "/price-feed")' },
+        price: { type: 'string', description: 'Price per call in human-readable units (e.g. "0.01")' },
+        currency: { type: 'string', description: 'Currency symbol (e.g. "ETH", "AVAX")' },
+        chainId: { type: 'number', description: 'Chain ID where payments are accepted' },
+        responseTemplate: { type: 'string', description: 'Static response content to serve (for simple endpoints)' },
+      },
+      required: ['path', 'price', 'currency', 'chainId'],
+    },
+  },
+  {
+    name: 'get_revenue',
+    description: 'Get revenue summary: total paid requests received and breakdown by endpoint.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'list_services',
+    description: 'List all active payment-gated endpoints this agent is serving.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  // ── Phase 4: Negotiation & Settlement ──
+  {
+    name: 'negotiate_task',
+    description: 'Create, accept, counter, or reject a task negotiation proposal between agents.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', description: 'Action to perform: "propose", "accept", "counter", "reject"' },
+        proposalId: { type: 'string', description: 'Proposal ID (required for accept/counter/reject)' },
+        fromAgentId: { type: 'string', description: 'Proposing agent ID (required for propose)' },
+        toAgentId: { type: 'string', description: 'Target agent ID (required for propose)' },
+        task: { type: 'string', description: 'Task description (required for propose)' },
+        price: { type: 'string', description: 'Proposed price in wei (required for propose)' },
+        chainId: { type: 'number', description: 'Chain ID for settlement (required for propose)' },
+        counterPrice: { type: 'string', description: 'Counter-offer price in wei (required for counter)' },
+        ttlMs: { type: 'number', description: 'Time-to-live in milliseconds (optional, default 1 hour)' },
+      },
+      required: ['action'],
+    },
+  },
+  {
+    name: 'settle_payment',
+    description: 'Settle an accepted negotiation by sending payment and optionally submitting a reputation score.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        proposalId: { type: 'string', description: 'The accepted proposal to settle' },
+        reputationScore: { type: 'number', description: 'Reputation score (0-100) to submit for the counterparty' },
+      },
+      required: ['proposalId'],
+    },
+  },
+  {
+    name: 'get_agreements',
+    description: 'List negotiation proposals, optionally filtered by status or agent.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        status: { type: 'string', description: 'Filter by status: pending, accepted, countered, rejected, expired, settled' },
+        agentId: { type: 'string', description: 'Filter by agent ID (matches from or to)' },
+        proposalId: { type: 'string', description: 'Get a single proposal by ID' },
+      },
+    },
+  },
+  // ── Phase 5: Persistent Memory ──
+  {
+    name: 'record_interaction',
+    description: 'Record an agent interaction (payment, negotiation, service call, reputation) in persistent memory.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        type: { type: 'string', description: 'Interaction type: payment_sent, payment_received, negotiation_proposed, negotiation_accepted, negotiation_rejected, negotiation_countered, service_called, reputation_submitted' },
+        counterpartyId: { type: 'string', description: 'The other agent involved' },
+        amount: { type: 'string', description: 'Amount in wei (for payments)' },
+        chainId: { type: 'number', description: 'Chain ID where this occurred' },
+        txHash: { type: 'string', description: 'Transaction hash (for on-chain events)' },
+        reputationScore: { type: 'number', description: 'Reputation score given (0-100)' },
+        metadata: { type: 'object', description: 'Free-form metadata (task, capability, etc.)' },
+      },
+      required: ['type', 'counterpartyId'],
+    },
+  },
+  {
+    name: 'get_transaction_history',
+    description: 'Query past agent interactions with optional filters (type, counterparty, time range, chain).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        type: { type: 'string', description: 'Filter by interaction type' },
+        counterpartyId: { type: 'string', description: 'Filter by counterparty agent ID' },
+        since: { type: 'number', description: 'Only interactions after this Unix timestamp (ms)' },
+        until: { type: 'number', description: 'Only interactions before this Unix timestamp (ms)' },
+        chainId: { type: 'number', description: 'Only interactions on this chain' },
+        limit: { type: 'number', description: 'Maximum results (default: 50)' },
+      },
+    },
+  },
+  {
+    name: 'get_relationships',
+    description: 'Get aggregated relationship data for all known agents or a specific agent, including trust scores.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        agentId: { type: 'string', description: 'Get relationship with a specific agent. Omit for all relationships.' },
+        capability: { type: 'string', description: 'Get preferred agents for a capability, ranked by trust score.' },
+        limit: { type: 'number', description: 'Max results when querying by capability (default: 5)' },
+      },
+    },
+  },
 ];
 
 /**
@@ -672,10 +879,20 @@ const TOOLS: MCPTool[] = [
 export class EvalancheMCPServer {
   private agent: Evalanche;
   private config: EvalancheConfig;
+  private discovery: DiscoveryClient;
+  private serviceHost: AgentServiceHost;
+  private negotiation: NegotiationClient;
+  private settlement: SettlementClient;
+  private memory: AgentMemory;
 
   constructor(config: EvalancheConfig) {
     this.config = config;
     this.agent = new Evalanche(config);
+    this.discovery = new DiscoveryClient(this.agent.provider);
+    this.serviceHost = new AgentServiceHost(this.agent.address);
+    this.negotiation = new NegotiationClient();
+    this.settlement = new SettlementClient(this.agent.wallet, this.negotiation);
+    this.memory = new AgentMemory(); // in-memory by default; can be swapped for file-backed
   }
 
   /** Handle a JSON-RPC request and return a response */
@@ -1298,6 +1515,212 @@ export class EvalancheMCPServer {
             amountAvax: args.amountAvax as number,
           });
           result = { txId: sendResult.txId, output: sendResult.stdout };
+          break;
+        }
+
+        // Economy tools (v1.0.0)
+        case 'get_budget':
+          result = this.agent.getBudgetStatus() ?? { message: 'No spending policy set' };
+          break;
+
+        case 'set_policy': {
+          // If no meaningful fields are passed, remove the policy
+          const hasFields = Object.keys(args).length > 0;
+          if (hasFields) {
+            this.agent.setPolicy({
+              maxPerTransaction: args.maxPerTransaction as string | undefined,
+              maxPerHour: args.maxPerHour as string | undefined,
+              maxPerDay: args.maxPerDay as string | undefined,
+              allowlistedChains: args.allowlistedChains as number[] | undefined,
+              allowlistedContracts: args.allowlistedContracts as Array<{ address: string; selectors?: string[] }> | undefined,
+              simulateBeforeSend: args.simulateBeforeSend as boolean | undefined,
+              dryRun: args.dryRun as boolean | undefined,
+            });
+            result = { success: true, policy: this.agent.getPolicy() };
+          } else {
+            this.agent.setPolicy(null);
+            result = { success: true, message: 'Policy removed' };
+          }
+          break;
+        }
+
+        case 'simulate_tx': {
+          const simResult = await this.agent.simulateTransaction({
+            to: args.to as string,
+            value: args.value as string | undefined,
+            data: args.data as string | undefined,
+          });
+          result = simResult;
+          break;
+        }
+
+        case 'register_service': {
+          const agentIdentityConfig = this.config.identity;
+          const agentId = agentIdentityConfig?.agentId ?? this.agent.address;
+          this.discovery.register({
+            agentId,
+            capability: args.capability as string,
+            description: args.description as string,
+            endpoint: args.endpoint as string,
+            pricePerCall: args.pricePerCall as string,
+            chainId: args.chainId as number,
+            tags: args.tags as string[] | undefined,
+            registeredAt: Date.now(),
+          });
+          result = { success: true, agentId, capability: args.capability };
+          break;
+        }
+
+        case 'discover_agents': {
+          const services = await this.discovery.search({
+            capability: args.capability as string | undefined,
+            minReputation: args.minReputation as number | undefined,
+            maxPrice: args.maxPrice as string | undefined,
+            chainIds: args.chainIds as number[] | undefined,
+            tags: args.tags as string[] | undefined,
+            limit: args.limit as number | undefined,
+          });
+          result = { count: services.length, services };
+          break;
+        }
+
+        case 'resolve_agent_profile': {
+          const profile = await this.discovery.resolve(args.agentId as string);
+          result = profile;
+          break;
+        }
+
+        case 'serve_endpoint': {
+          const responseContent = (args.responseTemplate as string) ?? JSON.stringify({ status: 'ok' });
+          this.serviceHost.serve({
+            path: args.path as string,
+            price: args.price as string,
+            currency: args.currency as string,
+            chainId: args.chainId as number,
+            handler: async () => responseContent,
+          });
+          result = { success: true, path: args.path, price: args.price, currency: args.currency };
+          break;
+        }
+
+        case 'get_revenue':
+          result = this.serviceHost.getRevenue();
+          break;
+
+        case 'list_services':
+          result = { endpoints: this.serviceHost.listEndpoints(), count: this.serviceHost.listEndpoints().length };
+          break;
+
+        // ── Phase 4: Negotiation & Settlement ──
+
+        case 'negotiate_task': {
+          const action = args.action as string;
+          switch (action) {
+            case 'propose': {
+              const proposalId = this.negotiation.propose({
+                fromAgentId: args.fromAgentId as string,
+                toAgentId: args.toAgentId as string,
+                task: args.task as string,
+                price: args.price as string,
+                chainId: args.chainId as number,
+                ttlMs: args.ttlMs as number | undefined,
+              });
+              result = { proposalId, status: 'pending', message: 'Proposal created' };
+              break;
+            }
+            case 'accept': {
+              const proposal = this.negotiation.accept(args.proposalId as string);
+              result = { proposalId: args.proposalId, status: proposal.status, agreedPrice: this.negotiation.getAgreedPrice(args.proposalId as string) };
+              break;
+            }
+            case 'counter': {
+              const proposal = this.negotiation.counter(args.proposalId as string, args.counterPrice as string);
+              result = { proposalId: args.proposalId, status: proposal.status, counterPrice: proposal.counterPrice };
+              break;
+            }
+            case 'reject': {
+              const proposal = this.negotiation.reject(args.proposalId as string);
+              result = { proposalId: args.proposalId, status: proposal.status };
+              break;
+            }
+            default:
+              throw new EvalancheError(`Unknown negotiate action: ${action}. Use propose, accept, counter, or reject.`, EvalancheErrorCode.NEGOTIATION_ERROR);
+          }
+          break;
+        }
+
+        case 'settle_payment': {
+          const settlement = await this.settlement.settle({
+            proposalId: args.proposalId as string,
+            reputationScore: (args.reputationScore as number) ?? 50,
+          });
+          result = {
+            proposalId: args.proposalId,
+            status: settlement.proposal.status,
+            paidAmount: settlement.paidAmount,
+            paymentTxHash: settlement.paymentTxHash,
+            reputationTxHash: settlement.reputationTxHash,
+          };
+          break;
+        }
+
+        case 'get_agreements': {
+          if (args.proposalId) {
+            const proposal = this.negotiation.get(args.proposalId as string);
+            result = proposal ?? { error: 'Proposal not found' };
+          } else {
+            const list = this.negotiation.list({
+              status: args.status as 'pending' | 'accepted' | 'countered' | 'rejected' | 'settled' | 'expired' | undefined,
+              agentId: args.agentId as string | undefined,
+            });
+            result = { proposals: list, count: list.length };
+          }
+          break;
+        }
+
+        // ── Phase 5: Persistent Memory ──
+
+        case 'record_interaction': {
+          const id = this.memory.record({
+            type: args.type as Parameters<AgentMemory['record']>[0]['type'],
+            counterpartyId: args.counterpartyId as string,
+            amount: args.amount as string | undefined,
+            chainId: args.chainId as number | undefined,
+            txHash: args.txHash as string | undefined,
+            reputationScore: args.reputationScore as number | undefined,
+            metadata: args.metadata as Record<string, unknown> | undefined,
+          });
+          result = { interactionId: id, recorded: true };
+          break;
+        }
+
+        case 'get_transaction_history': {
+          const interactions = this.memory.query({
+            type: args.type as Parameters<AgentMemory['record']>[0]['type'] | undefined,
+            counterpartyId: args.counterpartyId as string | undefined,
+            since: args.since as number | undefined,
+            until: args.until as number | undefined,
+            chainId: args.chainId as number | undefined,
+            limit: args.limit as number | undefined,
+          });
+          result = { interactions, count: interactions.length };
+          break;
+        }
+
+        case 'get_relationships': {
+          if (args.capability) {
+            const preferred = this.memory.getPreferredAgents(
+              args.capability as string,
+              args.limit as number | undefined,
+            );
+            result = { preferredAgents: preferred, count: preferred.length };
+          } else if (args.agentId) {
+            const rel = this.memory.getRelationship(args.agentId as string);
+            result = rel ?? { agentId: args.agentId, error: 'No interactions found' };
+          } else {
+            const all = this.memory.getAllRelationships();
+            result = { relationships: all, count: all.length };
+          }
           break;
         }
 

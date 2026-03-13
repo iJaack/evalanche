@@ -78,17 +78,37 @@ describe('AgentKeystore', () => {
     await expect(access(join(tempDir, 'myagent.json'))).resolves.toBeUndefined();
   });
 
-  it('should set restrictive file permissions (0o600)', async () => {
+  it('should set restrictive file permissions', async () => {
     const store = new AgentKeystore({ dir: tempDir });
     await store.init();
 
-    const { stat } = await import('fs/promises');
-    const keystoreStat = await stat(join(tempDir, 'agent.json'));
-    const entropyStat = await stat(join(tempDir, '.agent.json.entropy'));
+    const isWindows = process.platform === 'win32';
 
-    // Check owner-only read/write (0o600 = 33152 in decimal, mode & 0o777 = 0o600)
-    expect(keystoreStat.mode & 0o777).toBe(0o600);
-    expect(entropyStat.mode & 0o777).toBe(0o600);
+    if (isWindows) {
+      // On Windows, Unix mode bits are not meaningful.
+      // Verify that icacls was applied by checking the ACL output:
+      // only the current user should have access.
+      const { execFile } = await import('child_process');
+      const { promisify } = await import('util');
+      const execFileAsync = promisify(execFile);
+      const username = process.env.USERNAME ?? '';
+
+      for (const file of ['agent.json', '.agent.json.entropy']) {
+        const { stdout } = await execFileAsync('icacls', [join(tempDir, file)]);
+        // icacls output lists granted users — only our user should appear
+        expect(stdout).toContain(username);
+        // BUILTIN\Users or Everyone should NOT have access
+        expect(stdout).not.toMatch(/Everyone/i);
+      }
+    } else {
+      // On Unix, verify standard chmod 600
+      const { stat } = await import('fs/promises');
+      const keystoreStat = await stat(join(tempDir, 'agent.json'));
+      const entropyStat = await stat(join(tempDir, '.agent.json.entropy'));
+
+      expect(keystoreStat.mode & 0o777).toBe(0o600);
+      expect(entropyStat.mode & 0o777).toBe(0o600);
+    }
   });
 });
 
