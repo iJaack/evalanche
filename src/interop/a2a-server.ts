@@ -185,7 +185,9 @@ export class A2AServer {
   // ── HTTP Request Routing ──
 
   private async _handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    const url = req.url ?? '/';
+    // Parse pathname to strip query strings (e.g. /tasks?api_key=... → /tasks)
+    const rawUrl = req.url ?? '/';
+    const url = rawUrl.split('?')[0];
     const method = req.method ?? 'GET';
 
     // CORS preflight

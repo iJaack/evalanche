@@ -14,7 +14,7 @@ export { InteropIdentityResolver } from './identity';
 
 // A2A client
 export { A2AClient } from './a2a';
-export type { SubmitTaskOptions, TaskUpdateCallback } from './a2a';
+export type { SubmitTaskOptions, TaskUpdateCallback, AuthPlacement } from './a2a';
 
 // A2A server
 export { A2AServer } from './a2a-server';

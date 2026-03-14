@@ -31,6 +31,14 @@ import type {
   A2AArtifact,
 } from './schemas';
 
+/** Auth placement config matching A2AAuthentication from agent card */
+export interface AuthPlacement {
+  /** Where to send the credential */
+  in?: 'header' | 'query';
+  /** Header or query parameter name (defaults to 'Authorization') */
+  name?: string;
+}
+
 /** Options for submitting a task */
 export interface SubmitTaskOptions {
   /** Skill ID to invoke */
@@ -39,8 +47,10 @@ export interface SubmitTaskOptions {
   input: string;
   /** Optional metadata to attach */
   metadata?: Record<string, unknown>;
-  /** Authorization header value (e.g., 'Bearer xxx') */
+  /** Auth credential value (e.g., 'Bearer xxx' or an API key) */
   auth?: string;
+  /** Where to place the auth credential (from agent card authentication config) */
+  authPlacement?: AuthPlacement;
 }
 
 /** Callback for streaming task updates */
@@ -183,13 +193,11 @@ export class A2AClient {
       'Content-Type': 'application/json',
       Accept: 'application/json',
     };
-    if (options.auth) {
-      headers['Authorization'] = options.auth;
-    }
+    const finalUrl = this._applyAuth(url, headers, options.auth, options.authPlacement);
 
     let response: Response;
     try {
-      response = await this._fetchFn(url, {
+      response = await this._fetchFn(finalUrl, {
         method: 'POST',
         headers,
         body: JSON.stringify(body),
@@ -217,15 +225,15 @@ export class A2AClient {
   /**
    * Get the current status and artifacts of a task.
    */
-  async getTask(baseUrl: string, taskId: string, auth?: string): Promise<A2ATask> {
+  async getTask(baseUrl: string, taskId: string, auth?: string, authPlacement?: AuthPlacement): Promise<A2ATask> {
     const url = baseUrl.replace(/\/+$/, '') + `/tasks/${encodeURIComponent(taskId)}`;
 
     const headers: Record<string, string> = { Accept: 'application/json' };
-    if (auth) headers['Authorization'] = auth;
+    const finalUrl = this._applyAuth(url, headers, auth, authPlacement);
 
     let response: Response;
     try {
-      response = await this._fetchFn(url, { headers });
+      response = await this._fetchFn(finalUrl, { headers });
     } catch (error) {
       throw new EvalancheError(
         `Failed to get A2A task ${taskId}: ${error instanceof Error ? error.message : String(error)}`,
@@ -255,17 +263,18 @@ export class A2AClient {
     taskId: string,
     onUpdate: TaskUpdateCallback,
     auth?: string,
+    authPlacement?: AuthPlacement,
   ): Promise<{ abort: () => void }> {
     const url = baseUrl.replace(/\/+$/, '') + `/tasks/${encodeURIComponent(taskId)}/stream`;
 
     const headers: Record<string, string> = { Accept: 'text/event-stream' };
-    if (auth) headers['Authorization'] = auth;
+    const finalUrl = this._applyAuth(url, headers, auth, authPlacement);
 
     const controller = new AbortController();
 
     let response: Response;
     try {
-      response = await this._fetchFn(url, {
+      response = await this._fetchFn(finalUrl, {
         headers,
         signal: controller.signal,
       });
@@ -298,18 +307,18 @@ export class A2AClient {
   /**
    * Cancel an in-progress task.
    */
-  async cancelTask(baseUrl: string, taskId: string, auth?: string): Promise<A2ATask> {
+  async cancelTask(baseUrl: string, taskId: string, auth?: string, authPlacement?: AuthPlacement): Promise<A2ATask> {
     const url = baseUrl.replace(/\/+$/, '') + `/tasks/${encodeURIComponent(taskId)}/cancel`;
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       Accept: 'application/json',
     };
-    if (auth) headers['Authorization'] = auth;
+    const finalUrl = this._applyAuth(url, headers, auth, authPlacement);
 
     let response: Response;
     try {
-      response = await this._fetchFn(url, { method: 'POST', headers });
+      response = await this._fetchFn(finalUrl, { method: 'POST', headers });
     } catch (error) {
       throw new EvalancheError(
         `Failed to cancel A2A task ${taskId}: ${error instanceof Error ? error.message : String(error)}`,
@@ -330,6 +339,27 @@ export class A2AClient {
   }
 
   // ── Internal Helpers ──
+
+  /** Apply auth credential to a URL and headers based on placement config */
+  private _applyAuth(
+    url: string,
+    headers: Record<string, string>,
+    auth?: string,
+    placement?: AuthPlacement,
+  ): string {
+    if (!auth) return url;
+
+    const location = placement?.in ?? 'header';
+    const name = placement?.name ?? 'Authorization';
+
+    if (location === 'query') {
+      const separator = url.includes('?') ? '&' : '?';
+      return `${url}${separator}${encodeURIComponent(name)}=${encodeURIComponent(auth)}`;
+    }
+
+    headers[name] = auth;
+    return url;
+  }
 
   /** Validate and type an agent card response */
   private _validateAgentCard(data: unknown, source: string): AgentCard {
@@ -402,8 +432,8 @@ export class A2AClient {
         buffer = lines.pop() ?? '';
 
         for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const jsonStr = line.slice(6).trim();
+          if (line.startsWith('data:')) {
+            const jsonStr = line.slice(5).trim();
             if (!jsonStr || jsonStr === '[DONE]') continue;
 
             try {
