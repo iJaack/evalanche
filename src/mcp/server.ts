@@ -13,6 +13,8 @@ import { NegotiationClient } from '../economy/negotiation';
 import { SettlementClient } from '../economy/settlement';
 import { AgentMemory } from '../economy/memory';
 import { InteropIdentityResolver } from '../interop/identity';
+import { A2AClient } from '../interop/a2a';
+import { A2AServer } from '../interop/a2a-server';
 import { createServer, type IncomingMessage, type ServerResponse } from 'http';
 
 /** MCP tool definition */
@@ -932,6 +934,83 @@ const TOOLS: MCPTool[] = [
       required: ['address'],
     },
   },
+  // ── Phase 8: A2A Protocol ──
+  {
+    name: 'fetch_agent_card',
+    description: 'Fetch an A2A agent card from a URL or resolve one from an ERC-8004 agent ID. Returns agent name, skills, capabilities, and authentication requirements.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        url: { type: 'string', description: 'Base URL of the A2A agent (fetches .well-known/agent-card.json)' },
+        agentId: { type: 'string', description: 'ERC-8004 agent ID to resolve (alternative to url)' },
+      },
+    },
+  },
+  {
+    name: 'a2a_list_skills',
+    description: 'List skills available from an A2A agent card. Returns skill IDs, names, descriptions, tags, and supported modalities.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        url: { type: 'string', description: 'Base URL of the A2A agent' },
+        agentId: { type: 'string', description: 'ERC-8004 agent ID (alternative to url)' },
+      },
+    },
+  },
+  {
+    name: 'a2a_submit_task',
+    description: 'Submit a task to an A2A-compliant agent. Invokes a specific skill with input text and returns the task ID and initial status.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        url: { type: 'string', description: 'Base URL of the A2A agent' },
+        skillId: { type: 'string', description: 'Skill ID to invoke' },
+        input: { type: 'string', description: 'Input text or prompt for the task' },
+        auth: { type: 'string', description: 'Optional authorization header value (e.g., Bearer token)' },
+      },
+      required: ['url', 'skillId', 'input'],
+    },
+  },
+  {
+    name: 'a2a_get_task',
+    description: 'Get the current status, messages, and artifacts of an A2A task.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        url: { type: 'string', description: 'Base URL of the A2A agent' },
+        taskId: { type: 'string', description: 'Task ID to check' },
+        auth: { type: 'string', description: 'Optional authorization header value' },
+      },
+      required: ['url', 'taskId'],
+    },
+  },
+  {
+    name: 'a2a_cancel_task',
+    description: 'Cancel an in-progress A2A task.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        url: { type: 'string', description: 'Base URL of the A2A agent' },
+        taskId: { type: 'string', description: 'Task ID to cancel' },
+        auth: { type: 'string', description: 'Optional authorization header value' },
+      },
+      required: ['url', 'taskId'],
+    },
+  },
+  {
+    name: 'a2a_serve',
+    description: 'Register a local skill as an A2A-compatible endpoint. The skill will be listed in the agent card and can receive tasks from other agents.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        skillId: { type: 'string', description: 'Unique skill identifier' },
+        name: { type: 'string', description: 'Human-readable skill name' },
+        description: { type: 'string', description: 'What this skill does' },
+        tags: { type: 'array', items: { type: 'string' }, description: 'Tags for categorization' },
+      },
+      required: ['name', 'description'],
+    },
+  },
 ];
 
 /**
@@ -948,6 +1027,8 @@ export class EvalancheMCPServer {
   private settlement: SettlementClient;
   private memory: AgentMemory;
   private interopResolver: InteropIdentityResolver;
+  private a2aClient: A2AClient;
+  private a2aServer: A2AServer | null = null;
 
   constructor(config: EvalancheConfig) {
     this.config = config;
@@ -958,6 +1039,7 @@ export class EvalancheMCPServer {
     this.settlement = new SettlementClient(this.agent.wallet, this.negotiation);
     this.memory = new AgentMemory(); // in-memory by default; can be swapped for file-backed
     this.interopResolver = new InteropIdentityResolver(this.agent.provider);
+    this.a2aClient = new A2AClient({ identity: this.interopResolver });
   }
 
   /** Handle a JSON-RPC request and return a response */
@@ -1836,6 +1918,96 @@ export class EvalancheMCPServer {
           result = agentId
             ? { address: args.address, agentId }
             : { address: args.address, agentId: null, message: 'No agent found for this address' };
+          break;
+        }
+
+        // ── Phase 8: A2A Protocol ──
+
+        case 'fetch_agent_card': {
+          let card;
+          if (args.url) {
+            card = await this.a2aClient.fetchAgentCard(args.url as string);
+          } else if (args.agentId) {
+            card = await this.a2aClient.resolveAgentCardFromERC8004(args.agentId as string);
+          } else {
+            throw new EvalancheError('Provide either url or agentId', EvalancheErrorCode.A2A_ERROR);
+          }
+          result = card;
+          break;
+        }
+
+        case 'a2a_list_skills': {
+          let card;
+          if (args.url) {
+            card = await this.a2aClient.fetchAgentCard(args.url as string);
+          } else if (args.agentId) {
+            card = await this.a2aClient.resolveAgentCardFromERC8004(args.agentId as string);
+          } else {
+            throw new EvalancheError('Provide either url or agentId', EvalancheErrorCode.A2A_ERROR);
+          }
+          const skills = this.a2aClient.listSkills(card);
+          result = { agentName: card.name, skills, count: skills.length };
+          break;
+        }
+
+        case 'a2a_submit_task': {
+          const task = await this.a2aClient.submitTask(args.url as string, {
+            skillId: args.skillId as string,
+            input: args.input as string,
+            auth: args.auth as string | undefined,
+          });
+          result = { taskId: task.id, status: task.status };
+          break;
+        }
+
+        case 'a2a_get_task': {
+          const task = await this.a2aClient.getTask(
+            args.url as string,
+            args.taskId as string,
+            args.auth as string | undefined,
+          );
+          result = {
+            taskId: task.id,
+            status: task.status,
+            messages: task.messages,
+            artifacts: task.artifacts,
+            error: task.error,
+          };
+          break;
+        }
+
+        case 'a2a_cancel_task': {
+          const task = await this.a2aClient.cancelTask(
+            args.url as string,
+            args.taskId as string,
+            args.auth as string | undefined,
+          );
+          result = { taskId: task.id, status: task.status };
+          break;
+        }
+
+        case 'a2a_serve': {
+          if (!this.a2aServer) {
+            this.a2aServer = new A2AServer({
+              name: 'evalanche-agent',
+              url: `http://localhost:3100`,
+              description: 'Evalanche A2A agent',
+            });
+            await this.a2aServer.listen(3100);
+          }
+          const skillId = this.a2aServer.registerSkill({
+            id: args.skillId as string | undefined,
+            name: args.name as string,
+            description: args.description as string,
+            tags: args.tags as string[] | undefined,
+            handler: async (input) => ({ text: `Processed: ${input}` }),
+          });
+          const card = this.a2aServer.getAgentCard();
+          result = {
+            skillId,
+            agentCard: card,
+            message: `Skill registered. Agent card at http://localhost:3100/.well-known/agent-card.json`,
+          };
           break;
         }
 
