@@ -133,8 +133,10 @@ export class A2AServer {
 
   /**
    * Start an HTTP server that serves the A2A protocol.
+   * Returns a promise that resolves with the Server once it's listening,
+   * or rejects on startup errors (EADDRINUSE, EACCES, etc.).
    */
-  listen(port: number): Server {
+  listen(port: number): Promise<Server> {
     this._server = createServer((req, res) => {
       this._handleRequest(req, res).catch((err) => {
         if (!res.headersSent) {
@@ -150,16 +152,16 @@ export class A2AServer {
       });
     });
 
-    this._server.on('error', (err) => {
-      throw new EvalancheError(
-        `A2A server failed to start: ${err.message}`,
-        EvalancheErrorCode.A2A_ERROR,
-        err,
-      );
+    return new Promise<Server>((resolve, reject) => {
+      this._server!.once('error', (err) => {
+        reject(new EvalancheError(
+          `A2A server failed to start: ${err.message}`,
+          EvalancheErrorCode.A2A_ERROR,
+          err,
+        ));
+      });
+      this._server!.listen(port, () => resolve(this._server!));
     });
-
-    this._server.listen(port);
-    return this._server;
   }
 
   /**
@@ -205,6 +207,15 @@ export class A2AServer {
       res.writeHead(200, { ...cors, 'Content-Type': 'application/json' });
       res.end(JSON.stringify(card));
       return;
+    }
+
+    // Enforce authentication on task endpoints if configured
+    if (this._options.authentication && url.startsWith('/tasks')) {
+      if (!this._checkAuth(req)) {
+        res.writeHead(401, { ...cors, 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Authentication required' }));
+        return;
+      }
     }
 
     // Submit task
@@ -332,6 +343,27 @@ export class A2AServer {
         message: error instanceof Error ? error.message : String(error),
       };
     }
+  }
+
+  /** Check request credentials against configured authentication */
+  private _checkAuth(req: IncomingMessage): boolean {
+    const auth = this._options.authentication;
+    if (!auth) return true;
+
+    const location = auth.in ?? 'header';
+    const paramName = auth.name ?? 'Authorization';
+
+    if (location === 'header') {
+      const value = req.headers[paramName.toLowerCase()];
+      return typeof value === 'string' && value.length > 0;
+    }
+
+    if (location === 'query') {
+      const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
+      return url.searchParams.has(paramName);
+    }
+
+    return false;
   }
 
   /** Parse JSON body from request */

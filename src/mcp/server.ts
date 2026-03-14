@@ -1993,7 +1993,7 @@ export class EvalancheMCPServer {
               url: `http://localhost:3100`,
               description: 'Evalanche A2A agent',
             });
-            this.a2aServer.listen(3100);
+            await this.a2aServer.listen(3100);
           }
           const skillId = this.a2aServer.registerSkill({
             id: args.skillId as string | undefined,

@@ -99,10 +99,7 @@ describe('A2AServer', () => {
         description: 'Test skill',
         handler: async () => ({ text: 'ok' }),
       });
-      server.listen(3201);
-
-      // Wait briefly for server to start
-      await new Promise((r) => setTimeout(r, 100));
+      await server.listen(3201);
 
       const res = await fetch('http://localhost:3201/.well-known/agent-card.json');
       expect(res.ok).toBe(true);
@@ -120,9 +117,7 @@ describe('A2AServer', () => {
         description: 'Echo back input',
         handler: async (input) => ({ text: `Echo: ${input}` }),
       });
-      server.listen(3202);
-
-      await new Promise((r) => setTimeout(r, 100));
+      await server.listen(3202);
 
       const res = await fetch('http://localhost:3202/tasks', {
         method: 'POST',
@@ -141,9 +136,7 @@ describe('A2AServer', () => {
 
     it('should return 400 for unknown skill', async () => {
       server = new A2AServer({ name: 'TestAgent', url: 'http://localhost:3203' });
-      server.listen(3203);
-
-      await new Promise((r) => setTimeout(r, 100));
+      await server.listen(3203);
 
       const res = await fetch('http://localhost:3203/tasks', {
         method: 'POST',
@@ -158,9 +151,7 @@ describe('A2AServer', () => {
 
     it('should return 400 for missing skill_id', async () => {
       server = new A2AServer({ name: 'TestAgent', url: 'http://localhost:3209' });
-      server.listen(3209);
-
-      await new Promise((r) => setTimeout(r, 100));
+      await server.listen(3209);
 
       const res = await fetch('http://localhost:3209/tasks', {
         method: 'POST',
@@ -184,9 +175,7 @@ describe('A2AServer', () => {
           return { text: 'done' };
         },
       });
-      server.listen(3204);
-
-      await new Promise((r) => setTimeout(r, 100));
+      await server.listen(3204);
 
       // Submit
       const submitRes = await fetch('http://localhost:3204/tasks', {
@@ -224,9 +213,7 @@ describe('A2AServer', () => {
           return { text: 'done' };
         },
       });
-      server.listen(3205);
-
-      await new Promise((r) => setTimeout(r, 100));
+      await server.listen(3205);
 
       // Submit
       const submitRes = await fetch('http://localhost:3205/tasks', {
@@ -259,9 +246,7 @@ describe('A2AServer', () => {
           return { text: 'done' };
         },
       });
-      server.listen(3210);
-
-      await new Promise((r) => setTimeout(r, 100));
+      await server.listen(3210);
 
       // Submit
       const submitRes = await fetch('http://localhost:3210/tasks', {
@@ -288,9 +273,7 @@ describe('A2AServer', () => {
 
     it('should return 404 for unknown task', async () => {
       server = new A2AServer({ name: 'TestAgent', url: 'http://localhost:3206' });
-      server.listen(3206);
-
-      await new Promise((r) => setTimeout(r, 100));
+      await server.listen(3206);
 
       const res = await fetch('http://localhost:3206/tasks/nonexistent');
       expect(res.status).toBe(404);
@@ -298,9 +281,7 @@ describe('A2AServer', () => {
 
     it('should return 404 for unknown routes', async () => {
       server = new A2AServer({ name: 'TestAgent', url: 'http://localhost:3207' });
-      server.listen(3207);
-
-      await new Promise((r) => setTimeout(r, 100));
+      await server.listen(3207);
 
       const res = await fetch('http://localhost:3207/unknown');
       expect(res.status).toBe(404);
@@ -308,9 +289,7 @@ describe('A2AServer', () => {
 
     it('should handle CORS preflight', async () => {
       server = new A2AServer({ name: 'TestAgent', url: 'http://localhost:3208' });
-      server.listen(3208);
-
-      await new Promise((r) => setTimeout(r, 100));
+      await server.listen(3208);
 
       const res = await fetch('http://localhost:3208/.well-known/agent-card.json', {
         method: 'OPTIONS',
@@ -326,9 +305,7 @@ describe('A2AServer', () => {
         description: 'Test',
         handler: async () => ({ text: 'ok' }),
       });
-      server.listen(3211);
-
-      await new Promise((r) => setTimeout(r, 100));
+      await server.listen(3211);
 
       const res = await fetch('http://localhost:3211/tasks', {
         method: 'POST',
@@ -345,6 +322,56 @@ describe('A2AServer', () => {
       server = new A2AServer({ name: 'TestAgent', url: 'http://localhost:3200' });
       const card = server.getAgentCard();
       expect(card.supportsStreaming).toBe(false);
+    });
+
+    it('should reject unauthenticated requests when auth is configured', async () => {
+      server = new A2AServer({
+        name: 'AuthAgent',
+        url: 'http://localhost:3212',
+        authentication: { type: 'bearer', in: 'header', name: 'Authorization' },
+      });
+      server.registerSkill({
+        id: 'secret',
+        name: 'Secret',
+        description: 'Requires auth',
+        handler: async () => ({ text: 'ok' }),
+      });
+      await server.listen(3212);
+
+      // No auth header — should get 401
+      const res = await fetch('http://localhost:3212/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ skill_id: 'secret', messages: [] }),
+      });
+      expect(res.status).toBe(401);
+
+      // With auth header — should get through
+      const authedRes = await fetch('http://localhost:3212/tasks', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer test-token',
+        },
+        body: JSON.stringify({
+          skill_id: 'secret',
+          messages: [{ role: 'user', parts: [{ type: 'text', text: 'hi' }] }],
+        }),
+      });
+      expect(authedRes.status).toBe(201);
+    });
+
+    it('should still serve agent card without auth', async () => {
+      server = new A2AServer({
+        name: 'AuthAgent',
+        url: 'http://localhost:3213',
+        authentication: { type: 'bearer' },
+      });
+      await server.listen(3213);
+
+      // Agent card should be public
+      const res = await fetch('http://localhost:3213/.well-known/agent-card.json');
+      expect(res.ok).toBe(true);
     });
   });
 

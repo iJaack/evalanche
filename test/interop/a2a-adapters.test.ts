@@ -114,6 +114,19 @@ describe('A2A Adapters', () => {
   // ── Task Completion Mapping ──
 
   describe('mapTaskCompletion', () => {
+    it('should preserve binary artifact data', () => {
+      const task: A2ATask = {
+        id: 'task_1',
+        status: 'completed',
+        messages: [],
+        artifacts: [{ name: 'binary', mimeType: 'application/pdf', data: 'base64content==' }],
+      };
+
+      const result = mapTaskCompletion(task);
+      expect(result.artifacts[0].data).toBe('base64content==');
+      expect(result.artifacts[0].mimeType).toBe('application/pdf');
+    });
+
     it('should map completed task', () => {
       const task: A2ATask = {
         id: 'task_1',

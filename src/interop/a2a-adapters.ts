@@ -121,7 +121,7 @@ export function createA2AProposal(
 export function mapTaskCompletion(task: A2ATask): {
   completed: boolean;
   failed: boolean;
-  artifacts: Array<{ name?: string; mimeType?: string; text?: string; uri?: string }>;
+  artifacts: Array<{ name?: string; mimeType?: string; text?: string; data?: string; uri?: string }>;
   error?: string;
 } {
   const completed = task.status === 'completed';
@@ -134,6 +134,7 @@ export function mapTaskCompletion(task: A2ATask): {
       name: a.name,
       mimeType: a.mimeType,
       text: a.text,
+      data: a.data,
       uri: a.uri,
     })),
     error: task.error?.message,
