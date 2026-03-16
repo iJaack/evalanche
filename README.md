@@ -298,6 +298,41 @@ await agent.delegate('NodeID-...', '25', 30);
 
 > Avalanche dependencies (`@avalabs/core-wallets-sdk`) are lazy-loaded on first multi-VM call.
 
+### DeFi — Liquid Staking & EIP-4626 Vaults (v1.2.0)
+
+```typescript
+const agent = new Evalanche({ privateKey: '0x...', network: 'avalanche' });
+const { staking, vaults } = agent.defi();
+
+// sAVAX — stake AVAX via Benqi
+const quote = await staking.sAvaxStakeQuote('10');
+// → { shares: '9.87', expectedOutput: '9.87', rate: '1.013', minOutput: '9.77' }
+
+await staking.sAvaxStake('10', 50); // 50bps slippage
+
+// sAVAX — unstake (instant if pool has liquidity, delayed otherwise)
+const uq = await staking.sAvaxUnstakeQuote('5');
+// → { avaxOut: '5.06', isInstant: true, poolBalance: '12400', minOutput: '5.01' }
+
+await staking.sAvaxUnstakeInstant('5');      // redeemInstant on Benqi
+await staking.sAvaxUnstakeDelayed('5');      // requestRedeem (async, no pool needed)
+
+// EIP-4626 vaults — works on any chain
+const YOUSD = '0x0000000f2eb9f69274678c76222b35eec7588a65'; // Base
+
+const baseAgent = new Evalanche({ privateKey: '0x...', network: 'base' });
+const { vaults: baseVaults } = baseAgent.defi();
+
+const info = await baseVaults.vaultInfo(YOUSD, 'base');
+// → { name: 'yoUSD', asset: '0x833589f...', totalAssets: '4200000', eip4626: true }
+
+const vq = await baseVaults.depositQuote(YOUSD, '1000', 'base');
+// → { shares: '998.1', expectedAssets: '1000' }
+
+await baseVaults.deposit(YOUSD, '1000', 'base'); // approve + deposit in one call
+await baseVaults.withdraw(YOUSD, '998.1', 'base'); // redeem shares
+```
+
 ### dYdX v4 Perpetuals (v0.7.0)
 
 ```typescript
@@ -515,6 +550,15 @@ AGENT_PRIVATE_KEY=0x... evalanche-mcp --http --port 3402
 | `get_agent_wallet` | Get agent payment wallet address |
 | `verify_agent_endpoint` | Verify endpoint domain binding |
 | `resolve_by_wallet` | Find agent ID from wallet address |
+| `savax_stake_quote` | Get sAVAX quote for AVAX amount |
+| `savax_stake` | Stake AVAX → sAVAX on Benqi |
+| `savax_unstake_quote` | Get AVAX quote + instant pool check for sAVAX |
+| `savax_unstake` | Unstake sAVAX → AVAX (instant or delayed) |
+| `vault_info` | Get EIP-4626 vault metadata |
+| `vault_deposit_quote` | Preview deposit shares |
+| `vault_deposit` | Approve + deposit into EIP-4626 vault |
+| `vault_withdraw_quote` | Preview redeem shares |
+| `vault_withdraw` | Redeem shares from vault |
 
 ### Environment Variables
 
@@ -631,7 +675,7 @@ AGENT_PRIVATE_KEY=0x... evalanche-mcp --http --port 3402
 - **Agent Economy Layer** — spending policies, discovery, negotiation, settlement, escrow, persistent memory
 - 15 new MCP tools (69 total), 325 tests
 
-### v1.1.0 (current)
+### v1.1.0
 - **ERC-8004 full identity resolution** — interop layer Phase 7
 - `InteropIdentityResolver`: resolve agent registration files from on-chain `agentURI`
 - Service endpoint discovery, preferred transport selection (A2A > XMTP > MCP > web)
@@ -640,6 +684,14 @@ AGENT_PRIVATE_KEY=0x... evalanche-mcp --http --port 3402
 - Reverse resolution: find agent ID from wallet address
 - Supports `ipfs://`, `https://`, `data:` URI schemes
 - 5 new MCP tools (74 total), 372 tests
+
+### v1.2.0 (current)
+- **DeFi module** — liquid staking and EIP-4626 vault operations
+- `LiquidStakingClient`: sAVAX stake/unstake (instant + delayed), quotes, pool balance checks
+- `VaultClient`: generic EIP-4626 deposit/withdraw/quote for any vault on any chain
+- `agent.defi()` lazy accessor returning `{ staking, vaults }`
+- Known vault: yoUSD vault on Base (`0x0000000f2eb9f69274678c76222b35eec7588a65`, ~17.73% APY)
+- 9 new MCP tools (83 total), 395 tests
 
 ### v2.0 (planned)
 - A2A protocol support (Agent Cards, task lifecycle)

@@ -932,6 +932,123 @@ const TOOLS: MCPTool[] = [
       required: ['address'],
     },
   },
+
+  // ── DeFi: Liquid Staking ──────────────────────────────────────────────
+  {
+    name: 'savax_stake_quote',
+    description: 'Get a quote for staking AVAX → sAVAX on Benqi (Avalanche). Returns expected shares and exchange rate.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        amountAvax: { type: 'string', description: 'Amount of AVAX to stake (human-readable, e.g. "10")' },
+      },
+      required: ['amountAvax'],
+    },
+  },
+  {
+    name: 'savax_stake',
+    description: 'Stake AVAX → sAVAX on Benqi (Avalanche). Sends AVAX and receives sAVAX liquid staking tokens.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        amountAvax: { type: 'string', description: 'Amount of AVAX to stake (human-readable)' },
+        slippageBps: { type: 'number', description: 'Slippage tolerance in basis points (default: 100 = 1%)' },
+      },
+      required: ['amountAvax'],
+    },
+  },
+  {
+    name: 'savax_unstake_quote',
+    description: 'Get a quote for unstaking sAVAX → AVAX. Checks instant pool availability.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        shares: { type: 'string', description: 'Amount of sAVAX to redeem (human-readable)' },
+        slippageBps: { type: 'number', description: 'Slippage tolerance in basis points (default: 100 = 1%)' },
+      },
+      required: ['shares'],
+    },
+  },
+  {
+    name: 'savax_unstake',
+    description: 'Unstake sAVAX → AVAX on Benqi. Uses instant redeem if pool is sufficient, otherwise delayed redeem.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        shares: { type: 'string', description: 'Amount of sAVAX to redeem (human-readable)' },
+        slippageBps: { type: 'number', description: 'Slippage tolerance in basis points (default: 100 = 1%)' },
+        forceDelayed: { type: 'boolean', description: 'Force delayed unstake even if instant is available (default: false)' },
+      },
+      required: ['shares'],
+    },
+  },
+
+  // ── DeFi: EIP-4626 Vaults ────────────────────────────────────────────
+  {
+    name: 'vault_info',
+    description: 'Get metadata for an EIP-4626 vault (name, asset, totalAssets).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        vaultAddress: { type: 'string', description: 'Vault contract address' },
+      },
+      required: ['vaultAddress'],
+    },
+  },
+  {
+    name: 'vault_deposit_quote',
+    description: 'Preview how many vault shares a deposit would mint.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        vaultAddress: { type: 'string', description: 'Vault contract address' },
+        assetAmount: { type: 'string', description: 'Amount of underlying asset (human-readable)' },
+        assetDecimals: { type: 'number', description: 'Decimals of the underlying asset (default: 6)' },
+      },
+      required: ['vaultAddress', 'assetAmount'],
+    },
+  },
+  {
+    name: 'vault_deposit',
+    description: 'Approve and deposit assets into an EIP-4626 vault.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        vaultAddress: { type: 'string', description: 'Vault contract address' },
+        assetAmount: { type: 'string', description: 'Amount of underlying asset to deposit (human-readable)' },
+        assetDecimals: { type: 'number', description: 'Decimals of the underlying asset (default: 6)' },
+        slippageBps: { type: 'number', description: 'Slippage tolerance in basis points (default: 100 = 1%)' },
+      },
+      required: ['vaultAddress', 'assetAmount'],
+    },
+  },
+  {
+    name: 'vault_withdraw_quote',
+    description: 'Preview how many assets would be returned for redeeming vault shares.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        vaultAddress: { type: 'string', description: 'Vault contract address' },
+        shareAmount: { type: 'string', description: 'Amount of vault shares to redeem (human-readable)' },
+        shareDecimals: { type: 'number', description: 'Decimals of the vault shares (default: 6)' },
+      },
+      required: ['vaultAddress', 'shareAmount'],
+    },
+  },
+  {
+    name: 'vault_withdraw',
+    description: 'Redeem vault shares for underlying assets from an EIP-4626 vault.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        vaultAddress: { type: 'string', description: 'Vault contract address' },
+        shareAmount: { type: 'string', description: 'Amount of vault shares to redeem (human-readable)' },
+        shareDecimals: { type: 'number', description: 'Decimals of the vault shares (default: 6)' },
+        slippageBps: { type: 'number', description: 'Slippage tolerance in basis points (default: 100 = 1%)' },
+      },
+      required: ['vaultAddress', 'shareAmount'],
+    },
+  },
 ];
 
 /**
@@ -1836,6 +1953,101 @@ export class EvalancheMCPServer {
           result = agentId
             ? { address: args.address, agentId }
             : { address: args.address, agentId: null, message: 'No agent found for this address' };
+          break;
+        }
+
+        // ── DeFi: Liquid Staking ──────────────────────────────────────────
+
+        case 'savax_stake_quote': {
+          const defi = this.agent.defi();
+          result = await defi.staking.sAvaxStakeQuote(args.amountAvax as string);
+          break;
+        }
+
+        case 'savax_stake': {
+          const defi = this.agent.defi();
+          const txResult = await defi.staking.sAvaxStake(
+            args.amountAvax as string,
+            args.slippageBps as number | undefined,
+          );
+          result = { hash: txResult.hash, status: txResult.receipt.status };
+          break;
+        }
+
+        case 'savax_unstake_quote': {
+          const defi = this.agent.defi();
+          result = await defi.staking.sAvaxUnstakeQuote(
+            args.shares as string,
+            args.slippageBps as number | undefined,
+          );
+          break;
+        }
+
+        case 'savax_unstake': {
+          const defi = this.agent.defi();
+          const forceDelayed = (args.forceDelayed as boolean) ?? false;
+          let txResult;
+          if (forceDelayed) {
+            txResult = await defi.staking.sAvaxUnstakeDelayed(args.shares as string);
+          } else {
+            txResult = await defi.staking.sAvaxUnstakeInstant(
+              args.shares as string,
+              args.slippageBps as number | undefined,
+            );
+          }
+          result = { hash: txResult.hash, status: txResult.receipt.status };
+          break;
+        }
+
+        // ── DeFi: EIP-4626 Vaults ────────────────────────────────────────
+
+        case 'vault_info': {
+          const defi = this.agent.defi();
+          result = await defi.vaults.vaultInfo(args.vaultAddress as string);
+          break;
+        }
+
+        case 'vault_deposit_quote': {
+          const defi = this.agent.defi();
+          result = await defi.vaults.depositQuote(
+            args.vaultAddress as string,
+            args.assetAmount as string,
+            args.assetDecimals as number | undefined,
+          );
+          break;
+        }
+
+        case 'vault_deposit': {
+          const defi = this.agent.defi();
+          const txResult = await defi.vaults.deposit(
+            args.vaultAddress as string,
+            args.assetAmount as string,
+            args.assetDecimals as number | undefined,
+            args.slippageBps as number | undefined,
+          );
+          result = { hash: txResult.hash, status: txResult.receipt.status };
+          break;
+        }
+
+        case 'vault_withdraw_quote': {
+          const defi = this.agent.defi();
+          result = await defi.vaults.withdrawQuote(
+            args.vaultAddress as string,
+            args.shareAmount as string,
+            args.shareDecimals as number | undefined,
+          );
+          break;
+        }
+
+        case 'vault_withdraw': {
+          const defi = this.agent.defi();
+          const txResult = await defi.vaults.withdraw(
+            args.vaultAddress as string,
+            args.shareAmount as string,
+            args.shareDecimals as number | undefined,
+            args.slippageBps as number | undefined,
+          );
+          result = { hash: txResult.hash, status: txResult.receipt.status };
           break;
         }
 

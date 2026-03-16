@@ -3,7 +3,7 @@ name: evalanche
 description: >
   Multi-EVM agent wallet SDK with onchain identity (ERC-8004), payment rails (x402),
   cross-chain liquidity (Li.Fi bridging + DEX aggregation + DeFi Composer), destination gas funding (Gas.zip),
-  and perpetual futures trading (dYdX v4).
+  perpetual futures trading (dYdX v4), and DeFi operations (liquid staking + EIP-4626 vaults).
   Supports 21+ EVM chains: Ethereum, Base, Arbitrum, Optimism, Polygon, BSC, Avalanche, and more.
   Agents generate and manage their own keys — no human input required.
   Use when: booting an autonomous agent wallet on any EVM chain, sending tokens, calling contracts,
@@ -15,7 +15,8 @@ description: >
   funding gas on destination chains (Gas.zip),
   cross-chain transfers (Avalanche C↔X↔P), delegating stake, querying validators, signing messages,
   creating subnets, managing L1 validators, adding validators with BLS keys, querying node info,
-  trading perpetual futures on dYdX v4 (100+ markets), searching for perp markets across venues.
+  trading perpetual futures on dYdX v4 (100+ markets), searching for perp markets across venues,
+  staking/unstaking sAVAX via Benqi, depositing/withdrawing from EIP-4626 vaults (yoUSD, Morpho, Aave, etc).
   Don't use when: managing ENS (use moltbook scripts).
   Network: yes (EVM RPCs via Routescan + public fallbacks, dYdX Cosmos chain). Cost: gas fees per transaction.
 metadata:
@@ -78,7 +79,7 @@ metadata:
 
 # Evalanche — Multi-EVM Agent Wallet
 
-Headless wallet SDK with ERC-8004 identity, x402 payments, Li.Fi cross-chain liquidity (bridging + DEX aggregation + DeFi Composer), Gas.zip gas funding, dYdX v4 perpetuals, and contract interaction helpers (approve-and-call + UUPS upgrade). Works on 21+ EVM chains. 54 MCP tools. Works as CLI or MCP server.
+Headless wallet SDK with ERC-8004 identity, x402 payments, Li.Fi cross-chain liquidity (bridging + DEX aggregation + DeFi Composer), Gas.zip gas funding, dYdX v4 perpetuals, contract interaction helpers (approve-and-call + UUPS upgrade), and DeFi operations (liquid staking + EIP-4626 vaults). Works on 21+ EVM chains. 83 MCP tools. Works as CLI or MCP server.
 
 **Source:** https://github.com/iJaack/evalanche
 **License:** MIT
@@ -348,3 +349,32 @@ agent.transfer({ from: 'C', to: 'P', amount: '25' })
 |----------|---------|-------|
 | Identity Registry | `0x8004A169FB4a3325136EB29fA0ceB6D2e539a432` | AVAX C-Chain (43114) |
 | Reputation Registry | `0x8004BAa17C55a88189AE136b182e5fdA19dE9b63` | AVAX C-Chain (43114) |
+| sAVAX (Benqi) | `0x2b2C81e08f1Af8835a78Bb2A90AE924ACE0eA4bE` | AVAX C-Chain (43114) |
+| yoUSD Vault | `0x0000000f2eb9f69274678c76222b35eec7588a65` | Base (8453) |
+
+### DeFi — Liquid Staking & EIP-4626 Vaults (v1.2.0)
+
+```javascript
+const { agent } = await Evalanche.boot({ network: 'avalanche' });
+const { staking, vaults } = agent.defi();
+
+// sAVAX unstake (instant if pool available, delayed otherwise)
+const q = await staking.sAvaxUnstakeQuote('5');
+// { avaxOut, isInstant, poolBalance, minOutput }
+await staking.sAvaxUnstakeInstant('5');   // redeemInstant on Benqi
+await staking.sAvaxUnstakeDelayed('5');   // requestRedeem (no pool needed)
+
+// Stake AVAX → sAVAX
+await staking.sAvaxStake('10', 50);  // 50bps slippage
+
+// EIP-4626 vault deposit (any chain)
+const YOUSD = '0x0000000f2eb9f69274678c76222b35eec7588a65';
+const baseAgent = new Evalanche({ privateKey: '0x...', network: 'base' });
+const { vaults: baseVaults } = baseAgent.defi();
+await baseVaults.deposit(YOUSD, '1000', 'base');   // approve + deposit
+await baseVaults.withdraw(YOUSD, '998', 'base');    // redeem shares
+```
+
+**MCP tools (defi):**
+`savax_stake_quote`, `savax_stake`, `savax_unstake_quote`, `savax_unstake`,
+`vault_info`, `vault_deposit_quote`, `vault_deposit`, `vault_withdraw_quote`, `vault_withdraw`

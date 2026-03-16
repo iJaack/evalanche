@@ -30,6 +30,8 @@ import type { DydxClient, PerpMarket } from './perps';
 import type { ChainAlias, TransferResult, MultiChainBalance, StakeInfo, ValidatorInfo, MinStakeAmounts } from './avalanche/types';
 import type { PlatformCLI as PlatformCLIType } from './avalanche/platform-cli';
 import type { InteropIdentityResolver as InteropResolverType } from './interop/identity';
+import type { LiquidStakingClient } from './defi/liquid-staking';
+import type { VaultClient } from './defi/vaults';
 
 /** Configuration for the Evalanche agent */
 export interface EvalancheConfig {
@@ -81,6 +83,8 @@ export class Evalanche {
   private _crossChain?: any;
   private _platformCLI?: PlatformCLIType;
   private _interopResolver?: InteropResolverType;
+  private _defiStaking?: LiquidStakingClient;
+  private _defiVaults?: VaultClient;
   private readonly _mnemonic?: string;
   private readonly _multiVM: boolean;
   private _multiVMInitialized = false;
@@ -577,6 +581,27 @@ export class Evalanche {
       this._interopResolver = new InteropIdentityResolver(this.provider);
     }
     return this._interopResolver;
+  }
+
+  // ── DeFi Module (v1.2.0) ─────────────────────────────────
+
+  /**
+   * Get the DeFi module with lazy-initialized staking and vault clients.
+   * @returns Object with staking and vaults sub-clients
+   */
+  defi(): { staking: LiquidStakingClient; vaults: VaultClient } {
+    if (!this._defiStaking) {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { LiquidStakingClient: LSC } = require('./defi/liquid-staking') as typeof import('./defi/liquid-staking');
+      this._defiStaking = new LSC(this.wallet);
+    }
+    if (!this._defiVaults) {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { VaultClient: VC } = require('./defi/vaults') as typeof import('./defi/vaults');
+      const networkName = typeof this._networkOption === 'string' ? this._networkOption : 'ethereum';
+      this._defiVaults = new VC(this.wallet, networkName);
+    }
+    return { staking: this._defiStaking, vaults: this._defiVaults };
   }
 
   /**

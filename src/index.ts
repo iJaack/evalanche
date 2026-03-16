@@ -123,6 +123,11 @@ export type {
   TrustMode,
 } from './interop';
 
+// DeFi (v1.2.0)
+export { LiquidStakingClient, SAVAX_CONTRACT, VaultClient, YOUSD_VAULT, YOUSD_VAULT_CHAIN, YOUSD_VAULT_DECIMALS, KNOWN_VAULTS } from './defi';
+export type { StakeQuote, UnstakeQuote, StakeConfig, VaultQuote, VaultInfo, VaultConfig } from './defi';
+export { StakePoolInsufficientError, InsufficientBalanceError, VaultError } from './defi';
+
 // MCP
 export { EvalancheMCPServer } from './mcp/server';
 
