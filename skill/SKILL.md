@@ -79,7 +79,7 @@ metadata:
 
 # Evalanche — Multi-EVM Agent Wallet
 
-Headless wallet SDK with ERC-8004 identity, x402 payments, Li.Fi cross-chain liquidity (bridging + DEX aggregation + DeFi Composer), Gas.zip gas funding, dYdX v4 perpetuals, contract interaction helpers (approve-and-call + UUPS upgrade), and DeFi operations (liquid staking + EIP-4626 vaults). Works on 21+ EVM chains. 83 MCP tools. Works as CLI or MCP server.
+Headless wallet SDK with ERC-8004 identity, x402 payments, Li.Fi cross-chain liquidity (bridging + DEX aggregation + DeFi Composer), Gas.zip gas funding, dYdX v4 perpetuals, contract interaction helpers (approve-and-call + UUPS upgrade), and DeFi operations (liquid staking + EIP-4626 vaults). Works on 21+ EVM chains. 91 MCP tools. Works as CLI or MCP server.
 
 **Source:** https://github.com/iJaack/evalanche
 **License:** MIT

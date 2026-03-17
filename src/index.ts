@@ -128,6 +128,14 @@ export { LiquidStakingClient, SAVAX_CONTRACT, VaultClient, YOUSD_VAULT, YOUSD_VA
 export type { StakeQuote, UnstakeQuote, StakeConfig, VaultQuote, VaultInfo, VaultConfig } from './defi';
 export { StakePoolInsufficientError, InsufficientBalanceError, VaultError } from './defi';
 
+// Market Data (CoinGecko — v1.3.0)
+export { CoinGeckoClient } from './market';
+export type { CoinPrice, TrendingData, MarketCoin, SearchCoin, HistoryData, CgStatus } from './market';
+
+// Polymarket CLOB (v1.3.0)
+export { PolymarketClient } from './polymarket';
+export type { PMMarket, PMPosition, PMOrderbook, PMBuyResult } from './polymarket';
+
 // MCP
 export { EvalancheMCPServer } from './mcp/server';
 

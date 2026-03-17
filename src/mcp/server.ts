@@ -7,6 +7,8 @@ import { EvalancheError, EvalancheErrorCode } from '../utils/errors';
 import { getNetworkConfig } from '../utils/networks';
 import { getAllChains } from '../utils/chains';
 import { NATIVE_TOKEN } from '../bridge/lifi';
+import { CoinGeckoClient } from '../market/coingecko';
+import { PolymarketClient } from '../polymarket';
 import { DiscoveryClient } from '../economy/discovery';
 import { AgentServiceHost } from '../economy/service';
 import { NegotiationClient } from '../economy/negotiation';
@@ -1049,6 +1051,166 @@ const TOOLS: MCPTool[] = [
       required: ['vaultAddress', 'shareAmount'],
     },
   },
+  // ─── CoinGecko Market Data ───
+  {
+    name: 'cg_price',
+    description: 'Get current price of one or more coins via CoinGecko CLI',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ids: { type: 'string', description: 'Comma-separated CoinGecko coin IDs (e.g. "bitcoin,ethereum")' },
+        symbols: { type: 'string', description: 'Comma-separated symbols (e.g. "btc,eth")' },
+        vs: { type: 'string', description: 'Quote currency (default: usd)' },
+      },
+    },
+  },
+  {
+    name: 'cg_trending',
+    description: 'Get trending coins, NFTs, and categories from CoinGecko',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'cg_top_movers',
+    description: 'Get top gainers and losers from CoinGecko',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        duration: { type: 'string', description: 'Time duration (e.g. "1h", "24h", "7d", "30d")' },
+        losers: { type: 'boolean', description: 'Show losers instead of gainers' },
+        topCoins: { type: 'string', description: 'Filter by market cap rank (e.g. "300", "1000")' },
+      },
+    },
+  },
+  {
+    name: 'cg_markets',
+    description: 'Get top coins by market cap from CoinGecko',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        total: { type: 'number', description: 'Number of coins to return (default: 10)' },
+        category: { type: 'string', description: 'Filter by category (e.g. "defi", "layer-1")' },
+        order: { type: 'string', description: 'Sort order (e.g. "market_cap_desc", "volume_desc")' },
+        vs: { type: 'string', description: 'Quote currency (default: usd)' },
+      },
+    },
+  },
+  {
+    name: 'cg_search',
+    description: 'Search for coins on CoinGecko by name or symbol',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Search query' },
+        limit: { type: 'number', description: 'Max results' },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'cg_history',
+    description: 'Get historical price data for a coin from CoinGecko',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'CoinGecko coin ID (e.g. "bitcoin")' },
+        days: { type: 'string', description: 'Number of days (e.g. "7", "30", "365", "max")' },
+        date: { type: 'string', description: 'Specific date (dd-mm-yyyy)' },
+        from: { type: 'string', description: 'Start timestamp (Unix seconds)' },
+        to: { type: 'string', description: 'End timestamp (Unix seconds)' },
+        interval: { type: 'string', description: 'Data interval (e.g. "daily")' },
+        vs: { type: 'string', description: 'Quote currency (default: usd)' },
+        ohlc: { type: 'boolean', description: 'Return OHLC candle data' },
+      },
+      required: ['id'],
+    },
+  },
+  {
+    name: 'cg_status',
+    description: 'Check CoinGecko CLI status, API key configuration, and tier',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  // ─── Polymarket ───
+  {
+    name: 'pm_search',
+    description: 'Search active Polymarket prediction markets by keyword',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Search query (e.g. "bitcoin", "election")' },
+        limit: { type: 'number', description: 'Max results (default: 10)' },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'pm_market',
+    description: 'Get details for a specific Polymarket market by condition ID',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        conditionId: { type: 'string', description: 'Market condition ID' },
+      },
+      required: ['conditionId'],
+    },
+  },
+  {
+    name: 'pm_positions',
+    description: 'Get on-chain verified Polymarket positions for a wallet',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        walletAddress: { type: 'string', description: 'Wallet address (defaults to agent address)' },
+      },
+    },
+  },
+  {
+    name: 'pm_orderbook',
+    description: 'Get the order book for a Polymarket outcome token. Get the token ID from pm_market first.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        tokenId: { type: 'string', description: 'Outcome token ID (get from pm_market)' },
+      },
+      required: ['tokenId'],
+    },
+  },
+  {
+    name: 'pm_approve',
+    description: 'Approve USDC spending for Polymarket exchange on Polygon',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        amount: { type: 'string', description: 'USDC amount to approve (e.g. "100")' },
+      },
+      required: ['amount'],
+    },
+  },
+  {
+    name: 'pm_buy',
+    description: 'Buy outcome shares on a Polymarket market. Requires USDC on Polygon and MATIC for gas.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        conditionId: { type: 'string', description: 'Market condition ID' },
+        outcome: { type: 'string', enum: ['YES', 'NO'], description: 'Outcome to buy' },
+        amountUSDC: { type: 'string', description: 'USDC amount to spend (e.g. "10")' },
+        maxSlippagePct: { type: 'number', description: 'Max slippage percentage (default: 1)' },
+      },
+      required: ['conditionId', 'outcome', 'amountUSDC'],
+    },
+  },
+  {
+    name: 'pm_redeem',
+    description: 'Redeem winning positions from a resolved Polymarket market for USDC',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        conditionId: { type: 'string', description: 'Condition ID of resolved market' },
+      },
+      required: ['conditionId'],
+
+    },
+  },
 ];
 
 /**
@@ -1065,6 +1227,9 @@ export class EvalancheMCPServer {
   private settlement: SettlementClient;
   private memory: AgentMemory;
   private interopResolver: InteropIdentityResolver;
+  private coingecko: CoinGeckoClient;
+  private polymarket: PolymarketClient | null = null;
+
 
   constructor(config: EvalancheConfig) {
     this.config = config;
@@ -1075,6 +1240,15 @@ export class EvalancheMCPServer {
     this.settlement = new SettlementClient(this.agent.wallet, this.negotiation);
     this.memory = new AgentMemory(); // in-memory by default; can be swapped for file-backed
     this.interopResolver = new InteropIdentityResolver(this.agent.provider);
+    this.coingecko = new CoinGeckoClient();
+  }
+
+  private getPolymarket(): PolymarketClient {
+    if (!this.polymarket) {
+      this.polymarket = new PolymarketClient(this.agent.wallet, this.agent.provider);
+    }
+    return this.polymarket;
+
   }
 
   /** Handle a JSON-RPC request and return a response */
@@ -2050,6 +2224,99 @@ export class EvalancheMCPServer {
           result = { hash: txResult.hash, status: txResult.receipt.status };
           break;
         }
+        // ─── CoinGecko Market Data ───
+        case 'cg_price':
+          result = await this.coingecko.price({
+            ids: args.ids as string | undefined,
+            symbols: args.symbols as string | undefined,
+            vs: args.vs as string | undefined,
+          });
+          break;
+
+        case 'cg_trending':
+          result = await this.coingecko.trending();
+          break;
+
+        case 'cg_top_movers':
+          result = await this.coingecko.topGainersLosers({
+            duration: args.duration as string | undefined,
+            losers: args.losers as boolean | undefined,
+            topCoins: args.topCoins as string | undefined,
+          });
+          break;
+
+        case 'cg_markets':
+          result = await this.coingecko.markets({
+            total: args.total as number | undefined,
+            category: args.category as string | undefined,
+            order: args.order as string | undefined,
+            vs: args.vs as string | undefined,
+          });
+          break;
+
+        case 'cg_search':
+          result = await this.coingecko.search(
+            args.query as string,
+            args.limit as number | undefined,
+          );
+          break;
+
+        case 'cg_history':
+          result = await this.coingecko.history({
+            id: args.id as string,
+            days: args.days as string | undefined,
+            date: args.date as string | undefined,
+            from: args.from as string | undefined,
+            to: args.to as string | undefined,
+            interval: args.interval as string | undefined,
+            vs: args.vs as string | undefined,
+            ohlc: args.ohlc as boolean | undefined,
+          });
+          break;
+
+        case 'cg_status':
+          result = await this.coingecko.status();
+          break;
+
+        // ─── Polymarket ───
+        case 'pm_search':
+          result = await this.getPolymarket().searchMarkets(
+            args.query as string,
+            args.limit as number | undefined,
+          );
+          break;
+
+        case 'pm_market':
+          result = await this.getPolymarket().getMarket(args.conditionId as string);
+          break;
+
+        case 'pm_positions':
+          result = await this.getPolymarket().getPositions(
+            (args.walletAddress as string) || this.agent.address,
+          );
+          break;
+
+        case 'pm_orderbook':
+          result = await this.getPolymarket().getOrderbook(args.tokenId as string);
+          break;
+
+        case 'pm_approve':
+          result = await this.getPolymarket().approveUsdc(args.amount as string);
+          break;
+
+        case 'pm_buy':
+          result = await this.getPolymarket().buy(
+            args.conditionId as string,
+            args.outcome as 'YES' | 'NO',
+            args.amountUSDC as string,
+            args.maxSlippagePct as number | undefined,
+          );
+          break;
+
+        case 'pm_redeem':
+          result = await this.getPolymarket().redeem(args.conditionId as string);
+          break;
+
 
         default:
           return this.error(id, -32602, `Unknown tool: ${name}`);
