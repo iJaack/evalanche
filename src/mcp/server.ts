@@ -1194,7 +1194,9 @@ const TOOLS: MCPTool[] = [
         conditionId: { type: 'string', description: 'Market condition ID' },
         outcome: { type: 'string', enum: ['YES', 'NO'], description: 'Outcome to buy' },
         amountUSDC: { type: 'string', description: 'USDC amount to spend (e.g. "10")' },
-        maxSlippagePct: { type: 'number', description: 'Max slippage percentage (default: 1)' },
+        orderType: { type: 'string', enum: ['market', 'limit'], description: 'market = fill at best ask; limit = GTC maker order at limitPrice (default: market)' },
+        limitPrice: { type: 'number', description: 'Price per share for limit orders (0-1, e.g. 0.885). Required if orderType=limit.' },
+        maxSlippagePct: { type: 'number', description: 'Max slippage % for market orders (default: 1)' },
       },
       required: ['conditionId', 'outcome', 'amountUSDC'],
     },
@@ -2309,7 +2311,11 @@ export class EvalancheMCPServer {
             args.conditionId as string,
             args.outcome as 'YES' | 'NO',
             args.amountUSDC as string,
-            args.maxSlippagePct as number | undefined,
+            {
+              orderType: args.orderType as 'market' | 'limit' | undefined,
+              limitPrice: args.limitPrice as number | undefined,
+              maxSlippagePct: args.maxSlippagePct as number | undefined,
+            },
           );
           break;
 
