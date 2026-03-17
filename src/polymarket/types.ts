@@ -32,8 +32,10 @@ export interface PMOrderbook {
 export interface PMBuyResult {
   orderId: string;
   tokenId: string;
-  side: "YES" | "NO";
+  side: 'YES' | 'NO';
   amountUSDC: string;
   estimatedShares: number;
   pricePerShare: number;
+  /** 'market' (fills immediately at best ask) or 'limit' (GTC maker order on CLOB) */
+  orderType: 'market' | 'limit';
 }
