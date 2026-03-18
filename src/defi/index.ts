@@ -1,16 +1,12 @@
-// Liquid Staking
-export { LiquidStakingClient, SAVAX_CONTRACT } from './liquid-staking';
+/**
+ * DeFi Module — vaults, lending, and yield optimization.
+ *
+ * Current status:
+ *   - vaults.ts: Placeholder (not yet implemented)
+ *
+ * See also:
+ *   - swap/ for DEX aggregation
+ *   - perps/ for perpetual futures
+ */
 
-// EIP-4626 Vaults
-export { VaultClient, YOUSD_VAULT, YOUSD_VAULT_CHAIN, YOUSD_VAULT_DECIMALS, KNOWN_VAULTS } from './vaults';
-
-// Types
-export type {
-  StakeQuote,
-  UnstakeQuote,
-  StakeConfig,
-  VaultQuote,
-  VaultInfo,
-  VaultConfig,
-} from './types';
-export { StakePoolInsufficientError, InsufficientBalanceError, VaultError } from './types';
+export { VaultClient } from './vaults';

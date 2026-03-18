@@ -1,4 +1,5 @@
-export { createWalletFromPrivateKey, createWalletFromMnemonic } from './signer';
-export type { AgentSigner } from './signer';
-export { TransactionBuilder } from './transaction';
-export type { TransactionIntent, CallIntent, TransactionResult } from './types';
+/**
+ * Wallet Module — signer management and wallet utilities.
+ */
+
+export type { AgentSigner, AvalancheSigner } from '../avalanche/signer';

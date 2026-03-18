@@ -1,45 +1,50 @@
-/** A simple TTL (time-to-live) cache */
+/**
+ * Simple in-memory TTL cache.
+ */
+
 export class TTLCache<T> {
-  private cache = new Map<string, { value: T; expiresAt: number }>();
-  private readonly ttlMs: number;
+  private cache: Map<string, { value: T; expiry: number }> = new Map();
 
-  /**
-   * Create a new TTL cache.
-   * @param ttlMs - Time-to-live in milliseconds (default: 5 minutes)
-   */
-  constructor(ttlMs: number = 5 * 60 * 1000) {
-    this.ttlMs = ttlMs;
-  }
+  constructor(private defaultTtlMs: number = 60 * 1000) {}
 
-  /**
-   * Get a value from the cache.
-   * @param key - Cache key
-   * @returns The cached value, or undefined if expired/missing
-   */
   get(key: string): T | undefined {
     const entry = this.cache.get(key);
     if (!entry) return undefined;
-    if (Date.now() > entry.expiresAt) {
+
+    if (Date.now() > entry.expiry) {
       this.cache.delete(key);
       return undefined;
     }
+
     return entry.value;
   }
 
-  /**
-   * Set a value in the cache.
-   * @param key - Cache key
-   * @param value - Value to cache
-   */
-  set(key: string, value: T): void {
+  set(key: string, value: T, ttlMs?: number): void {
+    const ttl = ttlMs ?? this.defaultTtlMs;
     this.cache.set(key, {
       value,
-      expiresAt: Date.now() + this.ttlMs,
+      expiry: Date.now() + ttl,
     });
   }
 
-  /** Clear all entries from the cache */
+  has(key: string): boolean {
+    return this.get(key) !== undefined;
+  }
+
+  delete(key: string): void {
+    this.cache.delete(key);
+  }
+
   clear(): void {
     this.cache.clear();
+  }
+
+  cleanup(): void {
+    const now = Date.now();
+    for (const [key, entry] of this.cache.entries()) {
+      if (now > entry.expiry) {
+        this.cache.delete(key);
+      }
+    }
   }
 }
