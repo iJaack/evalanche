@@ -89,7 +89,7 @@ describe('InteropIdentityResolver', () => {
     expect(result.services).toHaveLength(3);
     expect(result.agentWallet).toBe('0xWalletAddress1234567890abcdef1234567890ab');
     expect(result.active).toBe(true);
-    expect(mockFetch).toHaveBeenCalledWith('https://agent.example.com/registration.json');
+    expect(mockFetch).toHaveBeenCalledWith('https://agent.example.com/registration.json', expect.any(Object));
   });
 
   // ── resolveAgent with data: URI (base64) ──
@@ -122,7 +122,7 @@ describe('InteropIdentityResolver', () => {
 
     const result = await resolver.resolveAgent(1599);
     expect(result.name).toBe('TestAgent');
-    expect(mockFetch).toHaveBeenCalledWith(`https://ipfs.io/ipfs/${ipfsCid}`);
+    expect(mockFetch).toHaveBeenCalledWith(`https://ipfs.io/ipfs/${ipfsCid}`, expect.any(Object));
   });
 
   // ── getServiceEndpoints ──
@@ -228,7 +228,7 @@ describe('InteropIdentityResolver', () => {
     const result = await resolver.verifyEndpointBinding(1599, 'https://agent.example.com/api');
     expect(result.verified).toBe(true);
     expect(result.reason).toBeUndefined();
-    expect(mockFetch).toHaveBeenCalledWith('https://agent.example.com/.well-known/agent-registration.json');
+    expect(mockFetch).toHaveBeenCalledWith('https://agent.example.com/.well-known/agent-registration.json', expect.any(Object));
   });
 
   it('verifyEndpointBinding fails when domain has no match', async () => {

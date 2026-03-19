@@ -16,6 +16,7 @@
 
 import { EvalancheMCPServer } from './server';
 import type { EvalancheConfig } from '../agent';
+import { resolveAgentSecrets } from '../secrets';
 
 function parseArgs(): { http: boolean; port: number } {
   const args = process.argv.slice(2);
@@ -33,9 +34,10 @@ function parseArgs(): { http: boolean; port: number } {
   return { http, port };
 }
 
-function buildConfig(): EvalancheConfig {
-  const privateKey = process.env.AGENT_PRIVATE_KEY;
-  const mnemonic = process.env.AGENT_MNEMONIC;
+async function buildConfig(): Promise<EvalancheConfig> {
+  const resolved = await resolveAgentSecrets();
+  const privateKey = resolved.privateKey;
+  const mnemonic = resolved.mnemonic;
 
   if (!privateKey && !mnemonic) {
     process.stderr.write(
@@ -72,12 +74,19 @@ function buildConfig(): EvalancheConfig {
   return config;
 }
 
-const { http, port } = parseArgs();
-const config = buildConfig();
-const server = new EvalancheMCPServer(config);
+async function main(): Promise<void> {
+  const { http, port } = parseArgs();
+  const config = await buildConfig();
+  const server = new EvalancheMCPServer(config);
 
-if (http) {
-  server.startHTTP(port);
-} else {
-  server.startStdio();
+  if (http) {
+    server.startHTTP(port);
+  } else {
+    server.startStdio();
+  }
 }
+
+main().catch((error) => {
+  process.stderr.write(`Error: ${error instanceof Error ? error.message : String(error)}\n`);
+  process.exit(1);
+});

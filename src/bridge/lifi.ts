@@ -7,6 +7,7 @@
 
 import type { AgentSigner } from '../wallet/signer';
 import { EvalancheError, EvalancheErrorCode } from '../utils/errors';
+import { safeFetch } from '../utils/safe-fetch';
 import { parseUnits } from 'ethers';
 
 const LIFI_API = 'https://li.quest/v1';
@@ -146,7 +147,7 @@ export class LiFiClient {
       integrator: 'evalanche',
     });
 
-    const res = await fetch(`${LIFI_API}/quote?${searchParams}`);
+    const res = await safeFetch(`${LIFI_API}/quote?${searchParams}`, { timeoutMs: 15_000, maxBytes: 2_000_000 });
 
     if (!res.ok) {
       const body = await res.text().catch(() => 'Unknown error');
@@ -184,7 +185,9 @@ export class LiFiClient {
       },
     };
 
-    const res = await fetch(`${LIFI_API}/advanced/routes`, {
+    const res = await safeFetch(`${LIFI_API}/advanced/routes`, {
+      timeoutMs: 15_000,
+      maxBytes: 2_000_000,
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -253,7 +256,7 @@ export class LiFiClient {
     });
     if (params.bridge) searchParams.set('bridge', params.bridge);
 
-    const res = await fetch(`${LIFI_API}/status?${searchParams}`);
+    const res = await safeFetch(`${LIFI_API}/status?${searchParams}`, { timeoutMs: 15_000, maxBytes: 2_000_000 });
     if (!res.ok) {
       const body = await res.text().catch(() => 'Unknown error');
       throw new EvalancheError(
@@ -276,7 +279,7 @@ export class LiFiClient {
   }
 
   async getTokens(chainIds: number[]): Promise<Record<string, LiFiToken[]>> {
-    const res = await fetch(`${LIFI_API}/tokens?chains=${chainIds.join(',')}`);
+    const res = await safeFetch(`${LIFI_API}/tokens?chains=${chainIds.join(',')}`, { timeoutMs: 15_000, maxBytes: 2_000_000 });
     if (!res.ok) {
       const body = await res.text().catch(() => 'Unknown error');
       throw new EvalancheError(
@@ -289,7 +292,7 @@ export class LiFiClient {
   }
 
   async getToken(chainId: number, address: string): Promise<LiFiToken> {
-    const res = await fetch(`${LIFI_API}/token?chain=${chainId}&token=${address}`);
+    const res = await safeFetch(`${LIFI_API}/token?chain=${chainId}&token=${address}`, { timeoutMs: 15_000, maxBytes: 2_000_000 });
     if (!res.ok) {
       const body = await res.text().catch(() => 'Unknown error');
       throw new EvalancheError(
@@ -304,7 +307,7 @@ export class LiFiClient {
     const url = chainTypes?.length
       ? `${LIFI_API}/chains?chainTypes=${chainTypes.join(',')}`
       : `${LIFI_API}/chains`;
-    const res = await fetch(url);
+    const res = await safeFetch(url, { timeoutMs: 15_000, maxBytes: 2_000_000 });
     if (!res.ok) {
       const body = await res.text().catch(() => 'Unknown error');
       throw new EvalancheError(
@@ -317,7 +320,7 @@ export class LiFiClient {
   }
 
   async getTools(): Promise<LiFiTools> {
-    const res = await fetch(`${LIFI_API}/tools`);
+    const res = await safeFetch(`${LIFI_API}/tools`, { timeoutMs: 15_000, maxBytes: 2_000_000 });
     if (!res.ok) {
       const body = await res.text().catch(() => 'Unknown error');
       throw new EvalancheError(
@@ -329,7 +332,7 @@ export class LiFiClient {
   }
 
   async getGasPrices(): Promise<LiFiGasPrices> {
-    const res = await fetch(`${LIFI_API}/gas/prices`);
+    const res = await safeFetch(`${LIFI_API}/gas/prices`, { timeoutMs: 15_000, maxBytes: 2_000_000 });
     if (!res.ok) {
       const body = await res.text().catch(() => 'Unknown error');
       throw new EvalancheError(
@@ -341,7 +344,7 @@ export class LiFiClient {
   }
 
   async getGasSuggestion(chainId: number): Promise<LiFiGasSuggestion> {
-    const res = await fetch(`${LIFI_API}/gas/suggestion?chain=${chainId}`);
+    const res = await safeFetch(`${LIFI_API}/gas/suggestion?chain=${chainId}`, { timeoutMs: 15_000, maxBytes: 2_000_000 });
     if (!res.ok) {
       const body = await res.text().catch(() => 'Unknown error');
       throw new EvalancheError(
@@ -360,7 +363,7 @@ export class LiFiClient {
     if (params.fromToken) searchParams.set('fromToken', params.fromToken);
     if (params.toToken) searchParams.set('toToken', params.toToken);
 
-    const res = await fetch(`${LIFI_API}/connections?${searchParams}`);
+    const res = await safeFetch(`${LIFI_API}/connections?${searchParams}`, { timeoutMs: 15_000, maxBytes: 2_000_000 });
     if (!res.ok) {
       const body = await res.text().catch(() => 'Unknown error');
       throw new EvalancheError(

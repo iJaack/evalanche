@@ -1,6 +1,7 @@
 import { Contract, JsonRpcProvider } from 'ethers';
 import { IDENTITY_ABI, IDENTITY_REGISTRY } from '../identity/constants';
 import { EvalancheError, EvalancheErrorCode } from '../utils/errors';
+import { safeFetch } from '../utils/safe-fetch';
 import type {
   AgentRegistration,
   AgentServiceEntry,
@@ -26,23 +27,8 @@ const TRANSPORT_PRIORITY: TransportType[] = ['A2A', 'XMTP', 'MCP', 'web'];
 
 /** Default IPFS gateway */
 const IPFS_GATEWAY = 'https://ipfs.io/ipfs/';
+const REGISTRATION_MAX_BYTES = 512_000;
 
-/**
- * InteropIdentityResolver resolves full ERC-8004 agent registrations.
- *
- * Given an agent ID, it reads the on-chain `agentURI`, fetches the
- * registration file (JSON), and returns typed data including services,
- * wallet address, trust modes, and endpoint bindings.
- *
- * Supports `ipfs://`, `https://`, and `data:` URI schemes.
- *
- * @example
- * ```ts
- * const resolver = new InteropIdentityResolver(provider);
- * const registration = await resolver.resolveAgent(1599);
- * console.log(registration.services);
- * ```
- */
 export class InteropIdentityResolver {
   private readonly _provider: JsonRpcProvider;
   private readonly _defaultRegistry: string;
@@ -52,12 +38,6 @@ export class InteropIdentityResolver {
     this._defaultRegistry = defaultRegistry ?? IDENTITY_REGISTRY;
   }
 
-  /**
-   * Resolve the full agent registration file from on-chain agentURI.
-   * @param agentId - Agent token ID (number or string)
-   * @param agentRegistry - Optional override for registry contract address
-   * @returns Parsed AgentRegistration from the agent's URI
-   */
   async resolveAgent(agentId: number | string, agentRegistry?: string): Promise<AgentRegistration> {
     const registry = agentRegistry ?? this._defaultRegistry;
     const contract = new Contract(registry, REGISTRY_ABI, this._provider);
@@ -84,24 +64,11 @@ export class InteropIdentityResolver {
     return this._fetchRegistration(agentURI, String(agentId));
   }
 
-  /**
-   * Get all service endpoints from an agent's registration file.
-   * @param agentId - Agent token ID
-   * @param agentRegistry - Optional registry override
-   * @returns Array of typed service entries
-   */
   async getServiceEndpoints(agentId: number | string, agentRegistry?: string): Promise<AgentServiceEntry[]> {
     const registration = await this.resolveAgent(agentId, agentRegistry);
     return registration.services;
   }
 
-  /**
-   * Get the preferred transport for an agent, based on priority order:
-   * A2A > XMTP > MCP > web.
-   * @param agentId - Agent token ID
-   * @param agentRegistry - Optional registry override
-   * @returns The best available transport type and endpoint, or null if none
-   */
   async getPreferredTransport(
     agentId: number | string,
     agentRegistry?: string,
@@ -117,12 +84,9 @@ export class InteropIdentityResolver {
 
     for (const transport of TRANSPORT_PRIORITY) {
       const endpoint = endpointMap[transport];
-      if (endpoint) {
-        return { transport, endpoint };
-      }
+      if (endpoint) return { transport, endpoint };
     }
 
-    // Fall back to first available service
     if (services.length > 0) {
       return { transport: services[0].name, endpoint: services[0].endpoint };
     }
@@ -130,29 +94,17 @@ export class InteropIdentityResolver {
     return null;
   }
 
-  /**
-   * Resolve the agent wallet address from on-chain metadata.
-   * Reads the "agentWallet" key from the registry's metadata mapping.
-   * Falls back to the registration file's agentWallet field.
-   * @param agentId - Agent token ID
-   * @param agentRegistry - Optional registry override
-   * @returns Wallet address string
-   */
   async resolveAgentWallet(agentId: number | string, agentRegistry?: string): Promise<string> {
     const registry = agentRegistry ?? this._defaultRegistry;
 
-    // Try on-chain metadata first
     try {
       const contract = new Contract(registry, METADATA_ABI, this._provider);
       const wallet = await contract.getFunction('metadata')(BigInt(agentId), 'agentWallet') as string;
-      if (wallet && wallet !== '') {
-        return wallet;
-      }
+      if (wallet && wallet !== '') return wallet;
     } catch {
       // metadata function may not exist; fall through to registration file
     }
 
-    // Fallback: read from registration file
     const registration = await this.resolveAgent(agentId, agentRegistry);
     if (!registration.agentWallet) {
       throw new EvalancheError(
@@ -163,15 +115,6 @@ export class InteropIdentityResolver {
     return registration.agentWallet;
   }
 
-  /**
-   * Verify that an agent's endpoint domain has a matching registration binding.
-   * Fetches `https://{domain}/.well-known/agent-registration.json` and checks
-   * that `registrations[]` contains a matching agentRegistry + agentId.
-   * @param agentId - Agent token ID
-   * @param endpoint - The endpoint URL to verify
-   * @param agentRegistry - Optional registry override
-   * @returns Verification result with verified flag and optional reason
-   */
   async verifyEndpointBinding(
     agentId: number | string,
     endpoint: string,
@@ -182,6 +125,9 @@ export class InteropIdentityResolver {
     let domain: string;
     try {
       const url = new URL(endpoint);
+      if (url.protocol !== 'https:') {
+        return { verified: false, reason: 'Endpoint must use HTTPS' };
+      }
       domain = url.hostname;
     } catch {
       return { verified: false, reason: 'Invalid endpoint URL' };
@@ -190,7 +136,11 @@ export class InteropIdentityResolver {
     const wellKnownUrl = `https://${domain}/.well-known/agent-registration.json`;
 
     try {
-      const res = await fetch(wellKnownUrl);
+      const res = await safeFetch(wellKnownUrl, {
+        timeoutMs: 8_000,
+        maxBytes: REGISTRATION_MAX_BYTES,
+        blockPrivateNetwork: true,
+      });
       if (!res.ok) {
         return { verified: false, reason: `Well-known endpoint returned ${res.status}` };
       }
@@ -205,11 +155,9 @@ export class InteropIdentityResolver {
         (r) => r.agentId === agentIdStr && this._registryMatches(r.agentRegistry, registry),
       );
 
-      if (match) {
-        return { verified: true };
-      }
-
-      return { verified: false, reason: 'No matching registration found for this agent and registry' };
+      return match
+        ? { verified: true }
+        : { verified: false, reason: 'No matching registration found for this agent and registry' };
     } catch (error) {
       return {
         verified: false,
@@ -218,33 +166,20 @@ export class InteropIdentityResolver {
     }
   }
 
-  /**
-   * Reverse-resolve an agent ID from a wallet address by querying
-   * Transfer events on the identity registry.
-   * @param address - Wallet address to look up
-   * @param agentRegistry - Optional registry override
-   * @returns Agent ID string, or null if not found
-   */
   async resolveByWallet(address: string, agentRegistry?: string): Promise<string | null> {
     const registry = agentRegistry ?? this._defaultRegistry;
     const contract = new Contract(registry, REGISTRY_ABI, this._provider);
 
     try {
-      // Query Transfer events where 'to' is the given address
       const filter = contract.filters.Transfer(null, address);
       const events = await contract.queryFilter(filter);
+      if (events.length === 0) return null;
 
-      if (events.length === 0) {
-        return null;
-      }
-
-      // Return the most recent transfer's token ID
       const lastEvent = events[events.length - 1];
       if ('args' in lastEvent && lastEvent.args) {
         const tokenId = lastEvent.args[2];
         return String(tokenId);
       }
-
       return null;
     } catch (error) {
       throw new EvalancheError(
@@ -255,64 +190,71 @@ export class InteropIdentityResolver {
     }
   }
 
-  /**
-   * Fetch and parse a registration file from a URI.
-   * Supports ipfs://, https://, and data: schemes.
-   */
-  private async _fetchRegistration(uri: string, agentId: string): Promise<AgentRegistration> {
-    let json: string;
+  private async _fetchRegistration(uri: string, expectedAgentId: string): Promise<AgentRegistration> {
+    let raw: string;
 
     if (uri.startsWith('data:')) {
-      json = this._decodeDataUri(uri);
+      raw = this._decodeDataUri(uri);
     } else if (uri.startsWith('ipfs://')) {
-      const cid = uri.slice(7);
-      const gatewayUrl = `${IPFS_GATEWAY}${cid}`;
-      json = await this._fetchUrl(gatewayUrl, agentId);
-    } else if (uri.startsWith('https://') || uri.startsWith('http://')) {
-      json = await this._fetchUrl(uri, agentId);
+      const cidPath = uri.slice('ipfs://'.length).replace(/^ipfs\//, '');
+      raw = await this._fetchHttp(`${IPFS_GATEWAY}${cidPath}`);
+    } else if (uri.startsWith('https://')) {
+      raw = await this._fetchHttp(uri);
+    } else if (uri.startsWith('http://')) {
+      throw new EvalancheError(
+        'Plain HTTP agent registration URIs are not allowed',
+        EvalancheErrorCode.UNSUPPORTED_URI_SCHEME,
+      );
     } else {
       throw new EvalancheError(
-        `Unsupported URI scheme for agent ${agentId}: ${uri.split(':')[0] ?? uri}`,
+        `Unsupported URI scheme in ${uri}`,
         EvalancheErrorCode.UNSUPPORTED_URI_SCHEME,
       );
     }
 
+    let parsed: AgentRegistration;
     try {
-      const parsed = JSON.parse(json) as AgentRegistration;
-      return parsed;
+      parsed = JSON.parse(raw) as AgentRegistration;
     } catch (error) {
       throw new EvalancheError(
-        `Failed to parse registration JSON for agent ${agentId}`,
+        `Failed to parse registration JSON for agent ${expectedAgentId}`,
         EvalancheErrorCode.IDENTITY_RESOLUTION_ERROR,
         error instanceof Error ? error : undefined,
       );
     }
-  }
 
-  /** Fetch a URL and return the response text */
-  private async _fetchUrl(url: string, agentId: string): Promise<string> {
-    try {
-      const res = await fetch(url);
-      if (!res.ok) {
-        throw new EvalancheError(
-          `HTTP ${res.status} fetching registration for agent ${agentId}: ${url}`,
-          EvalancheErrorCode.IDENTITY_RESOLUTION_ERROR,
-        );
-      }
-      return await res.text();
-    } catch (error) {
-      if (error instanceof EvalancheError) throw error;
+    if (!parsed || typeof parsed !== 'object') {
       throw new EvalancheError(
-        `Failed to fetch registration for agent ${agentId}: ${url}`,
+        `Invalid registration payload for agent ${expectedAgentId}`,
         EvalancheErrorCode.IDENTITY_RESOLUTION_ERROR,
-        error instanceof Error ? error : undefined,
       );
     }
+
+    parsed.services = Array.isArray(parsed.services) ? parsed.services : [];
+    parsed.registrations = Array.isArray(parsed.registrations) ? parsed.registrations : [];
+    parsed.active = parsed.active !== false;
+
+    return parsed;
   }
 
-  /** Decode a data: URI (supports base64 and plain text) */
+  private async _fetchHttp(url: string): Promise<string> {
+    const res = await safeFetch(url, {
+      timeoutMs: 8_000,
+      maxBytes: REGISTRATION_MAX_BYTES,
+      blockPrivateNetwork: true,
+    });
+
+    if (!res.ok) {
+      throw new EvalancheError(
+        `HTTP ${res.status} while fetching registration`,
+        EvalancheErrorCode.IDENTITY_RESOLUTION_FAILED,
+      );
+    }
+
+    return await res.text();
+  }
+
   private _decodeDataUri(uri: string): string {
-    // data:[<mediatype>][;base64],<data>
     const commaIndex = uri.indexOf(',');
     if (commaIndex === -1) {
       throw new EvalancheError(
@@ -321,26 +263,26 @@ export class InteropIdentityResolver {
       );
     }
 
-    const header = uri.slice(0, commaIndex);
+    const meta = uri.slice(5, commaIndex);
     const data = uri.slice(commaIndex + 1);
+    const isBase64 = meta.includes(';base64');
 
-    if (header.includes(';base64')) {
-      return Buffer.from(data, 'base64').toString('utf-8');
+    try {
+      return isBase64
+        ? Buffer.from(data, 'base64').toString('utf8')
+        : decodeURIComponent(data);
+    } catch (error) {
+      throw new EvalancheError(
+        'Failed to decode data: URI',
+        EvalancheErrorCode.IDENTITY_RESOLUTION_FAILED,
+        error instanceof Error ? error : undefined,
+      );
     }
-
-    return decodeURIComponent(data);
   }
 
-  /** Check if two registry addresses match (handles CAIP-10 and raw formats) */
-  private _registryMatches(a: string, b: string): boolean {
-    const normalize = (addr: string): string => {
-      // Extract raw address from CAIP-10 format
-      if (addr.startsWith('eip155:')) {
-        const parts = addr.split(':');
-        return (parts[2] ?? addr).toLowerCase();
-      }
-      return addr.toLowerCase();
-    };
-    return normalize(a) === normalize(b);
+  private _registryMatches(candidate: string, expected: string): boolean {
+    const a = candidate.toLowerCase();
+    const b = expected.toLowerCase();
+    return a === b || a.endsWith(`:${b}`);
   }
 }

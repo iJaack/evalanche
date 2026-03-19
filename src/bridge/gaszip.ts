@@ -9,6 +9,7 @@
 
 import type { AgentSigner } from '../wallet/signer';
 import { EvalancheError, EvalancheErrorCode } from '../utils/errors';
+import { safeFetch } from '../utils/safe-fetch';
 import { parseEther } from 'ethers';
 
 const GASZIP_API = 'https://backend.gas.zip/v2';
@@ -63,7 +64,7 @@ export class GasZipClient {
       searchParams.set('amount', params.destinationGasAmount);
     }
 
-    const res = await fetch(`${GASZIP_API}/quotes?${searchParams}`);
+    const res = await safeFetch(`${GASZIP_API}/quotes?${searchParams}`, { timeoutMs: 10_000, maxBytes: 1_000_000 });
 
     if (!res.ok) {
       const body = await res.text().catch(() => 'Unknown error');

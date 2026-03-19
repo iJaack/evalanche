@@ -2,6 +2,7 @@ import type { AgentSigner } from '../wallet/signer';
 import { X402Facilitator } from './facilitator';
 import type { PaymentRequirements, PayAndFetchOptions, PayAndFetchResult } from './types';
 import { EvalancheError, EvalancheErrorCode } from '../utils/errors';
+import { safeFetch } from '../utils/safe-fetch';
 
 /**
  * x402 payment-gated HTTP client.
@@ -57,7 +58,7 @@ export class X402Client {
   async payAndFetch(url: string, options: PayAndFetchOptions): Promise<PayAndFetchResult> {
     try {
       // Step 1: Initial request
-      const initialResponse = await fetch(url, {
+      const initialResponse = await safeFetch(url, { timeoutMs: 15_000, maxBytes: 2_000_000,
         method: options.method ?? 'GET',
         headers: options.headers,
         body: options.body,
@@ -87,7 +88,7 @@ export class X402Client {
       const proof = await this.facilitator.createPaymentProof(requirements);
 
       // Step 5: Retry with payment proof
-      const paidResponse = await fetch(url, {
+      const paidResponse = await safeFetch(url, { timeoutMs: 15_000, maxBytes: 2_000_000,
         method: options.method ?? 'GET',
         headers: {
           ...options.headers,

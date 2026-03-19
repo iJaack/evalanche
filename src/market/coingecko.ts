@@ -6,6 +6,7 @@
  */
 
 import { EvalancheError, EvalancheErrorCode } from '../utils/errors';
+import { safeFetch } from '../utils/safe-fetch';
 
 interface PriceParams {
   ids: string;
@@ -48,7 +49,7 @@ export class CoinGeckoClient {
 
     let response: Response;
     try {
-      response = await fetch(url.toString());
+      response = await safeFetch(url.toString(), { timeoutMs: 8_000, maxBytes: 1_000_000 });
     } catch (error) {
       throw new EvalancheError(
         `CoinGecko request failed: ${error instanceof Error ? error.message : String(error)}`,
