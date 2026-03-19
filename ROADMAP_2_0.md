@@ -294,7 +294,72 @@
 
 ---
 
-## Phase 11: Real Multi-Agent Demos
+## Phase 11: Security Hardening and Dependency Surface Reduction
+
+> **Why now:** Evalanche is becoming a networked agent stack. Before adding more transports and settlement backends, tighten the fetch surface, reduce transitive dependency risk, and make optional integrations less dangerous by default.
+
+- [ ] **Step 11.1 — Safe network primitives**
+  - Centralize remote HTTP access behind a hardened fetch layer
+  - Enforce HTTPS-by-default for identity and agent discovery
+  - Block localhost / loopback / link-local / RFC1918 targets for untrusted agent-discovery fetches
+  - Add timeouts, redirect policy, and response size limits
+  - _Notes: (fill in when done)_
+
+- [ ] **Step 11.2 — Secret and subprocess hardening**
+  - Route all CLI/server boot paths through shared secret resolution
+  - Ensure no raw private keys are echoed in subprocess errors or logs
+  - Audit platform-cli and similar wrappers for env leakage and dangerous defaults
+  - _Notes: (fill in when done)_
+
+- [ ] **Step 11.3 — Optional module isolation**
+  - Move heavy / high-risk integrations behind lazy imports and optional entry points
+  - Prioritize Avalanche Core SDK, dYdX, Ledger, and Polymarket dependency chains
+  - Keep the base wallet / identity / economy path as small as possible
+  - _Notes: (fill in when done)_
+
+- [ ] **Step 13.4 — Dependency reduction plan**
+  - Map critical/high `npm audit` findings to actual runtime reachability
+  - Replace or remove vulnerable transitive trees where practical
+  - Track remaining accepted risk in docs
+  - _Notes: (fill in when done)_
+
+- [ ] **Step 11.5 — Tests for hardening work**
+  - Add tests for blocked private-network URLs, HTTP rejection, timeout behavior, and safe secret resolution
+  - Maintain full green suite after every hardening step
+  - _Notes: (fill in when done)_
+
+---
+
+## Phase 12: ERC-8183 Commerce Adapter
+
+> **Why here:** After identity, A2A, XMTP, and receipt composition exist, ERC-8183 becomes a strong optional onchain settlement rail for evaluator-backed agent commerce — not a replacement for the rest of the stack.
+
+- [ ] **Step 12.1 — ERC-8183 client module**
+  - Create `src/commerce/erc8183.ts` or `src/economy/erc8183.ts`
+  - Add typed job state, roles, hook metadata, and settlement helpers
+  - _Notes: (fill in when done)_
+
+- [ ] **Step 12.2 — Job lifecycle methods**
+  - `createJob(...)`, `fundJob(...)`, `submitJobResult(...)`, `completeJob(...)`, `rejectJob(...)`, `claimRefund(...)`, `getJob(...)`
+  - Map the ERC-8183 state machine cleanly into evalanche types
+  - _Notes: (fill in when done)_
+
+- [ ] **Step 12.3 — A2A / XMTP / receipt composition**
+  - Use A2A for task submission, XMTP for async updates, and ERC-8183 for high-assurance settlement
+  - Map evaluator attestation into evalanche receipt/trust flows
+  - _Notes: (fill in when done)_
+
+- [ ] **Step 12.4 — MCP tools for commerce**
+  - `erc8183_create_job`, `erc8183_fund_job`, `erc8183_get_job`, `erc8183_complete_job`, `erc8183_reject_job`, `erc8183_claim_refund`
+  - _Notes: (fill in when done)_
+
+- [ ] **Step 12.5 — Tests for ERC-8183 adapter**
+  - Mock contract interactions, evaluator flows, and refund paths
+  - _Notes: (fill in when done)_
+
+---
+
+## Phase 13: Real Multi-Agent Demos
 
 > **Why last:** Abstractions without proof are just theory. These demos run against real infrastructure and show the full stack working end-to-end across separate processes or machines.
 
@@ -318,12 +383,24 @@
   - Script: `examples/demo-async-job.ts`
   - _Notes: (fill in when done)_
 
-- [ ] **Step 11.4 — Update README**
+- [ ] **Step 13.4 — Update README**
   - New architecture diagram
   - Quickstart for A2A + XMTP
   - Link to demos
   - Protocol compatibility table: ERC-8004 ✓, A2A ✓, XMTP ✓, x402 ✓, MCP ✓
   - _Notes: (fill in when done)_
+
+---
+
+## Optional Adapter Track: Tempo
+
+> **Why optional:** Tempo is useful for paid service discovery and payment-aware HTTP access, but it is not a protocol foundation like ERC-8004, A2A, or XMTP. Treat it as an adapter, not a core dependency.
+
+- [ ] Create `src/services/tempo.ts` or `src/commerce/tempo.ts`
+- [ ] Add optional wrappers for service discovery, endpoint inspection, and paid request execution
+- [ ] Keep Tempo CLI integration lazy and non-blocking for base evalanche installs
+- [ ] Use it for commercial demos and paid API workflows once the core interop stack is stable
+
 
 ---
 
@@ -384,6 +461,7 @@ examples/
 | Date | Step | Agent | Summary |
 |------|------|-------|---------|
 | 2026-03-13 | 7.1–7.7 | Claude Opus 4.6 | Phase 7 COMPLETE — InteropIdentityResolver (ERC-8004 full resolution), 5 MCP tools, 24+7 tests, 372/372 passing, v1.1.0 |
+| 2026-03-19 | 11.x prep | Wolfie | Security hardening shipped (safe fetch, SSRF guardrails, secret-loading cleanup), roadmap extended with security + ERC-8183 + Tempo tracks, release line moved to v1.4.0 planning. |
 
 ---
 
