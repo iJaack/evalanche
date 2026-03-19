@@ -1,12 +1,14 @@
 /**
- * DeFi Module — vaults, lending, and yield optimization.
- *
- * Current status:
- *   - vaults.ts: Placeholder (not yet implemented)
- *
- * See also:
- *   - swap/ for DEX aggregation
- *   - perps/ for perpetual futures
+ * DeFi module exports.
  */
 
-export { VaultClient } from './vaults';
+export { LiquidStakingClient, SAVAX_CONTRACT } from './liquid-staking';
+export { VaultClient, YOUSD_VAULT } from './vaults';
+export type {
+  StakeQuote,
+  UnstakeQuote,
+  StakeConfig,
+  VaultQuote,
+  VaultInfo,
+  VaultConfig,
+} from './types';
