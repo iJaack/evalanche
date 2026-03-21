@@ -48,5 +48,19 @@ jobs:
       - name: Build package
         run: npm run build
 
+      - name: Validate package name
+        run: |
+          PKG_NAME=$(node -p "require('./package.json').name")
+          if [ "$PKG_NAME" != "evalanche" ]; then
+            echo "Unexpected package name: $PKG_NAME"
+            exit 1
+          fi
+
+      - name: Preflight package identity
+        run: |
+          echo "package: $(node -p "require('./package.json').name")"
+          echo "version: $(node -p "require('./package.json').version")"
+          npm view evalanche version || true
+
       - name: Publish to npm
-        run: npm publish --provenance
+        run: npm publish --provenance --access public --registry=https://registry.npmjs.org/
