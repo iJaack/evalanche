@@ -1,13 +1,4 @@
-import {
-  BECH32_PREFIX,
-  CompositeClient,
-  LocalWallet,
-  Network,
-  OrderSide,
-  OrderTimeInForce,
-  OrderType,
-  SubaccountClient,
-} from '@dydxprotocol/v4-client-js';
+import { createRequire } from 'module';
 import { EvalancheError, EvalancheErrorCode } from '../../utils/errors';
 import type { PerpVenue } from '../index';
 import type {
@@ -19,17 +10,45 @@ import type {
 } from './types';
 
 type DydxOrderRecord = Record<string, unknown>;
+type DydxSdk = typeof import('@dydxprotocol/v4-client-js');
+
+let dydxSdkPromise: Promise<DydxSdk> | null = null;
+
+async function loadDydxSdk(): Promise<DydxSdk> {
+  if (dydxSdkPromise) return dydxSdkPromise;
+
+  dydxSdkPromise = (async () => {
+    try {
+      return await import('@dydxprotocol/v4-client-js') as DydxSdk;
+    } catch (importError) {
+      try {
+        const req = typeof require === 'function'
+          ? require
+          : createRequire(import.meta.url);
+        return req('@dydxprotocol/v4-client-js') as DydxSdk;
+      } catch (requireError) {
+        throw new EvalancheError(
+          'Failed to load dYdX SDK. Install or repair @dydxprotocol/v4-client-js before using perps.',
+          EvalancheErrorCode.DYDX_ERROR,
+          requireError instanceof Error ? requireError : importError instanceof Error ? importError : undefined,
+        );
+      }
+    }
+  })();
+
+  return dydxSdkPromise;
+}
 
 export class DydxClient implements PerpVenue {
   readonly name = 'dydx';
 
   private readonly mnemonic: string;
-  private readonly network: Network;
-  private wallet?: LocalWallet;
-  private client?: CompositeClient;
-  private subaccount?: SubaccountClient;
+  private readonly network?: unknown;
+  private wallet?: any;
+  private client?: any;
+  private subaccount?: any;
 
-  constructor(mnemonic: string, network: Network = Network.mainnet()) {
+  constructor(mnemonic: string, network?: unknown) {
     this.mnemonic = mnemonic;
     this.network = network;
   }
@@ -39,9 +58,11 @@ export class DydxClient implements PerpVenue {
     if (this.client && this.subaccount && this.wallet) return;
 
     try {
-      this.wallet = await LocalWallet.fromMnemonic(this.mnemonic, BECH32_PREFIX);
-      this.client = await CompositeClient.connect(this.network);
-      this.subaccount = SubaccountClient.forLocalWallet(this.wallet, 0);
+      const sdk = await loadDydxSdk();
+      const network = this.network ?? sdk.Network.mainnet();
+      this.wallet = await sdk.LocalWallet.fromMnemonic(this.mnemonic, sdk.BECH32_PREFIX);
+      this.client = await sdk.CompositeClient.connect(network as any);
+      this.subaccount = sdk.SubaccountClient.forLocalWallet(this.wallet, 0);
     } catch (cause) {
       throw new EvalancheError(
         'Failed to initialize dYdX client',
@@ -150,20 +171,21 @@ export class DydxClient implements PerpVenue {
 
     try {
       const price = await this.getMarketReferencePrice(params.market);
-      const side = params.side === 'BUY' ? OrderSide.BUY : OrderSide.SELL;
-      const adjustedPrice = side === OrderSide.BUY ? price * 1.01 : price * 0.99;
+      const sdk = await loadDydxSdk();
+      const side = params.side === 'BUY' ? sdk.OrderSide.BUY : sdk.OrderSide.SELL;
+      const adjustedPrice = side === sdk.OrderSide.BUY ? price * 1.01 : price * 0.99;
       const goodTil = Math.floor(Date.now() / 1000) + 120;
       const clientId = this.randomClientId();
 
       await this.client!.placeOrder(
         this.subaccount!,
         params.market,
-        OrderType.MARKET,
+        sdk.OrderType.MARKET,
         side,
         adjustedPrice,
         Number(params.size),
         clientId,
-        OrderTimeInForce.FOK,
+        sdk.OrderTimeInForce.FOK,
         goodTil,
         undefined,
         false,
@@ -192,15 +214,16 @@ export class DydxClient implements PerpVenue {
     }
 
     try {
-      const side = params.side === 'BUY' ? OrderSide.BUY : OrderSide.SELL;
-      const tif = this.mapTimeInForce(params.timeInForce);
+      const sdk = await loadDydxSdk();
+      const side = params.side === 'BUY' ? sdk.OrderSide.BUY : sdk.OrderSide.SELL;
+      const tif = await this.mapTimeInForce(params.timeInForce);
       const goodTil = params.goodTilSeconds ?? (Math.floor(Date.now() / 1000) + 3600);
       const clientId = this.randomClientId();
 
       await this.client!.placeOrder(
         this.subaccount!,
         params.market,
-        OrderType.LIMIT,
+        sdk.OrderType.LIMIT,
         side,
         Number(params.price),
         Number(params.size),
@@ -341,10 +364,11 @@ export class DydxClient implements PerpVenue {
     return address;
   }
 
-  private mapTimeInForce(tif?: LimitOrderParams['timeInForce']): OrderTimeInForce {
-    if (tif === 'IOC') return OrderTimeInForce.IOC;
-    if (tif === 'FOK') return OrderTimeInForce.FOK;
-    return OrderTimeInForce.GTT;
+  private async mapTimeInForce(tif?: LimitOrderParams['timeInForce']): Promise<unknown> {
+    const sdk = await loadDydxSdk();
+    if (tif === 'IOC') return sdk.OrderTimeInForce.IOC;
+    if (tif === 'FOK') return sdk.OrderTimeInForce.FOK;
+    return sdk.OrderTimeInForce.GTT;
   }
 
   private async getMarketReferencePrice(ticker: string): Promise<number> {

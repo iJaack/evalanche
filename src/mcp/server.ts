@@ -2264,19 +2264,12 @@ export class EvalancheMCPServer {
           break;
 
         // ─── Polymarket ───
-        case 'pm_search': {
-          const markets = await this.getPolymarket().getMarkets({
-            limit: (args.limit as number | undefined) ?? 50,
-          });
-          const q = String(args.query ?? '').toLowerCase();
-          result = markets
-            .filter((m) =>
-              ((m.question ?? '').toLowerCase().includes(q)) ||
-              ((m.description ?? '').toLowerCase().includes(q)),
-            )
-            .slice(0, (args.limit as number | undefined) ?? 10);
+        case 'pm_search':
+          result = await this.getPolymarket().searchMarkets(
+            String(args.query ?? ''),
+            (args.limit as number | undefined) ?? 10,
+          );
           break;
-        }
 
         case 'pm_market':
           result = await this.getPolymarket().getMarket(args.conditionId as string);
