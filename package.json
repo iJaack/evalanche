@@ -13,7 +13,7 @@
     }
   },
   "bin": {
-    "evalanche-mcp": "./dist/mcp/cli.mjs"
+    "evalanche-mcp": "dist/mcp/cli.mjs"
   },
   "files": [
     "dist",
@@ -69,5 +69,13 @@
     "@osmonauts/lcd": {
       "axios": "^1.13.6"
     }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/iJaack/evalanche.git"
+  },
+  "publishConfig": {
+    "provenance": true,
+    "registry": "https://registry.npmjs.org/"
   }
 }
