@@ -7,6 +7,7 @@ import { EvalancheError, EvalancheErrorCode } from '../utils/errors';
 import { getNetworkConfig } from '../utils/networks';
 import { getAllChains } from '../utils/chains';
 import { NATIVE_TOKEN } from '../bridge/lifi';
+import { safeFetch } from '../utils/safe-fetch';
 import { CoinGeckoClient } from '../market/coingecko';
 import { PolymarketClient } from '../polymarket';
 import { DiscoveryClient } from '../economy/discovery';
@@ -1231,6 +1232,7 @@ export class EvalancheMCPServer {
   private interopResolver: InteropIdentityResolver;
   private coingecko: CoinGeckoClient;
   private polymarket: PolymarketClient | null = null;
+  private authedClobClient: any = null;
 
 
   constructor(config: EvalancheConfig) {
@@ -1251,6 +1253,45 @@ export class EvalancheMCPServer {
     }
     return this.polymarket;
 
+  }
+
+  private async getAuthedClobClient(): Promise<any> {
+    if (this.authedClobClient) return this.authedClobClient;
+
+    const { ClobClient } = await import('@polymarket/clob-client');
+    const { createWalletClient, http } = await import('viem');
+    const { polygon } = await import('viem/chains');
+    const { privateKeyToAccount } = await import('viem/accounts');
+
+    let pk = this.agent.wallet.privateKey;
+    if (!pk.startsWith('0x')) pk = `0x${pk}`;
+
+    const account = privateKeyToAccount(pk as `0x${string}`);
+    const walletClient = createWalletClient({
+      account,
+      chain: polygon,
+      transport: http('https://polygon-bor-rpc.publicnode.com'),
+    });
+
+    // ClobClient v5.8.0 accepts viem WalletClient at runtime but types lag behind
+    const ClobAny = ClobClient as any;
+    const client = new ClobAny(
+      'https://clob.polymarket.com',
+      137,
+      walletClient,
+    );
+    const creds = await client.createOrDeriveApiKey();
+
+    this.authedClobClient = new ClobAny(
+      'https://clob.polymarket.com',
+      137,
+      walletClient,
+      creds,
+      0,
+      account.address,
+    );
+
+    return this.authedClobClient;
   }
 
   /** Handle a JSON-RPC request and return a response */
@@ -2275,18 +2316,91 @@ export class EvalancheMCPServer {
           result = await this.getPolymarket().getMarket(args.conditionId as string);
           break;
 
-        case 'pm_positions':
-          result = await this.getPolymarket().getPositions();
+        case 'pm_positions': {
+          const wallet = (args.walletAddress as string) || this.agent.address;
+          const posUrl = `https://data-api.polymarket.com/positions?user=${wallet}`;
+          const posResp = await safeFetch(posUrl, { timeoutMs: 12_000, maxBytes: 2_000_000 });
+          if (!posResp.ok) throw new Error(`Polymarket data-api returned ${posResp.status}`);
+          result = await posResp.json();
           break;
+        }
 
         case 'pm_orderbook':
           result = await this.getPolymarket().getOrderBook(args.tokenId as string);
           break;
 
-        case 'pm_approve':
-        case 'pm_buy':
+        case 'pm_approve': {
+          const authedApprove = await this.getAuthedClobClient();
+          await authedApprove.updateBalanceAllowance({ asset_type: 'COLLATERAL' });
+          result = { approved: true };
+          break;
+        }
+
+        case 'pm_buy': {
+          const conditionId = args.conditionId as string;
+          const outcome = (args.outcome as string).toUpperCase();
+          const amountUSDC = parseFloat(args.amountUSDC as string);
+          const orderType = (args.orderType as string) || 'market';
+          const limitPrice = args.limitPrice as number | undefined;
+
+          // Get market to find tokenId for the chosen outcome
+          const market = await this.getPolymarket().getMarket(conditionId);
+          if (!market) throw new Error(`Market not found: ${conditionId}`);
+          const token = market.tokens.find(
+            (t) => t.outcome.toUpperCase() === outcome,
+          );
+          if (!token) throw new Error(`Outcome ${outcome} not found in market`);
+          const tokenId = token.tokenId;
+
+          const authedBuy = await this.getAuthedClobClient();
+
+          let orderResult: any;
+          if (orderType === 'limit') {
+            if (!limitPrice || limitPrice <= 0 || limitPrice >= 1) {
+              throw new Error('limitPrice must be between 0 and 1 (exclusive) for limit orders');
+            }
+            const size = amountUSDC / limitPrice;
+
+            // Fetch market info for tick size and neg risk
+            const marketInfo = await authedBuy.getMarket(conditionId);
+            const tickSize = parseFloat(marketInfo?.minimum_tick_size ?? '0.01');
+            const negRisk = marketInfo?.neg_risk ?? false;
+
+            const { Side } = await import('@polymarket/clob-client');
+            orderResult = await authedBuy.createAndPostOrder({
+              tokenID: tokenId,
+              price: limitPrice,
+              side: Side.BUY,
+              size,
+              feeRateBps: 0,
+              nonce: 0,
+              tickSize: String(tickSize),
+              negRisk,
+            });
+          } else {
+            // Market order
+            const { Side } = await import('@polymarket/clob-client');
+            orderResult = await authedBuy.createAndPostMarketOrder({
+              tokenID: tokenId,
+              side: Side.BUY,
+              amount: amountUSDC,
+              feeRateBps: 0,
+              nonce: 0,
+            });
+          }
+
+          result = {
+            orderID: orderResult?.orderID ?? orderResult?.orderIds?.[0] ?? 'unknown',
+            status: orderResult?.status ?? 'submitted',
+            tokenId,
+            outcome,
+            amountUSDC,
+          };
+          break;
+        }
+
         case 'pm_redeem':
-          throw new Error('pm_approve / pm_buy / pm_redeem are not implemented in this build. Use low-level PolymarketClient.placeOrder after deriving tokenId and price.');
+          throw new Error('pm_redeem is not yet implemented (requires CTF contract interaction)');
 
 
         default:

@@ -125,10 +125,10 @@ describe('PolymarketClient.getOrderbook alias', () => {
   });
 });
 
-// ── MCP server: pm_approve / pm_buy / pm_redeem throw correctly ──────────────
-// These are server-level integration smoke tests — no wallet/network needed.
+// ── MCP server: pm_approve / pm_buy / pm_redeem ──────────────────────────────
+// Server-level integration smoke tests — no wallet/network needed.
 
-describe('MCP server pm_approve/pm_buy/pm_redeem unimplemented', () => {
+describe('MCP server pm_approve/pm_buy/pm_redeem', () => {
   async function callTool(name: string, args: Record<string, unknown> = {}): Promise<{ isError: boolean; text: string }> {
     const { EvalancheMCPServer } = await import('../../src/mcp/server');
     const wallet = Wallet.createRandom();
@@ -150,22 +150,101 @@ describe('MCP server pm_approve/pm_buy/pm_redeem unimplemented', () => {
     return { isError, text };
   }
 
-  it('pm_approve returns isError with unimplemented message', async () => {
+  it('pm_approve attempts CLOB auth (no longer throws unimplemented)', async () => {
     const { isError, text } = await callTool('pm_approve', { amount: '100' });
-    expect(isError).toBe(true);
-    expect(text).toMatch(/not implemented/i);
+    // May succeed or fail at CLOB level, but must NOT say "not implemented"
+    expect(text).not.toMatch(/not implemented/i);
+    if (isError) {
+      // If it errored, it should be a network/CLOB error, not "not implemented"
+      expect(text).not.toMatch(/not implemented/i);
+    } else {
+      // Succeeded — should contain approved: true
+      expect(text).toContain('approved');
+    }
   });
 
-  it('pm_buy returns isError with unimplemented message', async () => {
+  it('pm_buy attempts market lookup (no longer throws unimplemented)', async () => {
     const { isError, text } = await callTool('pm_buy', { conditionId: '0x1', outcome: 'YES', amountUSDC: '10' });
+    // Will fail at market fetch or CLOB level, but NOT with "not implemented"
     expect(isError).toBe(true);
-    expect(text).toMatch(/not implemented/i);
+    expect(text).not.toMatch(/not implemented/i);
   });
 
-  it('pm_redeem returns isError with unimplemented message', async () => {
+  it('pm_redeem returns not yet implemented', async () => {
     const { isError, text } = await callTool('pm_redeem', { conditionId: '0x1' });
     expect(isError).toBe(true);
-    expect(text).toMatch(/not implemented/i);
+    expect(text).toMatch(/not yet implemented/i);
+  });
+});
+
+// ── MCP server: pm_positions fetches from data-api ───────────────────────────
+
+describe('MCP server pm_positions', () => {
+  it('fetches positions from data-api.polymarket.com', async () => {
+    const { EvalancheMCPServer } = await import('../../src/mcp/server');
+    const wallet = Wallet.createRandom();
+    const config = { privateKey: wallet.privateKey, network: 'fuji' as const };
+    const server = new EvalancheMCPServer(config as any);
+
+    // Mock safeFetch at module level
+    const safeFetchMod = await import('../../src/utils/safe-fetch');
+    const mockPositions = [
+      { asset: 'tok1', size: '100', avgPrice: '0.55', currentValue: '60' },
+      { asset: 'tok2', size: '50', avgPrice: '0.30', currentValue: '20' },
+    ];
+    const spy = vi.spyOn(safeFetchMod, 'safeFetch').mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => mockPositions,
+    } as any);
+
+    const resp = await server.handleRequest({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: { name: 'pm_positions', arguments: {} },
+    });
+
+    const result = resp.result as any;
+    expect(result.isError).toBeUndefined();
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed).toHaveLength(2);
+    expect(parsed[0].asset).toBe('tok1');
+
+    // Verify safeFetch was called with the data-api URL containing the agent address
+    expect(spy).toHaveBeenCalledWith(
+      expect.stringContaining('data-api.polymarket.com/positions?user='),
+      expect.any(Object),
+    );
+    spy.mockRestore();
+  });
+
+  it('accepts optional walletAddress parameter', async () => {
+    const { EvalancheMCPServer } = await import('../../src/mcp/server');
+    const wallet = Wallet.createRandom();
+    const config = { privateKey: wallet.privateKey, network: 'fuji' as const };
+    const server = new EvalancheMCPServer(config as any);
+
+    const safeFetchMod = await import('../../src/utils/safe-fetch');
+    const spy = vi.spyOn(safeFetchMod, 'safeFetch').mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => [],
+    } as any);
+
+    const customAddr = '0x1234567890abcdef1234567890abcdef12345678';
+    await server.handleRequest({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: { name: 'pm_positions', arguments: { walletAddress: customAddr } },
+    });
+
+    expect(spy).toHaveBeenCalledWith(
+      expect.stringContaining(`user=${customAddr}`),
+      expect.any(Object),
+    );
+    spy.mockRestore();
   });
 });
 
