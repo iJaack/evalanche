@@ -1,7 +1,7 @@
 /**
  * Comprehensive EVM chain registry.
  *
- * Routescan RPCs are preferred where available, with public fallback RPCs.
+ * Public RPCs are preferred, with Routescan RPCs as fallbacks where available.
  * Chain data sourced from Rabby wallet's chain list and Routescan's RPC catalog.
  */
 
@@ -19,7 +19,7 @@ export interface ChainConfig {
     symbol: string;
     decimals: number;
   };
-  /** RPC URLs (Routescan first where available, then public fallback) */
+  /** RPC URLs (public RPC first, Routescan as fallback where available) */
   rpc: string[];
   /** Primary block explorer URL */
   explorer: string;
@@ -60,7 +60,7 @@ export const CHAINS: Record<number, ChainConfig> = {
     name: 'Optimism',
     shortName: 'op',
     currency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-    rpc: [routescanRpc(10), 'https://mainnet.optimism.io'],
+    rpc: ['https://mainnet.optimism.io', routescanRpc(10)],
     explorer: 'https://optimistic.etherscan.io',
     routescanExplorer: 'https://optimism.routescan.io',
     lifiChainKey: 'OPT',
@@ -71,7 +71,7 @@ export const CHAINS: Record<number, ChainConfig> = {
     name: 'Cronos',
     shortName: 'cro',
     currency: { name: 'Cronos', symbol: 'CRO', decimals: 18 },
-    rpc: [routescanRpc(25), 'https://evm.cronos.org'],
+    rpc: ['https://evm.cronos.org', routescanRpc(25)],
     explorer: 'https://cronoscan.com',
     routescanExplorer: 'https://cronos.routescan.io',
     lifiChainKey: 'CRO',
@@ -82,7 +82,7 @@ export const CHAINS: Record<number, ChainConfig> = {
     name: 'BNB Smart Chain',
     shortName: 'bsc',
     currency: { name: 'BNB', symbol: 'BNB', decimals: 18 },
-    rpc: [routescanRpc(56), 'https://bsc-dataseed.binance.org'],
+    rpc: ['https://bsc-dataseed.binance.org', routescanRpc(56)],
     explorer: 'https://bscscan.com',
     routescanExplorer: 'https://bsc.routescan.io',
     lifiChainKey: 'BSC',
@@ -103,7 +103,7 @@ export const CHAINS: Record<number, ChainConfig> = {
     name: 'Polygon',
     shortName: 'matic',
     currency: { name: 'POL', symbol: 'POL', decimals: 18 },
-    rpc: [routescanRpc(137), 'https://polygon-rpc.com'],
+    rpc: ['https://polygon-rpc.com', routescanRpc(137)],
     explorer: 'https://polygonscan.com',
     routescanExplorer: 'https://polygon.routescan.io',
     lifiChainKey: 'POL',
@@ -114,7 +114,7 @@ export const CHAINS: Record<number, ChainConfig> = {
     name: 'Fantom',
     shortName: 'ftm',
     currency: { name: 'Fantom', symbol: 'FTM', decimals: 18 },
-    rpc: [routescanRpc(250), 'https://rpcapi.fantom.network'],
+    rpc: ['https://rpcapi.fantom.network', routescanRpc(250)],
     explorer: 'https://ftmscan.com',
     routescanExplorer: 'https://fantom.routescan.io',
     lifiChainKey: 'FTM',
@@ -155,7 +155,7 @@ export const CHAINS: Record<number, ChainConfig> = {
     name: 'Base',
     shortName: 'base',
     currency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-    rpc: [routescanRpc(8453), 'https://mainnet.base.org'],
+    rpc: ['https://mainnet.base.org', routescanRpc(8453)],
     explorer: 'https://basescan.org',
     routescanExplorer: 'https://base.routescan.io',
     lifiChainKey: 'BAS',
@@ -166,7 +166,7 @@ export const CHAINS: Record<number, ChainConfig> = {
     name: 'Arbitrum One',
     shortName: 'arb',
     currency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-    rpc: [routescanRpc(42161), 'https://arb1.arbitrum.io/rpc'],
+    rpc: ['https://arb1.arbitrum.io/rpc', routescanRpc(42161)],
     explorer: 'https://arbiscan.io',
     routescanExplorer: 'https://arbitrum.routescan.io',
     lifiChainKey: 'ARB',
@@ -187,7 +187,7 @@ export const CHAINS: Record<number, ChainConfig> = {
     name: 'Avalanche C-Chain',
     shortName: 'avax',
     currency: { name: 'Avalanche', symbol: 'AVAX', decimals: 18 },
-    rpc: [routescanRpc(43114), 'https://api.avax.network/ext/bc/C/rpc'],
+    rpc: ['https://api.avax.network/ext/bc/C/rpc', routescanRpc(43114)],
     explorer: 'https://snowtrace.io',
     routescanExplorer: 'https://snowtrace.io',
     lifiChainKey: 'AVA',
@@ -208,7 +208,7 @@ export const CHAINS: Record<number, ChainConfig> = {
     name: 'Berachain',
     shortName: 'bera',
     currency: { name: 'BERA', symbol: 'BERA', decimals: 18 },
-    rpc: [routescanRpc(80094), 'https://rpc.berachain.com'],
+    rpc: ['https://rpc.berachain.com', routescanRpc(80094)],
     explorer: 'https://berascan.com',
     routescanExplorer: 'https://80094.routescan.io',
     lifiChainKey: 'BER',
@@ -316,7 +316,7 @@ export function getChainByAlias(alias: string): ChainConfig | undefined {
 }
 
 /**
- * Get primary RPC URL for a chain (Routescan first, then public fallback).
+ * Get primary RPC URL for a chain (public RPC first, Routescan as fallback).
  * @param chainId - Numeric chain ID
  * @returns Primary RPC URL
  * @throws If chain ID is not in the registry

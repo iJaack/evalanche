@@ -39,10 +39,10 @@ describe('Chain Registry', () => {
       }
     });
 
-    it('should use Routescan RPCs for supported chains', () => {
+    it('should include Routescan RPCs for supported chains', () => {
       const routescanChains = [10, 25, 56, 137, 250, 8453, 42161, 43114, 80094];
       for (const id of routescanChains) {
-        expect(CHAINS[id].rpc[0], `Chain ${id} should have Routescan RPC first`).toContain('routescan.io');
+        expect(CHAINS[id].rpc.some(url => url.includes('routescan.io')), `Chain ${id} should have Routescan RPC`).toBe(true);
       }
     });
   });
@@ -98,7 +98,7 @@ describe('Chain Registry', () => {
   describe('getPrimaryRpc', () => {
     it('should return first RPC for known chain', () => {
       const rpc = getPrimaryRpc(43114);
-      expect(rpc).toContain('routescan.io');
+      expect(rpc).toContain('avax.network');
     });
 
     it('should throw for unknown chain ID', () => {
