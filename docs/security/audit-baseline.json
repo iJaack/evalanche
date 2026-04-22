@@ -1,19 +1,25 @@
 {
-  "version": "1.8.8",
+  "version": "1.9.2",
   "counts": {
-    "critical": 0,
+    "critical": 5,
     "high": 3,
-    "moderate": 0,
-    "low": 18,
+    "moderate": 9,
+    "low": 12,
     "info": 0,
-    "total": 21
+    "total": 29
   },
   "highPackages": [
     "@avalabs/core-wallets-sdk",
     "@ledgerhq/hw-app-btc",
     "tiny-secp256k1"
   ],
-  "criticalPackages": [],
+  "criticalPackages": [
+    "@confio/ics23",
+    "@cosmjs/stargate",
+    "@dydxprotocol/v4-client-js",
+    "@dydxprotocol/v4-proto",
+    "protobufjs"
+  ],
   "allowlistedHighPackages": [],
   "allowlistedCriticalPackages": []
 }

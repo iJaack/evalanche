@@ -5,13 +5,13 @@ Avalanche-first agent wallet and execution SDK for AI agents, with multi-EVM sup
 <!-- GENERATED:release-summary:start -->
 ## Current Release
 
-- Latest release: [v1.9.0](docs/releases/RELEASE_NOTES_1.9.0.md)
-- Published package: `evalanche@1.9.0`
+- Latest release: [v1.9.2](docs/releases/RELEASE_NOTES_1.9.2.md)
+- Published package: `evalanche@1.9.2`
 - Current package surface:
-  - Implemented `pm_withdraw`, so Evalanche can now withdraw Polygon `USDC.e` from the Polymarket wallet through the official Polymarket bridge flow
-  - `pm_withdraw` gets a bridge quote, creates withdrawal addresses, submits the onchain `USDC.e` transfer, and returns the initial bridge-status snapshot for verification
-  - MCP now exposes `pm_withdraw` alongside the existing Polymarket trading, reconciliation, deposit, and redemption flows
-  - Added focused client and MCP regression coverage for the new Polymarket withdrawal path
+  - Added macOS Keychain fallback for agent credentials, so Mony and other local agents can resolve the `EvaWallet` / `EvaMain` sovereign wallet after OpenClaw secrets and env vars and before the encrypted keystore path
+  - Made Polymarket orderbook handling deterministic by sorting visible bids highest-first and asks lowest-first before pricing, preflight, and sell-fill estimation
+  - Preserved the `v1.9.0` Polymarket withdrawal flow while promoting the Mony-tested Evalanche runtime fixes into the public release line
+  - Added focused regression coverage for keychain credential resolution and unsorted CLOB orderbook arrays
 - Docs:
   - [Release notes](docs/releases/README.md)
   - [Roadmap](ROADMAP.md)

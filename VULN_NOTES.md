@@ -5,8 +5,8 @@ This file is a short current-state security posture note, not a historical remed
 <!-- GENERATED:vuln-snapshot:start -->
 ## Current Release Snapshot
 
-- Current release: `1.9.0`
-- `npm audit --omit=dev`: `unknown critical`, `unknown high`, `unknown low`
+- Current release: `1.9.2`
+- `npm audit --omit=dev`: `5 critical`, `3 high`, `12 low`
 
 ## Active Overrides
 

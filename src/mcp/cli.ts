@@ -6,8 +6,8 @@
  *   evalanche-mcp --http --port 3402        # HTTP mode
  *
  * Environment:
- *   AGENT_PRIVATE_KEY  — Agent wallet private key (required)
- *   AGENT_MNEMONIC     — Agent wallet mnemonic (alternative to private key)
+ *   AGENT_PRIVATE_KEY  — Agent wallet private key (optional; overrides keychain/keystore)
+ *   AGENT_MNEMONIC     — Agent wallet mnemonic (optional alternative to private key)
  *   AGENT_ID           — ERC-8004 agent ID (optional, enables identity)
  *   AGENT_REGISTRY     — ERC-8004 registry address (optional, defaults to mainnet)
  *   AVALANCHE_NETWORK  — "avalanche" | "fuji" (default: "avalanche")
@@ -41,7 +41,7 @@ async function buildConfig(): Promise<EvalancheConfig> {
 
   if (!privateKey && !mnemonic) {
     process.stderr.write(
-      'Error: Set AGENT_PRIVATE_KEY or AGENT_MNEMONIC environment variable\n',
+      'Error: no Evalanche credentials found (checked OpenClaw secrets, env vars, EvaWallet/EvaMain keychain, keystore)\n',
     );
     process.exit(1);
   }

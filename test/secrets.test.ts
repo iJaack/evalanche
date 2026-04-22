@@ -40,4 +40,20 @@ describe('resolveAgentSecrets', () => {
     const mod = await import('../src/secrets');
     await expect(mod.resolveAgentSecrets()).resolves.toEqual({ source: 'keystore' });
   });
+
+  it('falls back to macOS keychain when env vars are absent', async () => {
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'darwin' });
+    execFileAsync.mockResolvedValueOnce({ stdout: '0xkeychain' });
+
+    try {
+      const mod = await import('../src/secrets');
+      await expect(mod.resolveAgentSecrets()).resolves.toEqual({
+        privateKey: '0xkeychain',
+        source: 'keychain',
+      });
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform });
+    }
+  });
 });

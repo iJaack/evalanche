@@ -17,6 +17,9 @@ import { promisify } from 'util';
 
 const execFileAsync = promisify(execFile);
 
+const EVA_KEYCHAIN_SERVICE = 'EvaWallet';
+const EVA_KEYCHAIN_ACCOUNT = 'EvaMain';
+
 /** Check if OpenClaw CLI is available on PATH */
 async function isOpenClawAvailable(): Promise<boolean> {
   try {
@@ -36,6 +39,25 @@ async function resolveOpenClawSecret(name: string): Promise<string | null> {
     const { stdout } = await execFileAsync('openclaw', ['secrets', 'get', name, '--raw'], {
       timeout: 5000,
     });
+    const value = stdout.trim();
+    return value.length > 0 ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Resolve Eva's sovereign private key from the macOS Keychain. */
+async function resolveMacOSKeychainPrivateKey(): Promise<string | null> {
+  if (process.platform !== 'darwin') {
+    return null;
+  }
+
+  try {
+    const { stdout } = await execFileAsync(
+      'security',
+      ['find-generic-password', '-s', EVA_KEYCHAIN_SERVICE, '-a', EVA_KEYCHAIN_ACCOUNT, '-w'],
+      { timeout: 5000 },
+    );
     const value = stdout.trim();
     return value.length > 0 ? value : null;
   } catch {
@@ -63,7 +85,7 @@ export interface SecretsResolution {
   privateKey?: string;
   mnemonic?: string;
   /** Where the credentials came from */
-  source: 'openclaw-secrets' | 'env' | 'keystore';
+  source: 'openclaw-secrets' | 'env' | 'keychain' | 'keystore';
 }
 
 /**
@@ -71,7 +93,8 @@ export interface SecretsResolution {
  *
  * 1. OpenClaw secrets (if openclaw CLI available + secret refs configured)
  * 2. Raw env vars (AGENT_PRIVATE_KEY / AGENT_MNEMONIC)
- * 3. Keystore (default — returns source='keystore' with no keys)
+ * 3. macOS Keychain (EvaWallet / EvaMain)
+ * 4. Keystore (default — returns source='keystore' with no keys)
  *
  * Secret refs in env vars are also resolved:
  * AGENT_PRIVATE_KEY=@secret:eva-wallet-key → resolved via openclaw secrets
@@ -111,6 +134,14 @@ export async function resolveAgentSecrets(): Promise<SecretsResolution> {
       privateKey: rawPrivateKey,
       mnemonic: rawMnemonic,
       source: 'env',
+    };
+  }
+
+  const keychainPrivateKey = await resolveMacOSKeychainPrivateKey();
+  if (keychainPrivateKey) {
+    return {
+      privateKey: keychainPrivateKey,
+      source: 'keychain',
     };
   }
 

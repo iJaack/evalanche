@@ -143,8 +143,8 @@ export class Evalanche {
   }): Promise<{
     agent: Evalanche;
     keystore: KeystoreInitResult;
-    /** Where the credentials came from: 'openclaw-secrets' | 'env' | 'keystore' */
-    secretsSource: 'openclaw-secrets' | 'env' | 'keystore';
+    /** Where the credentials came from: 'openclaw-secrets' | 'env' | 'keychain' | 'keystore' */
+    secretsSource: 'openclaw-secrets' | 'env' | 'keychain' | 'keystore';
   }> {
     // Resolve credentials: OpenClaw secrets (preferred) → env vars → keystore
     const resolved = await resolveAgentSecrets();

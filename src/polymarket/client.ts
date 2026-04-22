@@ -152,6 +152,22 @@ export interface PolymarketOrder {
   orderID: string;
 }
 
+function sortPolymarketOrders(orders: PolymarketOrder[], side: 'bid' | 'ask'): PolymarketOrder[] {
+  return [...orders].sort((a, b) => {
+    const aValid = Number.isFinite(a.price) && a.price > 0;
+    const bValid = Number.isFinite(b.price) && b.price > 0;
+    if (aValid !== bValid) return aValid ? -1 : 1;
+    return side === 'bid' ? b.price - a.price : a.price - b.price;
+  });
+}
+
+function normalizePolymarketOrderBook(orderBook: PolymarketOrderBook): PolymarketOrderBook {
+  return {
+    bids: sortPolymarketOrders(orderBook.bids, 'bid'),
+    asks: sortPolymarketOrders(orderBook.asks, 'ask'),
+  };
+}
+
 export interface PolymarketRedemptionResult {
   conditionId: string;
   txHash: string;
@@ -868,10 +884,10 @@ export class PolymarketClient {
 
     if (this.clobClient && typeof this.clobClient.getOrderBook === 'function') {
       const book = await this.clobClient.getOrderBook(tokenId);
-      return {
+      return normalizePolymarketOrderBook({
         bids: mapOrders(book?.bids),
         asks: mapOrders(book?.asks),
-      };
+      });
     }
 
     const url = new URL('/book', POLYMARKET_CLOB_HOST);
@@ -892,10 +908,10 @@ export class PolymarketClient {
       }
 
       const book = await response.json() as Record<string, unknown>;
-      return {
+      return normalizePolymarketOrderBook({
         bids: mapOrders(book.bids),
         asks: mapOrders(book.asks),
-      };
+      });
     } catch (error) {
       throw new EvalancheError(
         `Failed to get order book: ${error instanceof Error ? error.message : String(error)}`,

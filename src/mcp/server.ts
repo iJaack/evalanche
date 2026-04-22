@@ -1641,7 +1641,7 @@ export class EvalancheMCPServer {
     let remaining = size;
     let totalProceeds = 0;
 
-    for (const bid of orderBook.bids) {
+    for (const bid of this.sortPolymarketOrders(orderBook.bids, 'bid')) {
       if (remaining <= 0) break;
       const fillSize = Math.min(remaining, bid.size);
       totalProceeds += fillSize * bid.price;
@@ -1774,11 +1774,29 @@ export class EvalancheMCPServer {
     };
   }
 
+  private sortPolymarketOrders<T extends { price: number }>(orders: T[], side: 'bid' | 'ask'): T[] {
+    return [...orders].sort((a, b) => {
+      const aValid = Number.isFinite(a.price) && a.price > 0;
+      const bValid = Number.isFinite(b.price) && b.price > 0;
+      if (aValid !== bValid) return aValid ? -1 : 1;
+      return side === 'bid' ? b.price - a.price : a.price - b.price;
+    });
+  }
+
+  private normalizePolymarketOrderBook<T extends { bids: Array<{ price: number; size: number }>; asks: Array<{ price: number; size: number }> }>(orderBook: T): T {
+    return {
+      ...orderBook,
+      bids: this.sortPolymarketOrders(orderBook.bids, 'bid'),
+      asks: this.sortPolymarketOrders(orderBook.asks, 'ask'),
+    };
+  }
+
   private summarizePolymarketOrderBook(orderBook: { bids: Array<{ price: number; size: number }>; asks: Array<{ price: number; size: number }> }) {
-    const bidDepth = orderBook.bids.reduce((total, bid) => total + bid.size, 0);
-    const askDepth = orderBook.asks.reduce((total, ask) => total + ask.size, 0);
-    const bestBid = orderBook.bids[0]?.price ?? 0;
-    const bestAsk = orderBook.asks[0]?.price ?? 0;
+    const normalized = this.normalizePolymarketOrderBook(orderBook);
+    const bidDepth = normalized.bids.reduce((total, bid) => total + bid.size, 0);
+    const askDepth = normalized.asks.reduce((total, ask) => total + ask.size, 0);
+    const bestBid = normalized.bids[0]?.price ?? 0;
+    const bestAsk = normalized.asks[0]?.price ?? 0;
     return {
       bestBid,
       bestAsk,
@@ -1921,7 +1939,8 @@ export class EvalancheMCPServer {
 
   private async inspectPolymarketOrderBook(tokenId: string): Promise<any> {
     try {
-      const orderBook = await this.getPolymarket().getOrderBook(tokenId);
+      const rawOrderBook = await this.getPolymarket().getOrderBook(tokenId);
+      const orderBook = this.normalizePolymarketOrderBook(rawOrderBook);
       return {
         ok: true,
         source: 'clob_public',
@@ -1934,7 +1953,7 @@ export class EvalancheMCPServer {
       try {
         const authed = await this.getAuthedClobClient();
         const rawBook = await authed.getOrderBook(tokenId);
-        const orderBook = {
+        const orderBook = this.normalizePolymarketOrderBook({
           bids: Array.isArray(rawBook?.bids)
             ? rawBook.bids.map((bid: Record<string, unknown>) => ({
               price: Number(bid.price ?? 0),
@@ -1949,7 +1968,7 @@ export class EvalancheMCPServer {
               orderID: String(ask.order_id ?? ask.orderID ?? ''),
             }))
             : [],
-        };
+        });
         return {
           ok: true,
           source: 'clob_auth',

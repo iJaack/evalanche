@@ -1,9 +1,14 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtemp, rm } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { AgentKeystore } from '../../src/wallet/keystore';
 import { Evalanche } from '../../src/agent';
+
+vi.mock('../../src/secrets', () => ({
+  parseSecretRef: (value: string) => value.match(/^@secret:(.+)$/)?.[1] ?? null,
+  resolveAgentSecrets: async () => ({ source: 'keystore' }),
+}));
 
 describe('AgentKeystore', () => {
   let tempDir: string;

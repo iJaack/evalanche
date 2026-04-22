@@ -69,6 +69,22 @@ describe('PolymarketClient.estimateFillPrice', () => {
     expect(price).toBeCloseTo(0.5375, 4);
   });
 
+  it('uses the cheapest asks first when CLOB asks are unsorted', async () => {
+    const clobStub = {
+      getOrderBook: async () => ({
+        bids: [],
+        asks: [
+          { price: 0.99, size: 10, orderID: 'a-expensive' },
+          { price: 0.76, size: 10, orderID: 'a-cheap' },
+        ],
+      }),
+    };
+    const client = makeMockedClient(clobStub);
+
+    const price = await client.estimateFillPrice('tok', PolymarketSide.BUY, 10);
+    expect(price).toBeCloseTo(0.76, 4);
+  });
+
   it('returns weighted average price for a SELL using bids in order', async () => {
     const clobStub = {
       getOrderBook: async () => ({
@@ -115,6 +131,21 @@ describe('PolymarketClient.getTokenPrice', () => {
     const client = makeMockedClient(clobStub);
 
     await expect(client.getTokenPrice('tok')).resolves.toBe(0.82);
+  });
+
+  it('returns the highest bid when CLOB bids are unsorted', async () => {
+    const clobStub = {
+      getOrderBook: async () => ({
+        bids: [
+          { price: 0.01, size: 100, orderID: 'b-low' },
+          { price: 0.24, size: 100, orderID: 'b-high' },
+        ],
+        asks: [],
+      }),
+    };
+    const client = makeMockedClient(clobStub);
+
+    await expect(client.getTokenPrice('tok')).resolves.toBe(0.24);
   });
 
   it('returns 0 when no bids exist', async () => {
@@ -910,6 +941,46 @@ describe('MCP server Polymarket inspection and reconciliation', () => {
     const parsed = JSON.parse(text);
     expect(parsed.ok).toBe(false);
     expect(parsed.error.code).toBe('market_not_found');
+  });
+
+  it('pm_preflight uses sorted best prices when CLOB arrays are unsorted', async () => {
+    const { isError, text } = await callServerTool(
+      'pm_preflight',
+      { action: 'buy', conditionId: '0x1', outcome: 'NO', amountUSDC: '7.6', orderType: 'market' },
+      (server) => {
+        (server as any).getPolymarket = () => ({
+          getMarket: async () => ({
+            conditionId: '0x1',
+            tokens: [{ tokenId: 'tok-no', outcome: 'NO' }],
+          }),
+          getOrderBook: async () => ({
+            bids: [
+              { price: 0.01, size: 100, orderID: 'b-low' },
+              { price: 0.24, size: 100, orderID: 'b-high' },
+            ],
+            asks: [
+              { price: 0.99, size: 100, orderID: 'a-expensive' },
+              { price: 0.76, size: 100, orderID: 'a-cheap' },
+            ],
+          }),
+        });
+        (server as any).getAuthedClobClient = async () => ({
+          getBalanceAllowance: async ({ asset_type }: { asset_type: string }) => (
+            asset_type === 'COLLATERAL'
+              ? { balance: '100000000', allowance: '100000000' }
+              : { balance: '0', allowance: '0' }
+          ),
+          getBalances: async () => ({ collateral: '100' }),
+        });
+        (server as any).fetchPolymarketPositions = async () => [];
+      },
+    );
+
+    expect(isError).toBe(false);
+    const parsed = JSON.parse(text);
+    expect(parsed.orderbook.summary.bestAsk).toBeCloseTo(0.76, 6);
+    expect(parsed.orderbook.summary.bestBid).toBeCloseTo(0.24, 6);
+    expect(parsed.estimates.estimatedShares).toBeCloseTo(10, 6);
   });
 
   it('pm_preflight reports blocked allowance failures for buys', async () => {

@@ -1,6 +1,6 @@
 {
   "name": "evalanche",
-  "version": "1.9.0",
+  "version": "1.9.2",
   "description": "Multi-EVM agent wallet SDK with unified holdings discovery, onchain identity (ERC-8004), x402 payments, cross-chain liquidity (Li.Fi + Gas.zip), prediction markets, DeFi, and perpetual futures",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
