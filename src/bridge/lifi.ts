@@ -212,6 +212,10 @@ export class LiFiClient {
     const decimals = await this.resolveFromDecimals(params);
     const fromAmount = parseUnits(String(params.fromAmount), decimals).toString();
     const routeOptions = this.resolveRouteOptions(params);
+    const fromAddress = this.normalizeEvmQuoteAddress(params.fromAddress, params.fromChainId, 'fromAddress');
+    const toAddress = params.toAddress
+      ? this.normalizeEvmQuoteAddress(params.toAddress, params.toChainId, 'toAddress')
+      : fromAddress;
 
     const searchParams = new URLSearchParams({
       fromChain: params.fromChainId.toString(),
@@ -219,8 +223,8 @@ export class LiFiClient {
       fromToken: params.fromToken,
       toToken: params.toToken,
       fromAmount,
-      fromAddress: params.fromAddress,
-      toAddress: params.toAddress ?? params.fromAddress,
+      fromAddress,
+      toAddress,
       slippage: (routeOptions.slippage ?? 0.03).toString(),
       integrator: 'evalanche',
     });
@@ -262,6 +266,10 @@ export class LiFiClient {
     const decimals = await this.resolveFromDecimals(params);
     const fromAmount = parseUnits(String(params.fromAmount), decimals).toString();
     const routeOptions = this.resolveRouteOptions(params);
+    const fromAddress = this.normalizeEvmQuoteAddress(params.fromAddress, params.fromChainId, 'fromAddress');
+    const toAddress = params.toAddress
+      ? this.normalizeEvmQuoteAddress(params.toAddress, params.toChainId, 'toAddress')
+      : fromAddress;
 
     const body = {
       fromChainId: params.fromChainId,
@@ -269,8 +277,8 @@ export class LiFiClient {
       fromTokenAddress: params.fromToken,
       toTokenAddress: params.toToken,
       fromAmount,
-      fromAddress: params.fromAddress,
-      toAddress: params.toAddress ?? params.fromAddress,
+      fromAddress,
+      toAddress,
       options: {
         slippage: routeOptions.slippage ?? 0.03,
         integrator: 'evalanche',
@@ -731,6 +739,31 @@ export class LiFiClient {
       const type = strategy.strategy ?? 'minWaitTime';
       return `${type}-${strategy.minWaitTimeMs}-${strategy.startingExpectedResults}-${strategy.reduceEveryMs}`;
     });
+  }
+
+  private normalizeEvmQuoteAddress(address: string, chainId: number, field: string): string {
+    const value = String(address ?? '').trim();
+    const caip10 = value.match(/^eip155:(\d+):(0x[0-9a-fA-F]{40})$/);
+
+    if (caip10) {
+      const prefixedChainId = Number(caip10[1]);
+      if (prefixedChainId !== chainId) {
+        throw new EvalancheError(
+          `${field} chain prefix ${prefixedChainId} does not match chain ${chainId}`,
+          EvalancheErrorCode.INVALID_PARAMS,
+        );
+      }
+      return caip10[2].toLowerCase();
+    }
+
+    if (/^0x[0-9a-fA-F]{40}$/.test(value)) {
+      return value.toLowerCase();
+    }
+
+    throw new EvalancheError(
+      `${field} must be a single EVM address for Li.Fi EVM quote requests`,
+      EvalancheErrorCode.INVALID_PARAMS,
+    );
   }
 
   private expectString(value: unknown, field: string): string {

@@ -78,6 +78,49 @@ describe('LiFiClient', () => {
       expect(quote.estimatedTime).toBe(120);
     });
 
+    it('should flatten CAIP-style EVM sender addresses for Base to Polygon USDC quotes', async () => {
+      const walletAddress = '0x0fE61780BD5508b3C99E420662050E5560608cA4';
+      const baseUsdc = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
+      const polygonNativeUsdc = '0x3c499c542cef5e3811e1192ce70d8cc03d5c3359';
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: 'base-polygon-usdc',
+          tool: 'across',
+          action: {
+            fromChainId: 8453,
+            toChainId: 137,
+            fromToken: { address: baseUsdc },
+            toToken: { address: polygonNativeUsdc },
+            fromAmount: '5000000',
+          },
+          estimate: {
+            toAmount: '4990000',
+            gasCosts: [{ amountUSD: '0.02' }],
+            executionDuration: 45,
+          },
+        }),
+      });
+
+      await client.getQuote({
+        fromChainId: 8453,
+        toChainId: 137,
+        fromToken: baseUsdc,
+        toToken: polygonNativeUsdc,
+        fromAmount: '5',
+        fromDecimals: 6,
+        fromAddress: `eip155:8453:${walletAddress}`,
+      });
+
+      const callUrl = new URL(mockFetch.mock.calls[0][0] as string);
+      expect(callUrl.searchParams.get('fromChain')).toBe('8453');
+      expect(callUrl.searchParams.get('toChain')).toBe('137');
+      expect(callUrl.searchParams.get('fromAmount')).toBe('5000000');
+      expect(callUrl.searchParams.get('fromAddress')).toBe(walletAddress.toLowerCase());
+      expect(callUrl.searchParams.get('toAddress')).toBe(walletAddress.toLowerCase());
+    });
+
     it('should throw on API error', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: false,
