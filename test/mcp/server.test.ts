@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { request } from 'http';
 import { EvalancheMCPServer } from '../../src/mcp/server';
 
 const mockProvider = {
@@ -16,6 +17,33 @@ const mockWallet = {
   }),
   connect: vi.fn(),
 };
+
+function postJson(port: number, token: string | undefined, payload: unknown): Promise<{ status: number; body: string }> {
+  return postRaw(port, token, JSON.stringify(payload));
+}
+
+function postRaw(port: number, token: string | undefined, body: string): Promise<{ status: number; body: string }> {
+  return new Promise((resolve, reject) => {
+    const req = request({
+      hostname: '127.0.0.1',
+      port,
+      method: 'POST',
+      path: '/',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    }, (res) => {
+      let responseBody = '';
+      res.setEncoding('utf8');
+      res.on('data', (chunk) => { responseBody += chunk; });
+      res.on('end', () => resolve({ status: res.statusCode ?? 0, body: responseBody }));
+    });
+    req.on('error', reject);
+    req.end(body);
+  });
+}
 
 let contractMock: Record<string, unknown> = {
   getFunction: vi.fn().mockImplementation((name: string) => {
@@ -635,7 +663,7 @@ describe('EvalancheMCPServer', () => {
     expect(budgetParsed.remainingDaily).toBe('1000000000000000000');
   });
 
-  it('handles set_policy removal', async () => {
+  it('requires explicit confirmation for set_policy removal', async () => {
     // Set then remove
     await server.handleRequest({
       jsonrpc: '2.0',
@@ -643,16 +671,109 @@ describe('EvalancheMCPServer', () => {
       method: 'tools/call',
       params: { name: 'set_policy', arguments: { maxPerDay: '1000' } },
     });
-    const removeRes = await server.handleRequest({
+    const rejectedRes = await server.handleRequest({
       jsonrpc: '2.0',
       id: 35,
       method: 'tools/call',
       params: { name: 'set_policy', arguments: {} },
     });
+    const rejectedResult = rejectedRes.result as { content: Array<{ text: string }>; isError?: boolean };
+    expect(rejectedResult.isError).toBe(true);
+    expect(rejectedResult.content[0].text).toContain('set_policy requires policy fields');
+
+    const removeRes = await server.handleRequest({
+      jsonrpc: '2.0',
+      id: 36,
+      method: 'tools/call',
+      params: { name: 'set_policy', arguments: { remove: true, confirm: 'remove' } },
+    });
     const removeParsed = JSON.parse(
       (removeRes.result as { content: Array<{ text: string }> }).content[0].text,
     );
     expect(removeParsed.message).toBe('Policy removed');
+  });
+
+  it('blocks approve_and_call when policy does not allow the approval token', async () => {
+    await server.handleRequest({
+      jsonrpc: '2.0',
+      id: 340,
+      method: 'tools/call',
+      params: {
+        name: 'set_policy',
+        arguments: {
+          allowlistedChains: [43114],
+          allowlistedContracts: [{ address: '0x1111111111111111111111111111111111111111' }],
+        },
+      },
+    });
+
+    const res = await server.handleRequest({
+      jsonrpc: '2.0',
+      id: 341,
+      method: 'tools/call',
+      params: {
+        name: 'approve_and_call',
+        arguments: {
+          tokenAddress: '0x2222222222222222222222222222222222222222',
+          spenderAddress: '0x3333333333333333333333333333333333333333',
+          amount: '1',
+          contractCallData: '0x12345678',
+        },
+      },
+    });
+
+    const result = res.result as { content: Array<{ text: string }>; isError?: boolean };
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('Policy violation');
+    expect(contractMock.approve).not.toHaveBeenCalled();
+  });
+
+  it('requires an auth token before starting HTTP transport', () => {
+    expect(() => server.startHTTP({ port: 0, authToken: '' })).toThrow(/HTTP MCP transport requires/);
+  });
+
+  it('rejects unauthorized HTTP requests and accepts bearer-authorized requests', async () => {
+    const httpServer = server.startHTTP({ port: 0, authToken: 'test-token', maxBodyBytes: 10_000 });
+    await new Promise<void>((resolve) => httpServer.once('listening', resolve));
+    const address = httpServer.address();
+    if (!address || typeof address === 'string') throw new Error('Expected TCP server address');
+
+    try {
+      const unauthorized = await postJson(address.port, undefined, {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+      });
+      expect(unauthorized.status).toBe(401);
+
+      const authorized = await postJson(address.port, 'test-token', {
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'initialize',
+      });
+      expect(authorized.status).toBe(200);
+      expect(JSON.parse(authorized.body).result.serverInfo.name).toBe('evalanche');
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        httpServer.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
+  });
+
+  it('rejects oversized HTTP request bodies before parsing', async () => {
+    const httpServer = server.startHTTP({ port: 0, authToken: 'test-token', maxBodyBytes: 8 });
+    await new Promise<void>((resolve) => httpServer.once('listening', resolve));
+    const address = httpServer.address();
+    if (!address || typeof address === 'string') throw new Error('Expected TCP server address');
+
+    try {
+      const response = await postRaw(address.port, 'test-token', '{"jsonrpc":"2.0","id":1,"method":"initialize"}');
+      expect(response.status).toBe(413);
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        httpServer.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
   });
 
   it('handles simulate_tx', async () => {

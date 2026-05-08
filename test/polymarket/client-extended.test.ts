@@ -475,9 +475,10 @@ describe('PolymarketClient.withdrawUsdc', () => {
 // Server-level integration smoke tests — no wallet/network needed.
 
 describe('MCP server pm_approve/pm_buy/pm_withdraw/pm_redeem', () => {
-  it('pm_approve attempts CLOB auth (no longer throws unimplemented)', async () => {
+  it('pm_approve syncs both wallet USDC approval and pUSD spender approvals', async () => {
     const { isError, text } = await callServerTool('pm_approve', { amount: '100' }, (server) => {
       (server as any).approveUsdcToCLOB = vi.fn().mockResolvedValue('0xapprove');
+      (server as any).approvePusdCollateralSpenders = vi.fn().mockResolvedValue(['0xpusdapprove']);
       (server as any).getAuthedClobClient = vi.fn().mockResolvedValue({
         updateBalanceAllowance: vi.fn().mockResolvedValue(undefined),
       });
@@ -486,6 +487,7 @@ describe('MCP server pm_approve/pm_buy/pm_withdraw/pm_redeem', () => {
     expect(isError).toBe(false);
     expect(text).toContain('approved');
     expect(text).toContain('0xapprove');
+    expect(text).toContain('0xpusdapprove');
   });
 
   it('pm_buy attempts market lookup (no longer throws unimplemented)', async () => {
@@ -690,6 +692,43 @@ describe('MCP server pm_approve/pm_buy/pm_withdraw/pm_redeem', () => {
         nonce: 0,
       }),
     );
+  });
+});
+
+describe('MCP server venue balance normalization', () => {
+  it('treats pUSD spender allowances as collateral allowance source of truth', async () => {
+    const { EvalancheMCPServer } = await import('../../src/mcp/server');
+    const wallet = Wallet.createRandom();
+    const server = new EvalancheMCPServer({ privateKey: wallet.privateKey, network: 'fuji' } as any);
+
+    (server as any).getAuthedClobClient = vi.fn().mockResolvedValue({
+      getBalanceAllowance: vi.fn().mockImplementation(({ asset_type }: { asset_type: string }) => {
+        if (asset_type === 'COLLATERAL') {
+          return {
+            balance: '8000000',
+            allowances: {
+              '0xE111180000d2663C0091e4f400237545B87B996B': '0',
+              '0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296': '0',
+              '0xe2222d279d744050d28e00520010520000310F59': '0',
+            },
+          };
+        }
+        return { balance: '0', allowances: {} };
+      }),
+      getBalances: vi.fn().mockResolvedValue(null),
+    });
+    (server as any).getOnChainUsdcAllowance = vi.fn().mockResolvedValue(0n);
+    (server as any).getOnChainPusdAllowances = vi.fn().mockResolvedValue({
+      '0xE111180000d2663C0091e4f400237545B87B996B': 8000000n,
+      '0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296': 0n,
+      '0xe2222d279d744050d28e00520010520000310F59': 0n,
+    });
+
+    const balances = await (server as any).getPolymarketVenueBalances('token-1');
+    expect(balances.collateral.balance).toBe(8);
+    expect(balances.collateral.allowance).toBe(8);
+    expect(balances.collateral.allowanceSource).toBe('pusd_spender');
+    expect(balances.collateral.rawAllowances['0xE111180000d2663C0091e4f400237545B87B996B']).toBe('8000000');
   });
 });
 

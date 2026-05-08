@@ -3,7 +3,7 @@
  *
  * Usage:
  *   evalanche-mcp                           # stdio mode (default)
- *   evalanche-mcp --http --port 3402        # HTTP mode
+ *   EVALANCHE_MCP_HTTP_TOKEN=... evalanche-mcp --http --port 3402
  *
  * Environment:
  *   AGENT_PRIVATE_KEY  — Agent wallet private key (optional; overrides keychain/keystore)
@@ -12,16 +12,18 @@
  *   AGENT_REGISTRY     — ERC-8004 registry address (optional, defaults to mainnet)
  *   AVALANCHE_NETWORK  — "avalanche" | "fuji" (default: "avalanche")
  *   AVALANCHE_RPC_URL  — Custom RPC URL (overrides network default)
+ *   EVALANCHE_MCP_HTTP_TOKEN — Required bearer token for --http mode
  */
 
 import { EvalancheMCPServer } from './server';
 import type { EvalancheConfig } from '../agent';
 import { resolveAgentSecrets } from '../secrets';
 
-function parseArgs(): { http: boolean; port: number } {
+function parseArgs(): { http: boolean; port: number; host?: string } {
   const args = process.argv.slice(2);
   let http = false;
   let port = 3402;
+  let host: string | undefined;
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--http') http = true;
@@ -29,9 +31,13 @@ function parseArgs(): { http: boolean; port: number } {
       port = parseInt(args[i + 1], 10);
       i++;
     }
+    if (args[i] === '--host' && args[i + 1]) {
+      host = args[i + 1];
+      i++;
+    }
   }
 
-  return { http, port };
+  return { http, port, host };
 }
 
 async function buildConfig(): Promise<EvalancheConfig> {
@@ -85,12 +91,12 @@ async function buildConfig(): Promise<EvalancheConfig> {
 }
 
 async function main(): Promise<void> {
-  const { http, port } = parseArgs();
+  const { http, port, host } = parseArgs();
   const config = await buildConfig();
   const server = new EvalancheMCPServer(config);
 
   if (http) {
-    server.startHTTP(port);
+    server.startHTTP({ port, host, authToken: process.env.EVALANCHE_MCP_HTTP_TOKEN });
   } else {
     server.startStdio();
   }

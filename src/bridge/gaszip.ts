@@ -52,6 +52,13 @@ export interface GasZipQuote {
   rawQuote?: Record<string, unknown>;
 }
 
+export interface GasZipAuthorizationRequest {
+  to: string;
+  valueWei: string;
+  data?: string;
+  gasLimit?: bigint;
+}
+
 /**
  * Gas.zip client — handles cross-chain gas funding via the Gas.zip API.
  */
@@ -72,7 +79,11 @@ export class GasZipClient {
    * @param signer - Agent signer to send the deposit transaction
    * @returns Transaction hash
    */
-  async fundGas(params: GasZipParams, signer: AgentSigner): Promise<{ txHash: string }> {
+  async fundGas(
+    params: GasZipParams,
+    signer: AgentSigner,
+    authorize?: (request: GasZipAuthorizationRequest) => Promise<void> | void,
+  ): Promise<{ txHash: string }> {
     const quote = await this.findQuote({
       ...params,
       fromAddress: params.fromAddress ?? signer.address,
@@ -88,9 +99,17 @@ export class GasZipClient {
     try {
       const txRequest = this.extractTransactionRequest(quote);
       const value = txRequest.value ? BigInt(txRequest.value) : parseEther(quote.fromAmount);
+      const to = txRequest.to ?? quote.depositAddress;
+
+      await authorize?.({
+        to,
+        valueWei: value.toString(),
+        data: txRequest.data,
+        gasLimit: txRequest.gasLimit ? BigInt(txRequest.gasLimit) : undefined,
+      });
 
       const tx = await signer.sendTransaction({
-        to: txRequest.to ?? quote.depositAddress,
+        to,
         data: txRequest.data,
         value,
         gasLimit: txRequest.gasLimit ? BigInt(txRequest.gasLimit) : undefined,

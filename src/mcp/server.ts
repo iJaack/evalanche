@@ -18,7 +18,8 @@ import { AgentMemory } from '../economy/memory';
 import { InteropIdentityResolver } from '../interop/identity';
 import { createDefaultDappRegistry, resolveDappTarget } from '../defi/dapp-registry';
 import type { ChainName } from '../utils/networks';
-import { createServer, type IncomingMessage, type ServerResponse } from 'http';
+import { timingSafeEqual } from 'crypto';
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'http';
 
 /** MCP tool definition */
 interface MCPTool {
@@ -46,6 +47,27 @@ interface MCPResponse {
   result?: unknown;
   error?: { code: number; message: string; data?: unknown };
 }
+
+interface MCPHTTPOptions {
+  port?: number;
+  host?: string;
+  authToken?: string;
+  maxBodyBytes?: number;
+}
+
+const DEFAULT_HTTP_PORT = 3402;
+const DEFAULT_HTTP_HOST = '127.0.0.1';
+const DEFAULT_HTTP_MAX_BODY_BYTES = 1_000_000;
+const POLYMARKET_CLOB_CONTRACT = '0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E';
+const POLYMARKET_USDC_E = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174';
+const POLYMARKET_PUSD = '0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB';
+const POLYMARKET_COLLATERAL_SPENDERS = [
+  '0xE111180000d2663C0091e4f400237545B87B996B',
+  '0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296',
+  '0xe2222d279d744050d28e00520010520000310F59',
+] as const;
+const APPROVE_SELECTOR = '0x095ea7b3';
+const UUPS_UPGRADE_TO_AND_CALL_SELECTOR = '0x4f1ef286';
 
 const TOOLS: MCPTool[] = [
   {
@@ -828,7 +850,7 @@ const TOOLS: MCPTool[] = [
   },
   {
     name: 'set_policy',
-    description: 'Set or update the agent spending policy. Controls per-transaction limits, hourly/daily budgets, contract allowlists, and chain restrictions. Pass an empty object to remove the policy.',
+    description: 'Set or update the agent spending policy. Controls per-transaction limits, hourly/daily budgets, contract allowlists, and chain restrictions. Removal requires remove=true and confirm="remove".',
     inputSchema: {
       type: 'object',
       properties: {
@@ -850,6 +872,8 @@ const TOOLS: MCPTool[] = [
         },
         simulateBeforeSend: { type: 'boolean', description: 'If true, simulate every tx before sending (default: false)' },
         dryRun: { type: 'boolean', description: 'If true, log violations but do not block (default: false)' },
+        remove: { type: 'boolean', description: 'Set true to remove the current policy' },
+        confirm: { type: 'string', description: 'Must be "remove" when remove is true' },
       },
     },
   },
@@ -1579,6 +1603,36 @@ export class EvalancheMCPServer {
       : this.agent.switchNetwork(network);
   }
 
+  private async authorizeMcpTransaction(input: {
+    to: string;
+    valueWei?: string;
+    data?: string;
+    gasLimit?: bigint;
+  }): Promise<void> {
+    await this.agent.authorizeTransaction(input);
+  }
+
+  private recordMcpSpend(to: string, valueWei: string | undefined, txHash: string): void {
+    this.agent.recordExternalSpend(to, valueWei ?? '0', txHash);
+  }
+
+  private isAuthorizedHTTP(req: IncomingMessage, authToken: string): boolean {
+    const authorization = req.headers.authorization;
+    const bearer = typeof authorization === 'string' && authorization.startsWith('Bearer ')
+      ? authorization.slice('Bearer '.length)
+      : '';
+    const headerToken = typeof req.headers['x-evalanche-mcp-token'] === 'string'
+      ? req.headers['x-evalanche-mcp-token']
+      : '';
+    return this.constantTimeTokenEquals(bearer, authToken)
+      || this.constantTimeTokenEquals(headerToken, authToken);
+  }
+
+  private constantTimeTokenEquals(candidate: string, expected: string): boolean {
+    if (!candidate || candidate.length !== expected.length) return false;
+    return timingSafeEqual(Buffer.from(candidate), Buffer.from(expected));
+  }
+
   private resolveVaultTarget(target: string, explicitNetwork?: string) {
     return resolveDappTarget(
       {
@@ -2034,16 +2088,14 @@ export class EvalancheMCPServer {
     const { polygon } = await import('viem/chains');
     const { getAddress } = await import('viem/utils');
 
-    const USDC_CONTRACT = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174';
-    const CLOB_CONTRACT = '0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E';
     const user = getAddress(this.agent.address);
 
     try {
       const client = createPublicClient({ chain: polygon, transport: http() });
       return await client.readContract({
-        address: USDC_CONTRACT,
+        address: POLYMARKET_USDC_E,
         functionName: 'allowance',
-        args: [user, CLOB_CONTRACT],
+        args: [user, POLYMARKET_CLOB_CONTRACT],
         abi: [{
           type: 'function',
           name: 'allowance',
@@ -2055,6 +2107,117 @@ export class EvalancheMCPServer {
     } catch {
       return 0n;
     }
+  }
+
+  private async getOnChainPusdAllowances(): Promise<Record<string, bigint>> {
+    const { createPublicClient, http } = await import('viem');
+    const { polygon } = await import('viem/chains');
+    const { getAddress } = await import('viem/utils');
+
+    const user = getAddress(this.agent.address);
+    const zeroed = Object.fromEntries(POLYMARKET_COLLATERAL_SPENDERS.map((spender) => [spender, 0n])) as Record<string, bigint>;
+
+    try {
+      const client = createPublicClient({ chain: polygon, transport: http() });
+      const reads = await Promise.all(
+        POLYMARKET_COLLATERAL_SPENDERS.map(async (spender) => {
+          try {
+            const allowance = await client.readContract({
+              address: POLYMARKET_PUSD,
+              functionName: 'allowance',
+              args: [user, spender],
+              abi: [{
+                type: 'function',
+                name: 'allowance',
+                stateMutability: 'view',
+                inputs: [{ type: 'address' }, { type: 'address' }],
+                outputs: [{ type: 'uint256' }],
+              }],
+            });
+            return [spender, allowance as bigint] as const;
+          } catch {
+            return [spender, 0n] as const;
+          }
+        }),
+      );
+      return Object.fromEntries(reads) as Record<string, bigint>;
+    } catch {
+      return zeroed;
+    }
+  }
+
+  private extractPolymarketAllowanceMap(collateral: any): Record<string, bigint> {
+    const raw = collateral?.allowances;
+    if (!raw || typeof raw !== 'object') return {};
+    return Object.fromEntries(
+      Object.entries(raw as Record<string, unknown>).map(([spender, amount]) => {
+        try {
+          return [spender, BigInt(String(amount ?? '0'))];
+        } catch {
+          return [spender, 0n];
+        }
+      }),
+    );
+  }
+
+  private async approvePusdCollateralSpenders(amountUSDC?: number): Promise<string[]> {
+    const { createWalletClient, createPublicClient, http, parseUnits } = await import('viem');
+    const { polygon } = await import('viem/chains');
+    const { privateKeyToAccount } = await import('viem/accounts');
+
+    let pk = this.agent.wallet.privateKey;
+    if (!pk) throw new Error('Agent wallet has no privateKey');
+    if (!pk.startsWith('0x')) pk = `0x${pk}`;
+
+    const account = privateKeyToAccount(pk as `0x${string}`);
+    const walletClient = createWalletClient({
+      account,
+      chain: polygon,
+      transport: http(),
+    });
+    const publicClient = createPublicClient({
+      chain: polygon,
+      transport: http(),
+    });
+
+    const approveAmount = amountUSDC !== undefined
+      ? parseUnits(String(amountUSDC), 6)
+      : BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff');
+
+    const txHashes: string[] = [];
+    for (const spender of POLYMARKET_COLLATERAL_SPENDERS) {
+      const currentAllowance = await publicClient.readContract({
+        address: POLYMARKET_PUSD,
+        abi: [{
+          name: 'allowance',
+          type: 'function',
+          inputs: [{ name: 'owner', type: 'address' }, { name: 'spender', type: 'address' }],
+          outputs: [{ name: '', type: 'uint256' }],
+          stateMutability: 'view',
+        } as any],
+        functionName: 'allowance',
+        args: [account.address, spender as `0x${string}`],
+      }) as bigint;
+
+      if (currentAllowance >= approveAmount) continue;
+
+      const hash = await walletClient.writeContract({
+        address: POLYMARKET_PUSD,
+        abi: [{
+          name: 'approve',
+          type: 'function',
+          inputs: [{ name: 'spender', type: 'address' }, { name: 'amount', type: 'uint256' }],
+          outputs: [{ name: '', type: 'bool' }],
+          stateMutability: 'nonpayable',
+        } as any],
+        functionName: 'approve',
+        args: [spender as `0x${string}`, approveAmount],
+      });
+      await publicClient.waitForTransactionReceipt({ hash });
+      txHashes.push(hash);
+    }
+
+    return txHashes;
   }
 
   private async getPolymarketVenueBalances(tokenId?: string): Promise<any> {
@@ -2070,13 +2233,19 @@ export class EvalancheMCPServer {
         ? await authed.getBalances()
         : null;
 
-      // Also read the on-chain ERC20 allowance directly. The CLOB API's off-chain
-      // allowance record can lag behind the actual blockchain state, so we always
-      // use the on-chain value as the source of truth for the allowance check.
-      const onChainAllowanceRaw = await this.getOnChainUsdcAllowance();
-      const onChainAllowance = this.normalizeUsdcDisplayAmount(onChainAllowanceRaw.toString());
-      const hasOnChainAllowance = onChainAllowanceRaw > 0n;
-      const normalizedClobAllowance = this.normalizeUsdcDisplayAmount(collateral?.allowance);
+      const clobAllowanceMap = this.extractPolymarketAllowanceMap(collateral);
+      const onChainUsdcAllowanceRaw = await this.getOnChainUsdcAllowance();
+      const onChainPusdAllowancesRaw = await this.getOnChainPusdAllowances();
+      const mergedAllowanceMap = Object.fromEntries(
+        POLYMARKET_COLLATERAL_SPENDERS.map((spender) => {
+          const clobValue = clobAllowanceMap[spender] ?? 0n;
+          const onChainValue = onChainPusdAllowancesRaw[spender] ?? 0n;
+          return [spender, onChainValue > clobValue ? onChainValue : clobValue];
+        }),
+      ) as Record<string, bigint>;
+      const maxMergedAllowanceRaw = Object.values(mergedAllowanceMap).reduce((max, value) => value > max ? value : max, 0n);
+      const effectiveAllowanceRaw = maxMergedAllowanceRaw > 0n ? maxMergedAllowanceRaw : onChainUsdcAllowanceRaw;
+      const clobAllowanceSource = maxMergedAllowanceRaw > 0n ? 'pusd_spender' : (onChainUsdcAllowanceRaw > 0n ? 'on_chain' : 'clob');
 
       return {
         ok: true,
@@ -2085,16 +2254,29 @@ export class EvalancheMCPServer {
           ? {
             balance: this.normalizeUsdcDisplayAmount(collateral.balance),
             rawBalance: String(collateral.balance ?? '0'),
-            // Prefer on-chain allowance; fall back to CLOB API record if on-chain is 0.
-            allowance: hasOnChainAllowance ? onChainAllowance : normalizedClobAllowance,
-            rawAllowance: hasOnChainAllowance ? onChainAllowanceRaw.toString() : String(collateral.allowance ?? '0'),
-            allowanceSource: hasOnChainAllowance ? 'on_chain' : 'clob',
+            allowance: this.normalizeUsdcDisplayAmount(effectiveAllowanceRaw.toString()),
+            rawAllowance: effectiveAllowanceRaw.toString(),
+            allowanceSource: clobAllowanceSource,
+            allowances: Object.fromEntries(
+              Object.entries(mergedAllowanceMap).map(([spender, value]) => [spender, this.normalizeUsdcDisplayAmount(value.toString())]),
+            ),
+            rawAllowances: Object.fromEntries(
+              Object.entries(mergedAllowanceMap).map(([spender, value]) => [spender, value.toString()]),
+            ),
+            rawUsdcClobAllowance: onChainUsdcAllowanceRaw.toString(),
           }
           : {
             balance: 0,
-            allowance: onChainAllowance,
-            rawAllowance: onChainAllowanceRaw.toString(),
-            allowanceSource: 'on_chain',
+            allowance: this.normalizeUsdcDisplayAmount(effectiveAllowanceRaw.toString()),
+            rawAllowance: effectiveAllowanceRaw.toString(),
+            allowanceSource: clobAllowanceSource,
+            allowances: Object.fromEntries(
+              Object.entries(mergedAllowanceMap).map(([spender, value]) => [spender, this.normalizeUsdcDisplayAmount(value.toString())]),
+            ),
+            rawAllowances: Object.fromEntries(
+              Object.entries(mergedAllowanceMap).map(([spender, value]) => [spender, value.toString()]),
+            ),
+            rawUsdcClobAllowance: onChainUsdcAllowanceRaw.toString(),
           },
         conditional: conditional
           ? {
@@ -2897,29 +3079,54 @@ export class EvalancheMCPServer {
         }
 
         case 'approve_and_call': {
+          const tokenAddress = args.tokenAddress as string;
+          const targetAddress = (args.targetAddress as string | undefined) ?? (args.spenderAddress as string);
+          const valueWei = args.valueWei ? String(args.valueWei) : undefined;
+          await this.authorizeMcpTransaction({
+            to: tokenAddress,
+            valueWei: '0',
+            data: APPROVE_SELECTOR,
+          });
+          await this.authorizeMcpTransaction({
+            to: targetAddress,
+            valueWei: valueWei ?? '0',
+            data: args.contractCallData as string,
+            gasLimit: args.gasLimit ? BigInt(args.gasLimit as string) : undefined,
+          });
           const approveCallResult = await approveAndCall(
             this.agent.wallet,
-            args.tokenAddress as string,
+            tokenAddress,
             args.spenderAddress as string,
             BigInt(args.amount as string),
             {
-              to: (args.targetAddress as string | undefined) ?? (args.spenderAddress as string),
+              to: targetAddress,
               data: args.contractCallData as string,
-              value: args.valueWei ? BigInt(args.valueWei as string) : undefined,
+              value: valueWei ? BigInt(valueWei) : undefined,
               gasLimit: args.gasLimit ? BigInt(args.gasLimit as string) : undefined,
             },
           );
+          if (approveCallResult.success) {
+            this.recordMcpSpend(targetAddress, valueWei, approveCallResult.callTxHash);
+          }
           result = approveCallResult;
           break;
         }
 
         case 'upgrade_proxy': {
+          await this.authorizeMcpTransaction({
+            to: args.proxyAddress as string,
+            valueWei: '0',
+            data: UUPS_UPGRADE_TO_AND_CALL_SELECTOR,
+          });
           const upgradeResult = await upgradeProxy(
             this.agent.wallet,
             args.proxyAddress as string,
             args.newImplementationAddress as string,
             args.initData as string | undefined,
           );
+          if (upgradeResult.success) {
+            this.recordMcpSpend(args.proxyAddress as string, '0', upgradeResult.txHash);
+          }
           result = upgradeResult;
           break;
         }
@@ -3390,9 +3597,32 @@ export class EvalancheMCPServer {
           break;
 
         case 'set_policy': {
-          // If no meaningful fields are passed, remove the policy
-          const hasFields = Object.keys(args).length > 0;
-          if (hasFields) {
+          if (args.remove === true) {
+            if (args.confirm !== 'remove') {
+              throw new EvalancheError(
+                'Policy removal requires confirm="remove"',
+                EvalancheErrorCode.POLICY_VIOLATION,
+              );
+            }
+            this.agent.setPolicy(null);
+            result = { success: true, message: 'Policy removed' };
+          } else {
+            const policyFields = [
+              'maxPerTransaction',
+              'maxPerHour',
+              'maxPerDay',
+              'allowlistedChains',
+              'allowlistedContracts',
+              'simulateBeforeSend',
+              'dryRun',
+            ];
+            const hasPolicyField = policyFields.some((field) => args[field] !== undefined);
+            if (!hasPolicyField) {
+              throw new EvalancheError(
+                'set_policy requires policy fields, or remove=true with confirm="remove"',
+                EvalancheErrorCode.INVALID_CONFIG,
+              );
+            }
             this.agent.setPolicy({
               maxPerTransaction: args.maxPerTransaction as string | undefined,
               maxPerHour: args.maxPerHour as string | undefined,
@@ -3403,9 +3633,6 @@ export class EvalancheMCPServer {
               dryRun: args.dryRun as boolean | undefined,
             });
             result = { success: true, policy: this.agent.getPolicy() };
-          } else {
-            this.agent.setPolicy(null);
-            result = { success: true, message: 'Policy removed' };
           }
           break;
         }
@@ -3943,14 +4170,12 @@ export class EvalancheMCPServer {
         }
 
         case 'pm_approve': {
-          // Approve maxUint256 so the CLOB can pull USDC at settlement without
-          // needing re-approval every time. The on-chain tx is submitted first,
-          // then we update the CLOB's off-chain allowance record.
+          // Approve maxUint256 so the CLOB can pull wallet-side USDC.e when needed,
+          // and also approve pUSD spenders for already-deposited venue collateral.
           const txHash = await this.approveUsdcToCLOB();
+          const collateralTxHashes = await this.approvePusdCollateralSpenders().catch(() => []);
 
           // Update the CLOB's off-chain record to match the on-chain approval.
-          // The CLOB API uses this off-chain record for preflight checks, even
-          // though the actual pull uses ERC20 allowance at settlement time.
           const authedApprove = await this.getAuthedClobClient();
           try {
             await authedApprove.updateBalanceAllowance({ asset_type: 'COLLATERAL' });
@@ -3959,7 +4184,14 @@ export class EvalancheMCPServer {
             // record can be stale and will sync on the next read.
           }
 
-          result = { approved: true, txHash };
+          result = {
+            approved: true,
+            txHash,
+            collateralTxHashes,
+            note: collateralTxHashes.length > 0
+              ? 'Approved both wallet-side USDC.e -> CLOB and pUSD -> Polymarket spenders.'
+              : 'Approved wallet-side USDC.e -> CLOB. No new pUSD spender approvals were needed.',
+          };
           break;
         }
 
@@ -4054,13 +4286,14 @@ export class EvalancheMCPServer {
             );
           }
 
-          // Step 4: update CLOB's off-chain balance record
+          // Step 4: update CLOB's off-chain balance record and sync pUSD spender approvals
           const authed = await this.getAuthedClobClient();
           try {
             await authed.updateBalanceAllowance({ asset_type: 'COLLATERAL' });
           } catch (e) {
             // Non-fatal — on-chain deposit is confirmed
           }
+          const collateralTxHashes = await this.approvePusdCollateralSpenders(rawAmount).catch(() => []);
 
           result = {
             deposited: depositSuccess,
@@ -4068,8 +4301,9 @@ export class EvalancheMCPServer {
             depositAmountRaw: depositAmount.toString(),
             txHash: depositHash,
             approveTxHash: approveHash,
+            collateralTxHashes,
             CLOBContract: CLOB_CONTRACT,
-            note: 'registerCollateral called — USDC now in CLOB collateral balance',
+            note: 'registerCollateral called — USDC now in CLOB collateral balance and pUSD spender approvals were synced',
           };
           break;
         }
@@ -4888,7 +5122,20 @@ export class EvalancheMCPServer {
   }
 
   /** Start the MCP server in HTTP mode */
-  startHTTP(port: number = 3402): void {
+  startHTTP(options: number | MCPHTTPOptions = DEFAULT_HTTP_PORT): Server {
+    const config = typeof options === 'number' ? { port: options } : options;
+    const port = config.port ?? DEFAULT_HTTP_PORT;
+    const host = config.host ?? DEFAULT_HTTP_HOST;
+    const authToken = config.authToken ?? process.env.EVALANCHE_MCP_HTTP_TOKEN;
+    const maxBodyBytes = config.maxBodyBytes ?? DEFAULT_HTTP_MAX_BODY_BYTES;
+
+    if (!authToken) {
+      throw new EvalancheError(
+        'HTTP MCP transport requires EVALANCHE_MCP_HTTP_TOKEN or startHTTP({ authToken })',
+        EvalancheErrorCode.INVALID_CONFIG,
+      );
+    }
+
     const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
       if (req.method !== 'POST') {
         res.writeHead(405);
@@ -4896,9 +5143,43 @@ export class EvalancheMCPServer {
         return;
       }
 
+      if (!this.isAuthorizedHTTP(req, authToken)) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          jsonrpc: '2.0',
+          id: 0,
+          error: { code: -32001, message: 'Unauthorized' },
+        }));
+        return;
+      }
+
+      req.setTimeout(10_000, () => {
+        res.writeHead(408);
+        res.end('Request timeout');
+        req.destroy();
+      });
+
       let body = '';
-      req.on('data', (chunk: Buffer) => { body += chunk.toString(); });
+      let receivedBytes = 0;
+      let rejected = false;
+      req.on('data', (chunk: Buffer) => {
+        if (rejected) return;
+        receivedBytes += chunk.byteLength;
+        if (receivedBytes > maxBodyBytes) {
+          rejected = true;
+          res.writeHead(413, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            jsonrpc: '2.0',
+            id: 0,
+            error: { code: -32002, message: 'Request body too large' },
+          }));
+          req.destroy();
+          return;
+        }
+        body += chunk.toString();
+      });
       req.on('end', async () => {
+        if (rejected) return;
         try {
           const request = JSON.parse(body) as MCPRequest;
           const response = await this.handleRequest(request);
@@ -4915,9 +5196,11 @@ export class EvalancheMCPServer {
       });
     });
 
-    server.listen(port, () => {
-      process.stderr.write(`Evalanche MCP server started on http://localhost:${port}\n`);
+    server.listen(port, host, () => {
+      process.stderr.write(`Evalanche MCP server started on http://${host}:${port}\n`);
     });
+
+    return server;
   }
 
   private ok(id: string | number, result: unknown): MCPResponse {

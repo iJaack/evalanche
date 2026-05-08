@@ -21,7 +21,7 @@ export type {
   LiFiTimingStrategy,
 } from './lifi';
 export { GasZipClient } from './gaszip';
-export type { GasZipParams, GasZipQuote } from './gaszip';
+export type { GasZipAuthorizationRequest, GasZipParams, GasZipQuote } from './gaszip';
 
 import type { AgentSigner } from '../wallet/signer';
 import { LiFiClient } from './lifi';
@@ -39,7 +39,7 @@ import type {
   LiFiExecutionResult,
 } from './lifi';
 import { GasZipClient } from './gaszip';
-import type { GasZipParams, GasZipQuote } from './gaszip';
+import type { GasZipAuthorizationRequest, GasZipParams, GasZipQuote } from './gaszip';
 
 /**
  * Unified bridge client combining Li.Fi (token bridging) and Gas.zip (gas funding).
@@ -99,8 +99,12 @@ export class BridgeClient {
    * @param signer - Agent signer for sending the deposit transaction
    * @returns Transaction hash
    */
-  async fundGas(params: GasZipParams, signer: AgentSigner): Promise<{ txHash: string }> {
-    return this.gaszip.fundGas(params, signer);
+  async fundGas(
+    params: GasZipParams,
+    signer: AgentSigner,
+    authorize?: (request: GasZipAuthorizationRequest) => Promise<void> | void,
+  ): Promise<{ txHash: string }> {
+    return this.gaszip.fundGas(params, signer, authorize);
   }
 
   async checkTransferStatus(params: TransferStatusParams): Promise<TransferStatus> {

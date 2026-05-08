@@ -108,7 +108,7 @@ Routescan RPCs preferred where available, with public fallback RPCs.
 ### MCP Server Access Controls
 
 - **Stdio mode (default):** stdin/stdout only. No network exposure.
-- **HTTP mode (`--http`):** localhost:3402. Do not expose publicly without auth.
+- **HTTP mode (`--http`):** localhost:3402 by default and requires `EVALANCHE_MCP_HTTP_TOKEN` (or `startHTTP({ authToken })`). Do not expose publicly without additional network controls.
 
 ### OpenClaw External Secrets (Preferred when available)
 

@@ -16,6 +16,28 @@ export interface ServiceEndpoint {
   chainId: number;
   /** The handler function that produces the response content */
   handler: (body?: string) => Promise<string> | string;
+  /**
+   * Verification mode for incoming proofs. `settled` requires the host-level
+   * settlement verifier to confirm payment before serving. `signed-intent`
+   * preserves the old behavior and should only be used for trusted peers.
+   */
+  paymentMode?: 'settled' | 'signed-intent';
+}
+
+export interface SettlementVerificationRequest {
+  payload: PaymentProofPayload;
+  endpoint: Omit<ServiceEndpoint, 'handler'>;
+  path: string;
+  payer: string;
+  body?: string;
+}
+
+export type SettlementVerifier = (
+  request: SettlementVerificationRequest,
+) => Promise<{ valid: boolean; reason?: string }> | { valid: boolean; reason?: string };
+
+export interface AgentServiceHostOptions {
+  settlementVerifier?: SettlementVerifier;
 }
 
 /** A received and verified payment */
@@ -72,13 +94,15 @@ export interface RevenueSummary {
 export class AgentServiceHost {
   private static readonly CHALLENGE_TTL_MS = 5 * 60 * 1000;
   private readonly _agentAddress: string;
+  private readonly _settlementVerifier?: SettlementVerifier;
   private readonly _endpoints: Map<string, ServiceEndpoint> = new Map();
   private readonly _payments: ReceivedPayment[] = [];
   private readonly _pendingChallenges: Map<string, { path: string; expiresAt: number; bodyHash?: string }> = new Map();
   private readonly _usedNonces: Set<string> = new Set();
 
-  constructor(agentAddress: string) {
+  constructor(agentAddress: string, options: AgentServiceHostOptions = {}) {
     this._agentAddress = agentAddress;
+    this._settlementVerifier = options.settlementVerifier;
   }
 
   /**
@@ -138,7 +162,7 @@ export class AgentServiceHost {
     }
 
     // Verify payment proof
-    const verification = this._verifyPaymentProof(paymentProof, endpoint, path, body);
+    const verification = await this._verifyPaymentProof(paymentProof, endpoint, path, body);
     if (!verification.valid) {
       return {
         status: 403,
@@ -194,12 +218,12 @@ export class AgentServiceHost {
    * Checks: (1) valid JSON, (2) valid signature, (3) correct payment address,
    * (4) sufficient amount, (5) correct chain.
    */
-  private _verifyPaymentProof(
+  private async _verifyPaymentProof(
     proof: string,
     endpoint: ServiceEndpoint,
     path: string,
     body?: string,
-  ): { valid: boolean; payer?: string; reason?: string } {
+  ): Promise<{ valid: boolean; payer?: string; reason?: string }> {
     try {
       const decoded = JSON.parse(Buffer.from(proof, 'base64').toString('utf-8'));
       const { payload, signature } = decoded as {
@@ -257,6 +281,23 @@ export class AgentServiceHost {
       const requiredAmount = Number(endpoint.price);
       if (!Number.isFinite(paidAmount) || !Number.isFinite(requiredAmount) || paidAmount < requiredAmount) {
         return { valid: false, reason: `Insufficient payment: expected ${endpoint.price} ${endpoint.currency}, got ${payload.amount ?? '0'}` };
+      }
+
+      if (endpoint.paymentMode !== 'signed-intent') {
+        if (!this._settlementVerifier) {
+          return { valid: false, reason: 'Settlement verification is not configured' };
+        }
+        const { handler, ...publicEndpoint } = endpoint;
+        const settlement = await this._settlementVerifier({
+          payload,
+          endpoint: publicEndpoint,
+          path,
+          payer: recoveredAddress,
+          body,
+        });
+        if (!settlement.valid) {
+          return { valid: false, reason: settlement.reason ?? 'Settlement verification failed' };
+        }
       }
 
       this._pendingChallenges.delete(payload.nonce);

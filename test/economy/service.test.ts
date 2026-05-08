@@ -45,7 +45,9 @@ describe('AgentServiceHost', () => {
   let host: AgentServiceHost;
 
   beforeEach(() => {
-    host = new AgentServiceHost(AGENT_ADDRESS);
+    host = new AgentServiceHost(AGENT_ADDRESS, {
+      settlementVerifier: vi.fn().mockResolvedValue({ valid: true }),
+    });
   });
 
   describe('serve()', () => {
@@ -107,6 +109,37 @@ describe('AgentServiceHost', () => {
       expect(res.status).toBe(200);
       const body = JSON.parse(res.body);
       expect(body.result).toBe('audit complete');
+    });
+
+    it('should reject settled endpoints when settlement verification is not configured', async () => {
+      const hostWithoutSettlement = new AgentServiceHost(AGENT_ADDRESS);
+      hostWithoutSettlement.serve(makeEndpoint());
+      const proof = await createProof(hostWithoutSettlement);
+
+      const res = await hostWithoutSettlement.handleRequest('/audit', undefined, proof);
+      expect(res.status).toBe(403);
+      expect(JSON.parse(res.body).error).toContain('Settlement verification is not configured');
+    });
+
+    it('should reject when settlement verifier fails', async () => {
+      host = new AgentServiceHost(AGENT_ADDRESS, {
+        settlementVerifier: vi.fn().mockResolvedValue({ valid: false, reason: 'No matching payment' }),
+      });
+      host.serve(makeEndpoint());
+      const proof = await createProof(host);
+
+      const res = await host.handleRequest('/audit', undefined, proof);
+      expect(res.status).toBe(403);
+      expect(JSON.parse(res.body).error).toBe('No matching payment');
+    });
+
+    it('should support explicit signed-intent endpoints for trusted peers', async () => {
+      const intentHost = new AgentServiceHost(AGENT_ADDRESS);
+      intentHost.serve(makeEndpoint({ paymentMode: 'signed-intent' }));
+      const proof = await createProof(intentHost);
+
+      const res = await intentHost.handleRequest('/audit', undefined, proof);
+      expect(res.status).toBe(200);
     });
 
     it('should record payment after successful request', async () => {

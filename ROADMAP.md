@@ -5,12 +5,12 @@ This is the active roadmap for the repository.
 <!-- GENERATED:roadmap-release:start -->
 ## Latest Shipped Release
 
-- Latest release: [v1.9.2](docs/releases/RELEASE_NOTES_1.9.2.md)
-- Shipped in `v1.9.2`:
-  - Added macOS Keychain fallback for agent credentials, so Mony and other local agents can resolve the `EvaWallet` / `EvaMain` sovereign wallet after OpenClaw secrets and env vars and before the encrypted keystore path
-  - Made Polymarket orderbook handling deterministic by sorting visible bids highest-first and asks lowest-first before pricing, preflight, and sell-fill estimation
-  - Preserved the `v1.9.0` Polymarket withdrawal flow while promoting the Mony-tested Evalanche runtime fixes into the public release line
-  - Added focused regression coverage for keychain credential resolution and unsorted CLOB orderbook arrays
+- Latest release: [v1.9.7](docs/releases/RELEASE_NOTES_1.9.7.md)
+- Shipped in `v1.9.7`:
+  - Hardened MCP HTTP mode so it now requires an explicit bearer token, binds to loopback by default, enforces request timeouts, and rejects oversized request bodies before parsing.
+  - Routed high-risk execution helpers through active spending-policy checks, including approve-and-call, UUPS proxy upgrades, Li.Fi bridge/swap execution, and Gas.zip funding.
+  - Tightened x402 paid-service hosting so settled endpoints require a settlement verifier by default, while preserving explicit `signed-intent` mode for trusted peer flows and tests.
+  - Fixed Polymarket collateral normalization for live pUSD spender allowances, and made `pm_approve` / `pm_deposit` sync both wallet USDC.e -> CLOB approval and Polygon pUSD spender approvals.
 
 ## Current Focus
 

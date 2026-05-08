@@ -49,6 +49,14 @@ export interface EvalancheConfig {
   policy?: SpendingPolicy;
 }
 
+export interface TransactionAuthorizationIntent {
+  to: string;
+  /** Native token value in wei. */
+  valueWei?: string;
+  data?: string;
+  gasLimit?: bigint;
+}
+
 /**
  * Main Evalanche agent class — provides wallet, identity, transactions,
  * reputation, x402 payment, and cross-chain bridging capabilities for
@@ -418,6 +426,25 @@ export class Evalanche {
   }
 
   /**
+   * Evaluate a raw transaction against the active spending policy without
+   * broadcasting it. Use this for execution helpers that build their own
+   * transaction requests outside TransactionBuilder.
+   */
+  async authorizeTransaction(intent: TransactionAuthorizationIntent): Promise<void> {
+    await this._enforcePolicy({
+      to: intent.to,
+      value: intent.valueWei ?? '0',
+      data: intent.data,
+      gasLimit: intent.gasLimit,
+    });
+  }
+
+  /** Record a confirmed spend for helpers that execute outside TransactionBuilder. */
+  recordExternalSpend(to: string, amountWei: string, txHash: string): void {
+    this._recordSpend(to, amountWei, txHash);
+  }
+
+  /**
    * Enforce the spending policy on a transaction intent.
    * If simulateBeforeSend is enabled, also runs a simulation first.
    * @internal
@@ -497,15 +524,21 @@ export class Evalanche {
    * @returns Transaction hash and status
    */
   async bridgeTokens(params: BridgeQuoteParams): Promise<{ txHash: string; status: string }> {
-    const client = this.getBridgeClient();
-    const quote = await client.bridge(params);
-    return client.executeBridge(quote);
+    const detailed = await this.bridgeTokensDetailed(params);
+    return { txHash: detailed.txHash, status: detailed.status };
   }
 
   async bridgeTokensDetailed(params: BridgeQuoteParams): Promise<LiFiExecutionResult> {
     const client = this.getBridgeClient();
     const quote = await client.bridge(params);
-    return client.executeBridgeDetailed(quote);
+    await this.authorizeLiFiQuote(quote);
+    const result = await client.executeBridgeDetailed(quote);
+    this.recordExternalSpend(
+      this.getLiFiQuoteTarget(quote) ?? params.fromAddress,
+      this.getLiFiQuoteValueWei(quote),
+      result.txHash,
+    );
+    return result;
   }
 
   async checkBridgeStatus(params: TransferStatusParams): Promise<TransferStatus> {
@@ -517,15 +550,21 @@ export class Evalanche {
   }
 
   async swap(params: BridgeQuoteParams): Promise<{ txHash: string; status: string }> {
-    const client = this.getBridgeClient();
-    const quote = await client.getSwapQuote(params);
-    return client.executeSwap(quote);
+    const detailed = await this.swapDetailed(params);
+    return { txHash: detailed.txHash, status: detailed.status };
   }
 
   async swapDetailed(params: BridgeQuoteParams): Promise<LiFiExecutionResult> {
     const client = this.getBridgeClient();
     const quote = await client.getSwapQuote(params);
-    return client.executeSwapDetailed(quote);
+    await this.authorizeLiFiQuote(quote);
+    const result = await client.executeSwapDetailed(quote);
+    this.recordExternalSpend(
+      this.getLiFiQuoteTarget(quote) ?? params.fromAddress,
+      this.getLiFiQuoteValueWei(quote),
+      result.txHash,
+    );
+    return result;
   }
 
   async getTokens(chainIds: number[]): Promise<Record<string, LiFiToken[]>> {
@@ -562,7 +601,48 @@ export class Evalanche {
    * @returns Transaction hash
    */
   async fundDestinationGas(params: GasZipParams): Promise<{ txHash: string }> {
-    return this.getBridgeClient().fundGas(params, this.wallet);
+    const result = await this.getBridgeClient().fundGas(params, this.wallet, async (request) => {
+      await this.authorizeTransaction(request);
+    });
+    return result;
+  }
+
+  private getLiFiTransactionRequest(quote: BridgeQuote): Record<string, unknown> | null {
+    const rawRoute = quote.rawRoute as {
+      transactionRequest?: Record<string, unknown>;
+      action?: { transactionRequest?: Record<string, unknown> };
+    } | null;
+    return rawRoute?.transactionRequest ?? rawRoute?.action?.transactionRequest ?? null;
+  }
+
+  private getLiFiQuoteTarget(quote: BridgeQuote): string | null {
+    const txRequest = this.getLiFiTransactionRequest(quote);
+    return typeof txRequest?.to === 'string' ? txRequest.to : null;
+  }
+
+  private getLiFiQuoteValueWei(quote: BridgeQuote): string {
+    const txRequest = this.getLiFiTransactionRequest(quote);
+    const value = txRequest?.value;
+    return value === undefined || value === null ? '0' : String(value);
+  }
+
+  private async authorizeLiFiQuote(quote: BridgeQuote): Promise<void> {
+    const txRequest = this.getLiFiTransactionRequest(quote);
+    if (!txRequest || typeof txRequest.to !== 'string') {
+      throw new EvalancheError(
+        'No executable transaction target found in Li.Fi quote',
+        EvalancheErrorCode.BRIDGE_EXECUTION_FAILED,
+      );
+    }
+
+    await this.authorizeTransaction({
+      to: txRequest.to,
+      valueWei: txRequest.value === undefined || txRequest.value === null ? '0' : String(txRequest.value),
+      data: typeof txRequest.data === 'string' ? txRequest.data : undefined,
+      gasLimit: txRequest.gasLimit === undefined || txRequest.gasLimit === null
+        ? undefined
+        : BigInt(String(txRequest.gasLimit)),
+    });
   }
 
   /**
