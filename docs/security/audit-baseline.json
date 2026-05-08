@@ -1,9 +1,9 @@
 {
-  "version": "1.9.2",
+  "version": "1.9.7",
   "counts": {
     "critical": 5,
-    "high": 3,
-    "moderate": 9,
+    "high": 4,
+    "moderate": 8,
     "low": 12,
     "info": 0,
     "total": 29
@@ -11,6 +11,7 @@
   "highPackages": [
     "@avalabs/core-wallets-sdk",
     "@ledgerhq/hw-app-btc",
+    "axios",
     "tiny-secp256k1"
   ],
   "criticalPackages": [
