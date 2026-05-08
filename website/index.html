@@ -6,12 +6,12 @@
     <title>Evalanche — Multi-EVM agent wallet SDK</title>
     <meta
       name="description"
-      content="Evalanche is a multi-EVM agent wallet SDK for identity, payments, cross-chain execution, holdings discovery, Polymarket, perps, and agent-native signing."
+      content="Evalanche v1.9.7 is a multi-EVM agent wallet SDK for identity, payments, cross-chain execution, policy-guarded automation, and Polymarket-ready execution."
     />
     <meta property="og:title" content="Evalanche — Multi-EVM agent wallet SDK" />
     <meta
       property="og:description"
-      content="Avalanche-first agent wallet infrastructure for identity, payments, cross-chain execution, holdings discovery, and market actions."
+      content="Avalanche-first agent wallet infrastructure with policy-guarded execution, hardened MCP HTTP transport, and live Polymarket collateral handling."
     />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://evalanche.xyz" />
@@ -20,7 +20,7 @@
     <meta name="twitter:title" content="Evalanche — Multi-EVM agent wallet SDK" />
     <meta
       name="twitter:description"
-      content="Avalanche-first agent wallet infrastructure for identity, payments, cross-chain execution, holdings discovery, and market actions."
+      content="Avalanche-first agent wallet infrastructure with policy-guarded execution, hardened MCP HTTP transport, and live Polymarket collateral handling."
     />
     <meta name="twitter:image" content="https://evalanche.xyz/social-card.svg" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
@@ -47,7 +47,8 @@
             <h1 class="ev-wordmark">
               <span class="ev-red">eva</span>lanche
             </h1>
-            <p class="ev-tagline">Avalanche-first agent wallet infrastructure with multi-EVM execution.</p>
+            <p class="ev-tagline">Avalanche-first agent wallet infrastructure with multi-EVM execution, policy rails, and Polymarket-ready collateral flows.</p>
+            <div class="ev-release-pill">Now shipping v1.9.7</div>
             <div class="ev-badges">
               <span class="ev-badge">ERC-8004</span>
               <span class="ev-badge">x402</span>
@@ -57,6 +58,7 @@
               <span class="ev-badge">Hyperliquid</span>
               <span class="ev-badge">LI.Fi</span>
               <span class="ev-badge">Multi-EVM</span>
+              <span class="ev-badge">Policy-guarded</span>
             </div>
             <div class="ev-hero-ctas">
               <a href="https://github.com/iJaack/evalanche" target="_blank" rel="noreferrer" class="ev-btn-primary">GitHub</a>
@@ -67,19 +69,20 @@
           <div class="ev-hero-code">
             <div class="ev-code-bar">
               <span class="ev-dot"></span><span class="ev-dot"></span><span class="ev-dot"></span>
-              <span class="ev-code-title">evalanche-v1.9.0.ts</span>
+              <span class="ev-code-title">evalanche-v1.9.7.ts</span>
             </div>
-            <pre class="ev-code-body"><code>const { agent } = await Evalanche.boot({ network: "avalanche" });
+            <pre class="ev-code-body"><code>const { agent } = await Evalanche.boot({ network: "polygon" });
 
-const holdings = await agent.holdings().scan({
-  include: ["native", "tokens", "defi", "prediction", "perp"],
-});
+await agent.mcp().call("pm_approve", {});
 
-const withdrawal = await agent.mcp().call("pm_withdraw", {
-  amountUSDC: "10",
-  toChainId: "8453",
-  toTokenAddress: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-  recipientAddr: agent.address,
+const balances = await agent.mcp().call("pm_balances", {});
+
+const topup = await agent.bridgeTokensDetailed({
+  fromChain: "base",
+  toChain: "polygon",
+  fromToken: "USDC",
+  toToken: "USDC",
+  amount: "25",
 });</code></pre>
           </div>
         </div>
@@ -115,28 +118,28 @@ const withdrawal = await agent.mcp().call("pm_withdraw", {
 
       <section class="ev-section" id="install">
         <div class="ev-container">
-          <h2 class="ev-section-title">Why v1.9.0 matters</h2>
+          <h2 class="ev-section-title">Why v1.9.7 matters</h2>
           <div class="ev-steps">
             <div class="ev-step">
               <div class="ev-step-meta">
                 <span class="ev-step-num">01</span>
-                <span class="ev-step-label">Unified holdings surface</span>
+                <span class="ev-step-label">Hardened local MCP transport</span>
               </div>
-              <pre class="ev-step-code"><code>Scan native balances, tokens, DeFi positions, Polymarket positions, and perp venue positions through one normalized holdings API.</code></pre>
+              <pre class="ev-step-code"><code>HTTP MCP now requires an explicit bearer token, stays on loopback by default, enforces request timeouts, and rejects oversized request bodies before parsing.</code></pre>
             </div>
             <div class="ev-step">
               <div class="ev-step-meta">
                 <span class="ev-step-num">02</span>
-                <span class="ev-step-label">Real Polymarket settlement paths</span>
+                <span class="ev-step-label">Live Polymarket collateral truth</span>
               </div>
-              <pre class="ev-step-code"><code>Polymarket now supports both CTF redemption and wallet withdrawal via the official bridge flow, with explicit verification envelopes for agents.</code></pre>
+              <pre class="ev-step-code"><code>Venue balances now normalize live pUSD spender allowances, while pm_approve and pm_deposit keep wallet-side USDC.e and venue-side pUSD approvals in sync.</code></pre>
             </div>
             <div class="ev-step">
               <div class="ev-step-meta">
                 <span class="ev-step-num">03</span>
-                <span class="ev-step-label">Release-grade automation</span>
+                <span class="ev-step-label">Policy-aware execution helpers</span>
               </div>
-              <pre class="ev-step-code"><code>Integrity gates, docs parity, tarball validation, audit regression checks, smoke validation, and machine-readable release artifacts now guard every tagged release.</code></pre>
+              <pre class="ev-step-code"><code>Approve-and-call, proxy upgrades, Li.Fi bridge/swap execution, and Gas.zip funding now route through the active spending policy before they can broadcast value.</code></pre>
             </div>
           </div>
         </div>
