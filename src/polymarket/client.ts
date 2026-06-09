@@ -437,6 +437,8 @@ export class PolymarketClient {
   private signer: AgentSigner;
   private apiCreds?: { key: string; secret: string };
   private clobClient: any = null;
+  private _polymarketNonceBase: number | null = null;
+  private _polymarketNonceSeq = 0;
 
   constructor(
     signer: AgentSigner,
@@ -448,6 +450,17 @@ export class PolymarketClient {
     this.chainId = chainId;
     this.host = host;
     this.apiCreds = apiCreds;
+  }
+
+  private get polymarketNonceBase(): number {
+    if (this._polymarketNonceBase === null) {
+      this._polymarketNonceBase = Date.now() * 1000;
+    }
+    return this._polymarketNonceBase;
+  }
+
+  private nextPolymarketNonce(): number {
+    return this.polymarketNonceBase + ++this._polymarketNonceSeq;
   }
 
   private requireConditionId(conditionId: string): `0x${string}` {
@@ -663,11 +676,40 @@ export class PolymarketClient {
 
     try {
       const { ClobClient } = await import('@polymarket/clob-client');
-      this.clobClient = new ClobClient(
+      const ClobAny = ClobClient as any;
+
+      if (this.apiCreds?.key && this.apiCreds?.secret) {
+        this.clobClient = new ClobAny(
+          this.host,
+          this.chainId,
+          this.signer,
+          this.apiCreds,
+        );
+        return this.clobClient;
+      }
+
+      const { walletClient, account } = await this.createPolygonClients();
+      const tempClient = new ClobAny(this.host, this.chainId, walletClient);
+      let creds: any;
+      try {
+        creds = await tempClient.deriveApiKey();
+      } catch (deriveErr: any) {
+        const deriveStatus = deriveErr?.response?.status ?? deriveErr?.status ?? 0;
+        if (deriveStatus === 400 || String(deriveErr?.message ?? '').includes('400')) {
+          creds = await tempClient.createOrDeriveApiKey();
+        } else {
+          throw deriveErr;
+        }
+      }
+
+      this.apiCreds = creds;
+      this.clobClient = new ClobAny(
         this.host,
         this.chainId,
-        this.signer,
-        this.apiCreds,
+        walletClient,
+        creds,
+        0,
+        account.address,
       );
       return this.clobClient;
     } catch (error) {
@@ -1001,10 +1043,42 @@ export class PolymarketClient {
     }
   }
 
+  private getSignerAddress(): string {
+    const address = typeof this.signer === 'object' && this.signer && 'address' in this.signer
+      ? String((this.signer as any).address ?? '')
+      : '';
+    if (!address) {
+      throw new EvalancheError(
+        'Polymarket signer does not expose an address',
+        EvalancheErrorCode.SIGNER_NOT_FOUND,
+      );
+    }
+    return address;
+  }
+
   async getPositions(): Promise<any[]> {
     try {
       const client = await this.getClient();
-      return await client.getPositions();
+      if (typeof client.getPositions === 'function') {
+        return await client.getPositions();
+      }
+
+      const walletAddress = this.getSignerAddress();
+      const url = new URL('/positions', 'https://data-api.polymarket.com');
+      url.searchParams.set('user', walletAddress);
+      url.searchParams.set('sizeThreshold', '0');
+
+      const response = await safeFetch(url.toString(), {
+        headers: polymarketHeaders(),
+        timeoutMs: 12_000,
+        maxBytes: 2_000_000,
+      });
+      if (!response.ok) {
+        throw new Error(`Polymarket data-api returned ${response.status}`);
+      }
+
+      const payload = await response.json() as unknown;
+      return Array.isArray(payload) ? payload : [];
     } catch (error) {
       throw new EvalancheError(
         `Failed to get positions: ${error instanceof Error ? error.message : String(error)}`,
@@ -1014,10 +1088,24 @@ export class PolymarketClient {
     }
   }
 
-  async getBalances(): Promise<any> {
+  async getBalances(tokenId?: string): Promise<any> {
     try {
       const client = await this.getClient();
-      return await client.getBalances();
+      if (typeof client.getBalances === 'function') {
+        return await client.getBalances();
+      }
+      if (typeof client.getBalanceAllowance === 'function') {
+        const [collateral, conditional] = await Promise.all([
+          client.getBalanceAllowance({ asset_type: 'COLLATERAL' }),
+          tokenId ? client.getBalanceAllowance({ asset_type: 'CONDITIONAL', token_id: tokenId }) : Promise.resolve(null),
+        ]);
+        return {
+          walletAddress: this.getSignerAddress(),
+          collateral: collateral ?? null,
+          conditional: conditional ?? null,
+        };
+      }
+      return null;
     } catch (error) {
       throw new EvalancheError(
         `Failed to get balances: ${error instanceof Error ? error.message : String(error)}`,
@@ -1158,7 +1246,7 @@ export class PolymarketClient {
       side: Side.SELL,
       amount: amountUSDC,
       feeRateBps: 0,
-      nonce: 0,
+      nonce: this.nextPolymarketNonce(),
     });
 
     // Attempt to read back the filled average price

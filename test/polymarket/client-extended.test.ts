@@ -297,6 +297,37 @@ describe('PolymarketClient.getOrderbook alias', () => {
   });
 });
 
+describe('PolymarketClient SDK compatibility fallbacks', () => {
+  it('getBalances falls back to getBalanceAllowance when getBalances is unavailable', async () => {
+    const client = makeMockedClient({
+      getBalanceAllowance: vi.fn().mockImplementation(({ asset_type, token_id }: { asset_type: string; token_id?: string }) => {
+        if (asset_type === 'COLLATERAL') return { balance: '8000000', allowance: '7000000' };
+        return { balance: '12', allowance: '12', token_id };
+      }),
+    });
+
+    const balances = await client.getBalances('tok-1');
+    expect(balances.walletAddress).toMatch(/^0x/i);
+    expect(balances.collateral.balance).toBe('8000000');
+    expect(balances.conditional.token_id).toBe('tok-1');
+  });
+
+  it('getPositions falls back to data-api when SDK getPositions is unavailable', async () => {
+    const client = makeMockedClient({});
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      json: async () => ([{ asset: 'tok-1', size: '5' }]),
+    } as any);
+
+    const positions = await client.getPositions();
+    expect(positions).toHaveLength(1);
+    expect(positions[0]?.asset).toBe('tok-1');
+    expect(String(fetchMock.mock.calls[0]?.[0] ?? '')).toContain('data-api.polymarket.com/positions?user=');
+  });
+});
+
 describe('PolymarketClient.redeemPositions', () => {
   it('redeems winning positions through the CTF and returns balance deltas', async () => {
     const client = makeClient();
@@ -602,7 +633,8 @@ describe('MCP server pm_approve/pm_buy/pm_withdraw/pm_redeem', () => {
           warnings: [],
           tokenId: 'tok-yes',
         });
-        (server as any).getAuthedClobClient = vi.fn().mockResolvedValue({
+        (server as any).getAuthedClobClientV2 = vi.fn().mockResolvedValue({
+          __evalancheClientVersion: 'v2',
           createAndPostMarketOrder: vi.fn().mockResolvedValue({
             status: 403,
             error: 'Trading restricted in your region, please refer to available regions',
@@ -621,7 +653,7 @@ describe('MCP server pm_approve/pm_buy/pm_withdraw/pm_redeem', () => {
     expect(reconcileSpy).not.toHaveBeenCalled();
   });
 
-  it('pm_buy market orders use the SDK-compatible zero nonce', async () => {
+  it('pm_buy market orders use a monotonic high nonce', async () => {
     const createAndPostMarketOrder = vi.fn().mockResolvedValue({
       success: true,
       orderID: 'ord-1',
@@ -637,7 +669,8 @@ describe('MCP server pm_approve/pm_buy/pm_withdraw/pm_redeem', () => {
           warnings: [],
           tokenId: 'tok-yes',
         });
-        (server as any).getAuthedClobClient = vi.fn().mockResolvedValue({
+        (server as any).getAuthedClobClientV2 = vi.fn().mockResolvedValue({
+          __evalancheClientVersion: 'v2',
           createAndPostMarketOrder,
           getOrder: vi.fn().mockResolvedValue({ orderID: 'ord-1', status: 'LIVE' }),
           getOpenOrders: vi.fn().mockResolvedValue([]),
@@ -652,12 +685,17 @@ describe('MCP server pm_approve/pm_buy/pm_withdraw/pm_redeem', () => {
     expect(isError).toBe(false);
     expect(createAndPostMarketOrder).toHaveBeenCalledWith(
       expect.objectContaining({
-        nonce: 0,
+        tokenID: 'tok-yes',
+        amount: 1,
       }),
+      expect.any(Object),
+      expect.anything(),
     );
+    const marketNonce = createAndPostMarketOrder.mock.calls[0]?.[0]?.nonce;
+    expect(marketNonce).toBeUndefined();
   });
 
-  it('pm_buy limit orders also use the SDK-compatible zero nonce', async () => {
+  it('pm_buy limit orders also use a monotonic high nonce', async () => {
     const createAndPostOrder = vi.fn().mockResolvedValue({
       success: true,
       orderID: 'ord-limit-1',
@@ -673,7 +711,8 @@ describe('MCP server pm_approve/pm_buy/pm_withdraw/pm_redeem', () => {
           warnings: [],
           tokenId: 'tok-yes',
         });
-        (server as any).getAuthedClobClient = vi.fn().mockResolvedValue({
+        (server as any).getAuthedClobClientV2 = vi.fn().mockResolvedValue({
+          __evalancheClientVersion: 'v2',
           getMarket: vi.fn().mockResolvedValue({ minimum_tick_size: '0.01', neg_risk: false }),
           createAndPostOrder,
           getOrder: vi.fn().mockResolvedValue({ orderID: 'ord-limit-1', status: 'LIVE' }),
@@ -689,9 +728,57 @@ describe('MCP server pm_approve/pm_buy/pm_withdraw/pm_redeem', () => {
     expect(isError).toBe(false);
     expect(createAndPostOrder).toHaveBeenCalledWith(
       expect.objectContaining({
-        nonce: 0,
+        nonce: expect.any(Number),
       }),
+      expect.any(Object),
+      expect.anything(),
     );
+    const limitNonce = createAndPostOrder.mock.calls[0]?.[0]?.nonce;
+    expect(limitNonce).toBeGreaterThan(1_000_000_000_000);
+  });
+
+  it('pm_buy market submissions on v2 omit manual nonces across repeated submissions', async () => {
+    const { EvalancheMCPServer } = await import('../../src/mcp/server');
+    const wallet = Wallet.createRandom();
+    const server = new EvalancheMCPServer({ privateKey: wallet.privateKey, network: 'fuji' } as any);
+    const createAndPostMarketOrder = vi.fn()
+      .mockResolvedValueOnce({ success: true, orderID: 'ord-a', status: 'LIVE' })
+      .mockResolvedValueOnce({ success: true, orderID: 'ord-b', status: 'LIVE' });
+
+    (server as any).runPolymarketPreflight = vi.fn().mockResolvedValue({
+      verdict: 'ready',
+      warnings: [],
+      tokenId: 'tok-yes',
+    });
+    (server as any).getAuthedClobClientV2 = vi.fn().mockResolvedValue({
+      __evalancheClientVersion: 'v2',
+      createAndPostMarketOrder,
+      getOrder: vi.fn()
+        .mockResolvedValueOnce({ orderID: 'ord-a', status: 'LIVE' })
+        .mockResolvedValueOnce({ orderID: 'ord-b', status: 'LIVE' }),
+      getOpenOrders: vi.fn().mockResolvedValue([]),
+      getTrades: vi.fn().mockResolvedValue([]),
+      getBalanceAllowance: vi.fn().mockResolvedValue({ balance: '1000000', allowance: '1000000' }),
+      getBalances: vi.fn().mockResolvedValue({ collateral: '1' }),
+    });
+    (server as any).reconcilePolymarketVenue = vi.fn().mockResolvedValue({ sourceOfTruth: 'venue' });
+
+    const request = {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: { name: 'pm_buy', arguments: { conditionId: '0x1', outcome: 'YES', amountUSDC: '1' } },
+    };
+
+    const first = await server.handleRequest(request as any);
+    const second = await server.handleRequest({ ...request, id: 2 } as any);
+
+    expect((first.result as any)?.isError).not.toBe(true);
+    expect((second.result as any)?.isError).not.toBe(true);
+    const nonce1 = createAndPostMarketOrder.mock.calls[0]?.[0]?.nonce;
+    const nonce2 = createAndPostMarketOrder.mock.calls[1]?.[0]?.nonce;
+    expect(nonce1).toBeUndefined();
+    expect(nonce2).toBeUndefined();
   });
 });
 
@@ -729,6 +816,67 @@ describe('MCP server venue balance normalization', () => {
     expect(balances.collateral.allowance).toBe(8);
     expect(balances.collateral.allowanceSource).toBe('pusd_spender');
     expect(balances.collateral.rawAllowances['0xE111180000d2663C0091e4f400237545B87B996B']).toBe('8000000');
+  });
+});
+
+describe('PolymarketClient.placeMarketSellOrder', () => {
+  it('uses a monotonic high nonce for direct market sells', async () => {
+    const createAndPostMarketOrder = vi.fn().mockResolvedValue({
+      orderID: 'sell-1',
+      status: 'matched',
+    });
+    const getOrder = vi.fn().mockResolvedValue({ average_fill_price: 0.7, size: 10 });
+    const createOrDeriveApiKey = vi.fn().mockResolvedValue({ key: 'k', secret: 's', passphrase: 'p' });
+
+    vi.doMock('@polymarket/clob-client', () => ({
+      ClobClient: class MockClobClient {
+        host: string;
+        chainId: number;
+        signer: unknown;
+        creds: unknown;
+        constructor(host: string, chainId: number, signer?: unknown, creds?: unknown) {
+          this.host = host;
+          this.chainId = chainId;
+          this.signer = signer;
+          this.creds = creds;
+        }
+        async createOrDeriveApiKey() {
+          return createOrDeriveApiKey();
+        }
+        async createAndPostMarketOrder(args: unknown) {
+          return createAndPostMarketOrder(args);
+        }
+        async getOrder(orderId: string) {
+          return getOrder(orderId);
+        }
+      },
+      Side: { SELL: 'SELL' },
+    }));
+
+    try {
+      const client = makeClient();
+      vi.spyOn(client, 'getMarket').mockResolvedValue({
+        conditionId: '0xsell',
+        question: 'Will direct sell keep nonce monotonic?',
+        tokens: [{ tokenId: 'tok-sell', conditionId: '0xsell', outcome: 'YES' }],
+      });
+      vi.spyOn(client, 'getOrderBook').mockResolvedValue({ bids: [{ price: 0.7, size: 20, orderID: 'bid-1' }], asks: [] });
+
+      const result = await client.placeMarketSellOrder({ conditionId: '0xsell', outcome: 'YES', amountUSDC: 7 });
+
+      expect(result.orderID).toBe('sell-1');
+      expect(createAndPostMarketOrder).toHaveBeenCalledWith(
+        expect.objectContaining({
+          nonce: expect.any(Number),
+          side: 'SELL',
+        }),
+      );
+      const sellNonce = createAndPostMarketOrder.mock.calls[0]?.[0]?.nonce;
+      expect(sellNonce).toBeGreaterThan(1_000_000_000_000);
+    } finally {
+      vi.doUnmock('@polymarket/clob-client');
+      vi.resetModules();
+    }
   });
 });
 

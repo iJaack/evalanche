@@ -31,6 +31,25 @@ export interface ChainConfig {
   isTestnet?: boolean;
 }
 
+function envRpcList(key: string): string[] {
+  const raw = process.env[key]?.trim();
+  if (!raw) return [];
+  return raw
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function withEnvRpcOverrides(defaultRpc: string[], envKeys: string[]): string[] {
+  const seen = new Set<string>();
+  const merged = [...envKeys.flatMap(envRpcList), ...defaultRpc].filter((url) => {
+    if (seen.has(url)) return false;
+    seen.add(url);
+    return true;
+  });
+  return merged;
+}
+
 /** Routescan RPC URL pattern */
 function routescanRpc(chainId: number): string {
   return `https://api.routescan.io/v2/network/mainnet/evm/${chainId}/rpc`;
@@ -155,7 +174,14 @@ export const CHAINS: Record<number, ChainConfig> = {
     name: 'Base',
     shortName: 'base',
     currency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-    rpc: ['https://mainnet.base.org', routescanRpc(8453)],
+    rpc: withEnvRpcOverrides([
+      'https://mainnet.base.org',
+      'https://base-rpc.publicnode.com',
+      'https://base-mainnet.g.alchemy.com/public',
+      'https://1rpc.io/base',
+      'https://base-mainnet.gateway.tatum.io',
+      'https://base.llamarpc.com',
+    ], ['BASE_RPC_URLS', 'EVALANCHE_BASE_RPC_URLS']),
     explorer: 'https://basescan.org',
     routescanExplorer: 'https://base.routescan.io',
     lifiChainKey: 'BAS',

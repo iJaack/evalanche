@@ -1723,7 +1723,9 @@ export class EvalancheMCPServer {
   private normalizeUsdcDisplayAmount(raw: unknown): number {
     const parsed = Number(raw ?? 0);
     if (!Number.isFinite(parsed) || parsed <= 0) return 0;
-    return parsed / 1_000_000;
+    // Polymarket venue responses are inconsistent here: tiny balances may come back
+    // as whole-USDC strings (e.g. "5"), while other paths still surface microUSDC.
+    return parsed >= 1000 ? parsed / 1_000_000 : parsed;
   }
 
   private normalizePolymarketOutcome(value: unknown, toolName: string): 'YES' | 'NO' {
@@ -2231,7 +2233,11 @@ export class EvalancheMCPServer {
         : null;
       const venueBalances = typeof authed.getBalances === 'function'
         ? await authed.getBalances()
-        : null;
+        : {
+          walletAddress: this.agent.address,
+          collateral: collateral ?? null,
+          conditional: conditional ?? null,
+        };
 
       const clobAllowanceMap = this.extractPolymarketAllowanceMap(collateral);
       const onChainUsdcAllowanceRaw = await this.getOnChainUsdcAllowance();
@@ -2728,13 +2734,11 @@ export class EvalancheMCPServer {
 
     // Step 2: build the final authed client with credentials and explicit address
     const authed = new ClobAny(host, chainId, walletClient, creds, 0, accountAddress);
+    (authed as any).__evalancheClientVersion = 'legacy';
     return authed;
   }
 
-  private async getAuthedClobClient(): Promise<any> {
-    // Fresh authed client every time to avoid stale nonce counter issues
-    this.authedClobClient = null;
-
+  private async getPolygonWalletContext(): Promise<{ walletClient: any; account: { address: `0x${string}` } }> {
     const { createWalletClient, http } = await import('viem');
     const { polygon } = await import('viem/chains');
     const { privateKeyToAccount } = await import('viem/accounts');
@@ -2750,8 +2754,34 @@ export class EvalancheMCPServer {
       transport: http('https://polygon-bor-rpc.publicnode.com'),
     });
 
+    return { walletClient, account };
+  }
+
+  private async getAuthedClobClient(): Promise<any> {
+    // Fresh authed client every time to avoid stale nonce counter issues
+    this.authedClobClient = null;
+    const { walletClient, account } = await this.getPolygonWalletContext();
     this.authedClobClient = await this.buildAuthedClobClient(walletClient, account.address);
     return this.authedClobClient;
+  }
+
+  private async getAuthedClobClientV2(): Promise<any> {
+    const { ClobClient, Chain } = await import('@polymarket/clob-client-v2');
+    const { walletClient, account } = await this.getPolygonWalletContext();
+    const legacy = await this.buildAuthedClobClient(walletClient, account.address);
+    const creds = legacy?.creds;
+    if (!creds?.key || !creds?.secret || !creds?.passphrase) {
+      throw new Error('Polymarket v2 auth failed: missing API credentials from legacy auth path.');
+    }
+    const client = new (ClobClient as any)({
+      host: 'https://clob.polymarket.com',
+      chain: (Chain as any).POLYGON,
+      signer: walletClient,
+      creds,
+      throwOnError: true,
+    });
+    (client as any).__evalancheClientVersion = 'v2';
+    return client;
   }
 
   async handleRequest(request: MCPRequest): Promise<MCPResponse> {
@@ -4206,6 +4236,7 @@ export class EvalancheMCPServer {
           const { createWalletClient, http, parseUnits, formatUnits } = await import('viem');
           const { polygon } = await import('viem/chains');
           const { privateKeyToAccount } = await import('viem/accounts');
+          const { Evalanche } = await import('../index.js');
 
           let pk = this.agent.wallet.privateKey;
           if (!pk) throw new Error('Agent wallet has no privateKey');
@@ -4225,11 +4256,12 @@ export class EvalancheMCPServer {
           // Polymarket CLOB contract and USDC on Polygon
           const CLOB_CONTRACT = '0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E' as `0x${string}`;
           const USDC_CONTRACT = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174' as `0x${string}`;
+          const POLYGON_NATIVE_USDC = '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359' as `0x${string}`;
           const USDC_DECIMALS = 6;
           const depositAmount = parseUnits(String(rawAmount), USDC_DECIMALS);
 
-          // Step 1: check current on-chain allowance and USDC balance
-          const [allowanceRaw, balanceRaw] = await Promise.all([
+          // Step 1: check current on-chain allowance and wallet balances
+          let [allowanceRaw, balanceRaw, nativeBalanceRaw] = await Promise.all([
             publicClient.readContract({
               address: USDC_CONTRACT,
               abi: [{ name: 'allowance', type: 'function', inputs: [{ name: 'owner', type: 'address' }, { name: 'spender', type: 'address' }], outputs: [{ name: '', type: 'uint256' }] } as any],
@@ -4242,14 +4274,61 @@ export class EvalancheMCPServer {
               functionName: 'balanceOf',
               args: [account.address as `0x${string}`],
             }),
+            publicClient.readContract({
+              address: POLYGON_NATIVE_USDC,
+              abi: [{ name: 'balanceOf', type: 'function', inputs: [{ name: 'account', type: 'address' }], outputs: [{ name: '', type: 'uint256' }] } as any],
+              functionName: 'balanceOf',
+              args: [account.address as `0x${string}`],
+            }),
           ]);
-          const currentAllowance = (allowanceRaw as bigint) ?? 0n;
-          const usdcBalance = (balanceRaw as bigint) ?? 0n;
+          let currentAllowance = (allowanceRaw as bigint) ?? 0n;
+          let usdcBalance = (balanceRaw as bigint) ?? 0n;
+          const nativeUsdcBalance = (nativeBalanceRaw as bigint) ?? 0n;
+
+          if (usdcBalance < depositAmount) {
+            const deficit = depositAmount - usdcBalance;
+            const autoFundAmountRaw = deficit + parseUnits('0.02', USDC_DECIMALS);
+            if (nativeUsdcBalance < autoFundAmountRaw) {
+              throw new Error(
+                `Insufficient USDC balance. Have: $${formatUnits(usdcBalance, USDC_DECIMALS)}, ` +
+                `Need: $${rawAmount}. Native Polygon USDC available: $${formatUnits(nativeUsdcBalance, USDC_DECIMALS)}.`,
+              );
+            }
+
+            const agent = new (Evalanche as any)({ privateKey: pk, network: 'polygon' });
+            await agent.bridgeTokens({
+              fromChainId: 137,
+              toChainId: 137,
+              fromToken: POLYGON_NATIVE_USDC,
+              toToken: USDC_CONTRACT,
+              fromAmount: formatUnits(autoFundAmountRaw, USDC_DECIMALS),
+              fromAddress: account.address,
+              toAddress: account.address,
+              slippage: 0.03,
+            });
+
+            [allowanceRaw, balanceRaw] = await Promise.all([
+              publicClient.readContract({
+                address: USDC_CONTRACT,
+                abi: [{ name: 'allowance', type: 'function', inputs: [{ name: 'owner', type: 'address' }, { name: 'spender', type: 'address' }], outputs: [{ name: '', type: 'uint256' }] } as any],
+                functionName: 'allowance',
+                args: [account.address, CLOB_CONTRACT as `0x${string}`],
+              }),
+              publicClient.readContract({
+                address: USDC_CONTRACT,
+                abi: [{ name: 'balanceOf', type: 'function', inputs: [{ name: 'account', type: 'address' }], outputs: [{ name: '', type: 'uint256' }] } as any],
+                functionName: 'balanceOf',
+                args: [account.address as `0x${string}`],
+              }),
+            ]);
+            currentAllowance = (allowanceRaw as bigint) ?? 0n;
+            usdcBalance = (balanceRaw as bigint) ?? 0n;
+          }
 
           if (usdcBalance < depositAmount) {
             throw new Error(
-              `Insufficient USDC balance. Have: $${formatUnits(usdcBalance, USDC_DECIMALS)}, ` +
-              `Need: $${rawAmount}. Deposit USDC to this wallet first.`,
+              `Insufficient USDC balance after auto-fund. Have: $${formatUnits(usdcBalance, USDC_DECIMALS)}, ` +
+              `Need: $${rawAmount}.`,
             );
           }
 
@@ -4474,7 +4553,7 @@ export class EvalancheMCPServer {
           }
           const tokenId = preflight.tokenId as string;
 
-          const authedBuy = await this.getAuthedClobClient();
+          const authedBuy = await this.getAuthedClobClientV2();
 
           let orderResult: any;
           try {
@@ -4487,27 +4566,58 @@ export class EvalancheMCPServer {
               const tickSize = parseFloat(marketInfo?.minimum_tick_size ?? '0.01');
               const negRisk = marketInfo?.neg_risk ?? false;
 
-              const { Side } = await import('@polymarket/clob-client');
-              orderResult = await authedBuy.createAndPostOrder({
-                tokenID: tokenId,
-                price: limitPrice,
-                side: Side.BUY,
-                size,
-                feeRateBps: 0,
-                nonce: 0,
-                tickSize: String(tickSize),
-                negRisk,
-              });
+              const isV2 = authedBuy?.__evalancheClientVersion === 'v2';
+              if (isV2) {
+                const { Side, OrderType } = await import('@polymarket/clob-client-v2');
+                orderResult = await authedBuy.createAndPostOrder(
+                  {
+                    tokenID: tokenId,
+                    price: limitPrice,
+                    side: Side.BUY,
+                    size,
+                    nonce: this.nextPolymarketNonce(),
+                  },
+                  { tickSize: String(tickSize), negRisk },
+                  OrderType.GTC,
+                );
+              } else {
+                const { Side } = await import('@polymarket/clob-client');
+                orderResult = await authedBuy.createAndPostOrder({
+                  tokenID: tokenId,
+                  price: limitPrice,
+                  side: Side.BUY,
+                  size,
+                  feeRateBps: 0,
+                  nonce: this.nextPolymarketNonce(),
+                  tickSize: String(tickSize),
+                  negRisk,
+                });
+              }
             } else {
-              // Market order — use SDK native createAndPostMarketOrder
-              const { Side } = await import('@polymarket/clob-client');
-              orderResult = await authedBuy.createAndPostMarketOrder({
-                tokenID: tokenId,
-                side: Side.BUY,
-                amount: amountUSDC,
-                feeRateBps: 0,
-                nonce: 0,
-              });
+              const isV2 = authedBuy?.__evalancheClientVersion === 'v2';
+              if (isV2) {
+                const { Side, OrderType } = await import('@polymarket/clob-client-v2');
+                orderResult = await authedBuy.createAndPostMarketOrder(
+                  {
+                    tokenID: tokenId,
+                    side: Side.BUY,
+                    amount: amountUSDC,
+                    orderType: OrderType.FOK,
+                  },
+                  { tickSize: '0.01' },
+                  OrderType.FOK,
+                );
+              } else {
+                // Market order — use legacy SDK native createAndPostMarketOrder
+                const { Side } = await import('@polymarket/clob-client');
+                orderResult = await authedBuy.createAndPostMarketOrder({
+                  tokenID: tokenId,
+                  side: Side.BUY,
+                  amount: amountUSDC,
+                  feeRateBps: 0,
+                  nonce: this.nextPolymarketNonce(),
+                });
+              }
             }
 
             // Surface CLOB rejections clearly

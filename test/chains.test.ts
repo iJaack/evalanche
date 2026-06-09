@@ -40,7 +40,8 @@ describe('Chain Registry', () => {
     });
 
     it('should include Routescan RPCs for supported chains', () => {
-      const routescanChains = [10, 25, 56, 137, 250, 8453, 42161, 43114, 80094];
+      // Base Routescan RPC currently returns 404/403; keep Base on healthy public endpoints instead.
+      const routescanChains = [10, 25, 56, 137, 250, 42161, 43114, 80094];
       for (const id of routescanChains) {
         expect(CHAINS[id].rpc.some(url => url.includes('routescan.io')), `Chain ${id} should have Routescan RPC`).toBe(true);
       }
