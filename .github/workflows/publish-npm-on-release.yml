@@ -286,7 +286,28 @@ jobs:
             --clobber
 
       - name: Publish to npm
-        run: npm publish --provenance --access public --registry=https://registry.npmjs.org/
+        shell: bash
+        run: |
+          set +e
+          PUBLISH_LOG="$RUNNER_TEMP/npm-publish.log"
+          npm publish --provenance --access public --registry=https://registry.npmjs.org/ 2>&1 | tee "$PUBLISH_LOG"
+          PUBLISH_EXIT=${PIPESTATUS[0]}
+          set -e
+
+          if [ "$PUBLISH_EXIT" -eq 0 ]; then
+            exit 0
+          fi
+
+          VERSION="${{ steps.meta.outputs.version }}"
+          if grep -q 'TLOG_CREATE_ENTRY_ERROR' "$PUBLISH_LOG"; then
+            PUBLISHED_VERSION=$(npm view evalanche version --registry=https://registry.npmjs.org/ 2>/dev/null || true)
+            if [ "$PUBLISHED_VERSION" = "$VERSION" ]; then
+              echo "npm publish hit transparency-log duplicate, but evalanche@$VERSION is already live; continuing."
+              exit 0
+            fi
+          fi
+
+          exit "$PUBLISH_EXIT"
 
       - name: Install ClawHub CLI
         run: npm install -g clawhub@latest
