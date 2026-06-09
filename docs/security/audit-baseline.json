@@ -1,24 +1,32 @@
 {
-  "version": "1.9.7",
+  "version": "1.10.0",
   "counts": {
-    "critical": 5,
-    "high": 4,
-    "moderate": 8,
-    "low": 12,
+    "critical": 1,
+    "high": 16,
+    "moderate": 14,
+    "low": 16,
     "info": 0,
-    "total": 29
+    "total": 47
   },
   "highPackages": [
     "@avalabs/core-wallets-sdk",
+    "@avalabs/hw-app-avalanche",
+    "@confio/ics23",
+    "@cosmjs/stargate",
+    "@cosmjs/tendermint-rpc",
+    "@dydxprotocol/v4-client-js",
+    "@dydxprotocol/v4-proto",
+    "@ledgerhq/domain-service",
+    "@ledgerhq/evm-tools",
     "@ledgerhq/hw-app-btc",
+    "@ledgerhq/hw-app-eth",
+    "@polymarket/builder-signing-sdk",
+    "@polymarket/clob-client",
+    "@polymarket/clob-client-v2",
     "axios",
     "tiny-secp256k1"
   ],
   "criticalPackages": [
-    "@confio/ics23",
-    "@cosmjs/stargate",
-    "@dydxprotocol/v4-client-js",
-    "@dydxprotocol/v4-proto",
     "protobufjs"
   ],
   "allowlistedHighPackages": [],
