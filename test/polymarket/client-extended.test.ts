@@ -297,14 +297,15 @@ describe('PolymarketClient.getOrderbook alias', () => {
   });
 });
 
-describe('PolymarketClient SDK compatibility fallbacks', () => {
-  it('getBalances falls back to getBalanceAllowance when getBalances is unavailable', async () => {
-    const client = makeMockedClient({
-      getBalanceAllowance: vi.fn().mockImplementation(({ asset_type, token_id }: { asset_type: string; token_id?: string }) => {
-        if (asset_type === 'COLLATERAL') return { balance: '8000000', allowance: '7000000' };
-        return { balance: '12', allowance: '12', token_id };
+describe('PolymarketClient official CLI compatibility', () => {
+  it('getBalances reads collateral and conditional balances through the CLI adapter', async () => {
+    const client = makeClient();
+    (client as any).cli = {
+      balance: vi.fn().mockImplementation((assetType: string, tokenId?: string) => {
+        if (assetType === 'collateral') return { balance: '8000000', allowance: '7000000' };
+        return { balance: '12', allowance: '12', token_id: tokenId };
       }),
-    });
+    };
 
     const balances = await client.getBalances('tok-1');
     expect(balances.walletAddress).toMatch(/^0x/i);
@@ -312,19 +313,15 @@ describe('PolymarketClient SDK compatibility fallbacks', () => {
     expect(balances.conditional.token_id).toBe('tok-1');
   });
 
-  it('getPositions falls back to data-api when SDK getPositions is unavailable', async () => {
-    const client = makeMockedClient({});
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      headers: new Headers(),
-      json: async () => ([{ asset: 'tok-1', size: '5' }]),
-    } as any);
+  it('getPositions reads wallet positions through the CLI adapter', async () => {
+    const client = makeClient();
+    const positionsMock = vi.fn().mockResolvedValue([{ asset: 'tok-1', size: '5' }]);
+    (client as any).cli = { positions: positionsMock };
 
     const positions = await client.getPositions();
     expect(positions).toHaveLength(1);
     expect(positions[0]?.asset).toBe('tok-1');
-    expect(String(fetchMock.mock.calls[0]?.[0] ?? '')).toContain('data-api.polymarket.com/positions?user=');
+    expect(positionsMock.mock.calls[0]?.[0]).toMatch(/^0x/i);
   });
 });
 
@@ -653,7 +650,7 @@ describe('MCP server pm_approve/pm_buy/pm_withdraw/pm_redeem', () => {
     expect(reconcileSpy).not.toHaveBeenCalled();
   });
 
-  it('pm_buy market orders use a monotonic high nonce', async () => {
+  it('pm_buy market orders delegate to the CLI adapter without manual nonces', async () => {
     const createAndPostMarketOrder = vi.fn().mockResolvedValue({
       success: true,
       orderID: 'ord-1',
@@ -687,15 +684,15 @@ describe('MCP server pm_approve/pm_buy/pm_withdraw/pm_redeem', () => {
       expect.objectContaining({
         tokenID: 'tok-yes',
         amount: 1,
+        side: 'buy',
+        orderType: 'FOK',
       }),
-      expect.any(Object),
-      expect.anything(),
     );
     const marketNonce = createAndPostMarketOrder.mock.calls[0]?.[0]?.nonce;
     expect(marketNonce).toBeUndefined();
   });
 
-  it('pm_buy limit orders also use a monotonic high nonce', async () => {
+  it('pm_buy limit orders delegate to the CLI adapter without manual nonces', async () => {
     const createAndPostOrder = vi.fn().mockResolvedValue({
       success: true,
       orderID: 'ord-limit-1',
@@ -728,13 +725,17 @@ describe('MCP server pm_approve/pm_buy/pm_withdraw/pm_redeem', () => {
     expect(isError).toBe(false);
     expect(createAndPostOrder).toHaveBeenCalledWith(
       expect.objectContaining({
-        nonce: expect.any(Number),
+        tokenID: 'tok-yes',
+        price: 0.5,
+        side: 'buy',
+        size: 2,
+        tickSize: '0.01',
       }),
-      expect.any(Object),
-      expect.anything(),
+      undefined,
+      'GTC',
     );
     const limitNonce = createAndPostOrder.mock.calls[0]?.[0]?.nonce;
-    expect(limitNonce).toBeGreaterThan(1_000_000_000_000);
+    expect(limitNonce).toBeUndefined();
   });
 
   it('pm_buy market submissions on v2 omit manual nonces across repeated submissions', async () => {
@@ -820,106 +821,45 @@ describe('MCP server venue balance normalization', () => {
 });
 
 describe('PolymarketClient.placeMarketSellOrder', () => {
-  it('uses a monotonic high nonce for direct market sells', async () => {
-    const createAndPostMarketOrder = vi.fn().mockResolvedValue({
+  it('delegates direct market sells to the official Polymarket CLI', async () => {
+    const marketOrder = vi.fn().mockResolvedValue({
       orderID: 'sell-1',
       status: 'matched',
+      average_fill_price: 0.7,
+      size: 10,
     });
-    const getOrder = vi.fn().mockResolvedValue({ average_fill_price: 0.7, size: 10 });
-    const createOrDeriveApiKey = vi.fn().mockResolvedValue({ key: 'k', secret: 's', passphrase: 'p' });
+    const client = makeClient();
+    (client as any).cli = { marketOrder };
+    vi.spyOn(client, 'getMarket').mockResolvedValue({
+      conditionId: '0xsell',
+      question: 'Will direct sell use official CLI?',
+      tokens: [{ tokenId: 'tok-sell', conditionId: '0xsell', outcome: 'YES' }],
+    });
+    vi.spyOn(client, 'getOrderBook').mockResolvedValue({ bids: [{ price: 0.7, size: 20, orderID: 'bid-1' }], asks: [] });
 
-    vi.doMock('@polymarket/clob-client', () => ({
-      ClobClient: class MockClobClient {
-        host: string;
-        chainId: number;
-        signer: unknown;
-        creds: unknown;
-        constructor(host: string, chainId: number, signer?: unknown, creds?: unknown) {
-          this.host = host;
-          this.chainId = chainId;
-          this.signer = signer;
-          this.creds = creds;
-        }
-        async createOrDeriveApiKey() {
-          return createOrDeriveApiKey();
-        }
-        async createAndPostMarketOrder(args: unknown) {
-          return createAndPostMarketOrder(args);
-        }
-        async getOrder(orderId: string) {
-          return getOrder(orderId);
-        }
-      },
-      Side: { SELL: 'SELL' },
-    }));
+    const result = await client.placeMarketSellOrder({ conditionId: '0xsell', outcome: 'YES', amountUSDC: 7 });
 
-    try {
-      const client = makeClient();
-      vi.spyOn(client, 'getMarket').mockResolvedValue({
-        conditionId: '0xsell',
-        question: 'Will direct sell keep nonce monotonic?',
-        tokens: [{ tokenId: 'tok-sell', conditionId: '0xsell', outcome: 'YES' }],
-      });
-      vi.spyOn(client, 'getOrderBook').mockResolvedValue({ bids: [{ price: 0.7, size: 20, orderID: 'bid-1' }], asks: [] });
-
-      const result = await client.placeMarketSellOrder({ conditionId: '0xsell', outcome: 'YES', amountUSDC: 7 });
-
-      expect(result.orderID).toBe('sell-1');
-      expect(createAndPostMarketOrder).toHaveBeenCalledWith(
-        expect.objectContaining({
-          nonce: expect.any(Number),
-          side: 'SELL',
-        }),
-      );
-      const sellNonce = createAndPostMarketOrder.mock.calls[0]?.[0]?.nonce;
-      expect(sellNonce).toBeGreaterThan(1_000_000_000_000);
-    } finally {
-      vi.doUnmock('@polymarket/clob-client');
-      vi.resetModules();
-    }
+    expect(result.orderID).toBe('sell-1');
+    expect(marketOrder).toHaveBeenCalledWith({
+      tokenId: 'tok-sell',
+      side: 'sell',
+      amount: 10,
+      orderType: 'FAK',
+    });
   });
 });
 
 describe('MCP server Polymarket sell protections', () => {
-  it('buildAuthedClobClient uses a fresh nonce for fallback auth attempts', async () => {
-    vi.resetModules();
-    const deriveApiKey = vi.fn().mockRejectedValueOnce({
-      response: { status: 400 },
-      message: '400 duplicate nonce',
-    });
-    const createOrDeriveApiKey = vi.fn().mockResolvedValue({
-      key: 'k',
-      secret: 's',
-      passphrase: 'p',
-    });
-
-    vi.doMock('@polymarket/clob-client', () => ({
-      ClobClient: class MockClobClient {
-        creds: any;
-        constructor(_host: string, _chainId: number, _signer?: unknown, creds?: unknown) {
-          this.creds = creds;
-        }
-        deriveApiKey(nonce: number) {
-          return deriveApiKey(nonce);
-        }
-        createOrDeriveApiKey(nonce: number) {
-          return createOrDeriveApiKey(nonce);
-        }
-      },
-    }));
-
+  it('getAuthedClobClient delegates authenticated reads to the official CLI adapter', async () => {
     const { EvalancheMCPServer } = await import('../../src/mcp/server');
     const wallet = Wallet.createRandom();
     const server = new EvalancheMCPServer({ privateKey: wallet.privateKey, network: 'fuji' } as any);
-    await (server as any).buildAuthedClobClient({}, wallet.address);
+    const balance = vi.fn().mockResolvedValue({ balance: '1' });
+    (server as any).polymarketCli = { balance };
 
-    expect(deriveApiKey).toHaveBeenCalledTimes(1);
-    expect(createOrDeriveApiKey).toHaveBeenCalledTimes(1);
-    expect(deriveApiKey.mock.calls[0][0]).toBeUndefined();
-    expect(createOrDeriveApiKey.mock.calls[0][0]).toBeUndefined();
-
-    vi.doUnmock('@polymarket/clob-client');
-    vi.resetModules();
+    const auth = await (server as any).getAuthedClobClient();
+    await expect(auth.getBalanceAllowance({ asset_type: 'COLLATERAL' })).resolves.toEqual({ balance: '1' });
+    expect(balance).toHaveBeenCalledWith('collateral', undefined);
   });
 
   it('pm_sell rejects when visible liquidity would violate max slippage', async () => {

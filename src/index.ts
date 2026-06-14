@@ -99,8 +99,10 @@ export type {
 } from './holdings';
 
 export { CoinGeckoClient } from './market/coingecko';
-export { PolymarketClient, POLYMARKET_CLOB_HOST, PolymarketSide } from './polymarket';
+export { PolymarketCli, PolymarketClient, POLYMARKET_CLOB_HOST, PolymarketSide } from './polymarket';
 export type {
+  PolymarketCliOptions,
+  PolymarketCliRunner,
   PolymarketChain,
   PolymarketMarket,
   PolymarketToken,

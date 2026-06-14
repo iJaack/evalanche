@@ -16,7 +16,7 @@
  * - bridge withdrawals of Polygon USDC.e via `withdrawUsdc()`
  * - winning-share redemption through the CTF `redeemPositions()` path
  *
- * Official SDK: @polymarket/clob-client
+ * Official CLI: Polymarket/polymarket-cli
  * API docs: https://docs.polymarket.com
  *
  * Supported chains:
@@ -27,6 +27,7 @@
 import type { AgentSigner } from '../wallet/signer';
 import { EvalancheError, EvalancheErrorCode } from '../utils/errors';
 import { safeFetch } from '../utils/safe-fetch';
+import { PolymarketCli } from './cli';
 
 export const POLYMARKET_CLOB_HOST = 'https://clob.polymarket.com';
 export const POLYMARKET_GAMMA_HOST = 'https://gamma-api.polymarket.com';
@@ -437,8 +438,7 @@ export class PolymarketClient {
   private signer: AgentSigner;
   private apiCreds?: { key: string; secret: string };
   private clobClient: any = null;
-  private _polymarketNonceBase: number | null = null;
-  private _polymarketNonceSeq = 0;
+  private cli: PolymarketCli;
 
   constructor(
     signer: AgentSigner,
@@ -450,17 +450,7 @@ export class PolymarketClient {
     this.chainId = chainId;
     this.host = host;
     this.apiCreds = apiCreds;
-  }
-
-  private get polymarketNonceBase(): number {
-    if (this._polymarketNonceBase === null) {
-      this._polymarketNonceBase = Date.now() * 1000;
-    }
-    return this._polymarketNonceBase;
-  }
-
-  private nextPolymarketNonce(): number {
-    return this.polymarketNonceBase + ++this._polymarketNonceSeq;
+    this.cli = new PolymarketCli({ privateKey: this.getOptionalPrivateKey() });
   }
 
   private requireConditionId(conditionId: string): `0x${string}` {
@@ -485,6 +475,14 @@ export class PolymarketClient {
       );
     }
     return (raw.startsWith('0x') ? raw : `0x${raw}`) as `0x${string}`;
+  }
+
+  private getOptionalPrivateKey(): string | undefined {
+    const raw = typeof this.signer === 'object' && this.signer && 'privateKey' in this.signer
+      ? String((this.signer as any).privateKey ?? '')
+      : '';
+    if (!raw) return undefined;
+    return raw.startsWith('0x') ? raw : `0x${raw}`;
   }
 
   private async createPolygonClients(): Promise<{
@@ -671,54 +669,23 @@ export class PolymarketClient {
     }));
   }
 
-  private async getClient(): Promise<any> {
-    if (this.clobClient) return this.clobClient;
+  private unwrapCliList(payload: unknown): any[] {
+    if (Array.isArray(payload)) return payload;
+    const record = (payload ?? {}) as Record<string, unknown>;
+    if (Array.isArray(record.data)) return record.data;
+    if (Array.isArray(record.orders)) return record.orders;
+    if (Array.isArray(record.trades)) return record.trades;
+    if (Array.isArray(record.positions)) return record.positions;
+    return [];
+  }
 
-    try {
-      const { ClobClient } = await import('@polymarket/clob-client');
-      const ClobAny = ClobClient as any;
-
-      if (this.apiCreds?.key && this.apiCreds?.secret) {
-        this.clobClient = new ClobAny(
-          this.host,
-          this.chainId,
-          this.signer,
-          this.apiCreds,
-        );
-        return this.clobClient;
-      }
-
-      const { walletClient, account } = await this.createPolygonClients();
-      const tempClient = new ClobAny(this.host, this.chainId, walletClient);
-      let creds: any;
-      try {
-        creds = await tempClient.deriveApiKey();
-      } catch (deriveErr: any) {
-        const deriveStatus = deriveErr?.response?.status ?? deriveErr?.status ?? 0;
-        if (deriveStatus === 400 || String(deriveErr?.message ?? '').includes('400')) {
-          creds = await tempClient.createOrDeriveApiKey();
-        } else {
-          throw deriveErr;
-        }
-      }
-
-      this.apiCreds = creds;
-      this.clobClient = new ClobAny(
-        this.host,
-        this.chainId,
-        walletClient,
-        creds,
-        0,
-        account.address,
-      );
-      return this.clobClient;
-    } catch (error) {
-      throw new EvalancheError(
-        `Failed to load Polymarket SDK. Install with: npm install @polymarket/clob-client ethers@5`,
-        EvalancheErrorCode.NOT_IMPLEMENTED,
-        error instanceof Error ? error : undefined,
-      );
-    }
+  private normalizeCliOrderResult(payload: unknown): PolymarketOrderResult {
+    const record = (payload ?? {}) as Record<string, unknown>;
+    return {
+      orderID: String(record.orderID ?? record.order_id ?? record.id ?? ''),
+      status: String(record.status ?? (record.success === false ? 'REJECTED' : 'SUBMITTED')),
+      averageFillPrice: toNumber(record.averageFillPrice ?? record.average_fill_price),
+    };
   }
 
   private async getLiveMarketsPage(options?: { limit?: number; cursor?: string }): Promise<{
@@ -974,27 +941,13 @@ export class PolymarketClient {
    */
   async placeOrder(params: PolymarketOrderParams): Promise<PolymarketOrderResult> {
     try {
-      const client = await this.getClient();
-      const { Side } = await import('@polymarket/clob-client');
-
-      const order = await client.createAndPostOrder(
-        {
-          tokenID: params.tokenId,
-          price: params.price,
-          size: params.size,
-          side: params.side === PolymarketSide.BUY ? Side.BUY : Side.SELL,
-        },
-        {
-          tickSize: params.tickSize ?? '0.01',
-          negRisk: params.negRisk ?? false,
-        },
-      );
-
-      return {
-        orderID: order.orderID || '',
-        status: order.status || 'OPEN',
-        averageFillPrice: order.averageFillPrice,
-      };
+      const order = await this.cli.createOrder({
+        tokenId: params.tokenId,
+        price: params.price,
+        size: params.size,
+        side: params.side === PolymarketSide.BUY ? 'buy' : 'sell',
+      });
+      return this.normalizeCliOrderResult(order);
     } catch (error) {
       throw new EvalancheError(
         `Failed to place order: ${error instanceof Error ? error.message : String(error)}`,
@@ -1006,8 +959,7 @@ export class PolymarketClient {
 
   async cancelOrder(orderId: string): Promise<void> {
     try {
-      const client = await this.getClient();
-      await client.cancelOrder(orderId);
+      await this.cli.cancelOrder(orderId);
     } catch (error) {
       throw new EvalancheError(
         `Failed to cancel order: ${error instanceof Error ? error.message : String(error)}`,
@@ -1019,8 +971,7 @@ export class PolymarketClient {
 
   async getOrder(orderId: string): Promise<any> {
     try {
-      const client = await this.getClient();
-      return await client.getOrder(orderId);
+      return await this.cli.order(orderId);
     } catch (error) {
       throw new EvalancheError(
         `Failed to get order: ${error instanceof Error ? error.message : String(error)}`,
@@ -1032,8 +983,7 @@ export class PolymarketClient {
 
   async getOpenOrders(tokenId?: string): Promise<any[]> {
     try {
-      const client = await this.getClient();
-      return await client.getOpenOrders(tokenId);
+      return this.unwrapCliList(await this.cli.openOrders(tokenId));
     } catch (error) {
       throw new EvalancheError(
         `Failed to get open orders: ${error instanceof Error ? error.message : String(error)}`,
@@ -1058,27 +1008,8 @@ export class PolymarketClient {
 
   async getPositions(): Promise<any[]> {
     try {
-      const client = await this.getClient();
-      if (typeof client.getPositions === 'function') {
-        return await client.getPositions();
-      }
-
       const walletAddress = this.getSignerAddress();
-      const url = new URL('/positions', 'https://data-api.polymarket.com');
-      url.searchParams.set('user', walletAddress);
-      url.searchParams.set('sizeThreshold', '0');
-
-      const response = await safeFetch(url.toString(), {
-        headers: polymarketHeaders(),
-        timeoutMs: 12_000,
-        maxBytes: 2_000_000,
-      });
-      if (!response.ok) {
-        throw new Error(`Polymarket data-api returned ${response.status}`);
-      }
-
-      const payload = await response.json() as unknown;
-      return Array.isArray(payload) ? payload : [];
+      return this.unwrapCliList(await this.cli.positions(walletAddress));
     } catch (error) {
       throw new EvalancheError(
         `Failed to get positions: ${error instanceof Error ? error.message : String(error)}`,
@@ -1090,22 +1021,15 @@ export class PolymarketClient {
 
   async getBalances(tokenId?: string): Promise<any> {
     try {
-      const client = await this.getClient();
-      if (typeof client.getBalances === 'function') {
-        return await client.getBalances();
-      }
-      if (typeof client.getBalanceAllowance === 'function') {
-        const [collateral, conditional] = await Promise.all([
-          client.getBalanceAllowance({ asset_type: 'COLLATERAL' }),
-          tokenId ? client.getBalanceAllowance({ asset_type: 'CONDITIONAL', token_id: tokenId }) : Promise.resolve(null),
-        ]);
-        return {
-          walletAddress: this.getSignerAddress(),
-          collateral: collateral ?? null,
-          conditional: conditional ?? null,
-        };
-      }
-      return null;
+      const [collateral, conditional] = await Promise.all([
+        this.cli.balance('collateral'),
+        tokenId ? this.cli.balance('conditional', tokenId) : Promise.resolve(null),
+      ]);
+      return {
+        walletAddress: this.getSignerAddress(),
+        collateral,
+        conditional,
+      };
     } catch (error) {
       throw new EvalancheError(
         `Failed to get balances: ${error instanceof Error ? error.message : String(error)}`,
@@ -1117,8 +1041,7 @@ export class PolymarketClient {
 
   async getTradeHistory(tokenId?: string): Promise<any[]> {
     try {
-      const client = await this.getClient();
-      return await client.getTrades(tokenId);
+      return this.unwrapCliList(await this.cli.trades(tokenId));
     } catch (error) {
       throw new EvalancheError(
         `Failed to get trade history: ${error instanceof Error ? error.message : String(error)}`,
@@ -1200,71 +1123,20 @@ export class PolymarketClient {
     // Size = USDC target / best bid (how many tokens to sell)
     const size = amountUSDC / bestBid;
 
-    // Build an authenticated CLOB client from the signer (same pattern as MCP server)
-    const { ClobClient, Side } = await import('@polymarket/clob-client');
-    const { createWalletClient, http } = await import('viem');
-    const { polygon } = await import('viem/chains');
-    const { privateKeyToAccount } = await import('viem/accounts');
+    const orderResult = await this.cli.marketOrder({
+      tokenId,
+      side: 'sell',
+      amount: size,
+      orderType: 'FAK',
+    }) as Record<string, unknown>;
 
-    // Extract private key from signer
-    let pk: string;
-    if (typeof this.signer === 'object' && 'privateKey' in this.signer) {
-      pk = String((this.signer as any).privateKey);
-    } else {
-      throw new EvalancheError(
-        `placeMarketSellOrder requires a signer with a privateKey`,
-        EvalancheErrorCode.SIGNER_NOT_FOUND,
-      );
-    }
-    if (!pk.startsWith('0x')) pk = `0x${pk}`;
-
-    const account = privateKeyToAccount(pk as `0x${string}`);
-    const walletClient = createWalletClient({
-      account,
-      chain: polygon,
-      transport: http('https://polygon-bor-rpc.publicnode.com'),
-    });
-
-    // Create temporary client to derive API credentials, then create authed client
-    const tempClient = new (ClobClient as any)(
-      this.host,
-      this.chainId,
-      walletClient,
-    );
-    const creds = await tempClient.createOrDeriveApiKey();
-    const authed = new (ClobClient as any)(
-      this.host,
-      this.chainId,
-      walletClient,
-      creds,
-      0,
-      account.address,
-    );
-
-    const orderResult = await authed.createAndPostMarketOrder({
-      tokenID: tokenId,
-      side: Side.SELL,
-      amount: amountUSDC,
-      feeRateBps: 0,
-      nonce: this.nextPolymarketNonce(),
-    });
-
-    // Attempt to read back the filled average price
-    let avgPrice = bestBid;
-    let filledSize = size;
-    try {
-      const filled = await authed.getOrder(orderResult.orderID ?? orderResult.orderIds?.[0]);
-      if (filled) {
-        avgPrice = filled.average_fill_price ?? bestBid;
-        filledSize = filled.size ?? size;
-      }
-    } catch {
-      // getOrder is best-effort; fall back to estimates
-    }
+    const avgPrice = toNumber(orderResult.average_fill_price ?? orderResult.averageFillPrice) ?? bestBid;
+    const filledSize = toNumber(orderResult.size) ?? size;
+    const orderIds = Array.isArray(orderResult.orderIds) ? orderResult.orderIds : [];
 
     return {
-      orderID: orderResult?.orderID ?? orderResult?.orderIds?.[0] ?? 'unknown',
-      status: orderResult?.status ?? 'FILLED',
+      orderID: String(orderResult?.orderID ?? orderResult?.order_id ?? orderIds[0] ?? 'unknown'),
+      status: String(orderResult?.status ?? 'SUBMITTED'),
       size: filledSize,
       averageFillPrice: avgPrice,
       totalUSDC: filledSize * avgPrice,

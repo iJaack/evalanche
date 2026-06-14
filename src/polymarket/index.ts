@@ -9,7 +9,7 @@
  * - fetch outcome tokens and order books
  * - estimate buy/sell fill prices from book depth
  * - inspect balances, positions, open orders, and trade history
- * - place direct BUY and SELL orders through the SDK
+ * - place direct BUY and SELL orders through the official Polymarket CLI
  * - market-sell helper via `placeMarketSellOrder()`
  *
  * @example
@@ -54,6 +54,8 @@
  */
 
 export { PolymarketClient, POLYMARKET_BRIDGE_HOST, POLYMARKET_CLOB_HOST } from './client';
+export { PolymarketCli } from './cli';
+export type { PolymarketCliOptions, PolymarketCliRunner } from './cli';
 export type {
   PolymarketChain,
   PolymarketMarket,

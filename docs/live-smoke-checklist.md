@@ -11,6 +11,11 @@ Use this runbook before cutting an execution-facing release. The goal is to conf
 
 ## 1. Polymarket
 
+### Runtime prerequisites
+- The official `polymarket` CLI is installed and pinned, or `EVALANCHE_POLYMARKET_CLI_BIN` points at the intended binary.
+- `polymarket -o json markets list --limit 1` returns valid JSON before any wallet-backed write check.
+- The hot wallet signer is available only through the intended Evalanche/OpenClaw secret path; do not pass the private key in command arguments.
+
 ### Read checks
 - `pm_search` returns the expected market.
 - `pm_market` returns outcome tokens.
@@ -79,6 +84,7 @@ Use this minimum mapping before closing an execution-readiness report:
 - yoUSD wrong-chain MCP failure: fixed via canonical Base routing, regression covered, then live-checked with `vault_info` and `vault_deposit_quote`
 - sAVAX wrong-chain MCP failure: fixed via canonical Avalanche routing, regression covered, then live-checked with `savax_stake_quote` and `savax_unstake_quote`
 - Polymarket stale local assumption risk: fixed via venue-truth balances and reconciliation, regression covered, then live-checked with `pm_preflight`, `pm_order`, and `pm_reconcile`
+- Polymarket CLI substitution risk: fixed via pinned CLI path, JSON-only smoke, and no argv secrets before wallet-backed Polymarket checks
 - Hyperliquid uncertified write path: MCP verification envelope covered by regression, then live-checked with tiny limit/market flows
 - LI.FI uncertified execution path: MCP verification envelope covered by regression, then live-checked with tiny swap/bridge flows
 

@@ -64,6 +64,16 @@ metadata:
               "description": "Alias for AVALANCHE_NETWORK. EVM chain to connect to.",
               "required": false,
             },
+            {
+              "name": "EVALANCHE_POLYMARKET_CLI_BIN",
+              "description": "Absolute path to the official polymarket CLI binary. Optional if `polymarket` is already on PATH.",
+              "required": false,
+            },
+            {
+              "name": "POLYMARKET_SIGNATURE_TYPE",
+              "description": "Polymarket CLI signature type. Defaults to proxy.",
+              "required": false,
+            },
           ],
         "configPaths": ["~/.evalanche/keys/agent.json"],
         "install":
@@ -113,6 +123,10 @@ Routescan RPCs preferred where available, with public fallback RPCs.
 ### OpenClaw External Secrets (Preferred when available)
 
 Priority: OpenClaw secrets → raw env vars → encrypted keystore.
+
+### Polymarket CLI
+
+Authenticated Polymarket MCP tools use the official `polymarket` CLI. Production agents should pin the binary path with `EVALANCHE_POLYMARKET_CLI_BIN`; otherwise Evalanche resolves `polymarket` from `PATH`. Signer material is passed through the child process environment and never through CLI arguments.
 
 ## Setup
 
