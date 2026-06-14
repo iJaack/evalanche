@@ -2,7 +2,7 @@
 
 ## Executive summary
 
-Evalanche is a TypeScript SDK and MCP server that can hold wallet credentials and execute high-impact on-chain actions across EVM, Avalanche P/X-chain, Polymarket, Hyperliquid, dYdX, bridge, swap, and x402 flows. This hardening pass addressed the highest-risk preconditions: HTTP MCP now requires bearer-token authentication, binds to loopback by default, and enforces request body limits; high-risk helper execution paths now run through the policy hook; policy removal requires explicit confirmation; and x402 service endpoints require a settlement verifier unless deliberately configured for signed-intent mode. Residual risk remains around trusted local MCP callers, external quote/API integrity, dependency reachability, and policy coverage for venue-specific off-chain order semantics.
+Evalanche is a TypeScript SDK and MCP server that can hold wallet credentials and execute high-impact on-chain actions across EVM, Avalanche P/X-chain, Polymarket, Hyperliquid, dYdX, bridge, swap, and x402 flows. This hardening pass addressed the highest-risk preconditions: HTTP MCP now requires bearer-token authentication, binds to loopback by default, and enforces request body limits; high-risk helper execution paths now run through the policy hook; policy removal requires explicit confirmation; x402 service endpoints require a settlement verifier unless deliberately configured for signed-intent mode; and authenticated Polymarket trading now routes through an official CLI subprocess wrapper with JSON-only parsing, private-key redaction, and minimal environment inheritance. Residual risk remains around trusted local MCP callers, external quote/API integrity, dependency reachability, CLI provenance/installation, and policy coverage for venue-specific off-chain order semantics.
 
 ## Scope and assumptions
 
@@ -15,7 +15,7 @@ Assumptions:
 - The npm package may be embedded in local agents that load a funded private key, mnemonic, macOS Keychain secret, environment secret, or keystore.
 - `evalanche-mcp` stdio is intended for trusted local MCP clients. HTTP mode now requires `EVALANCHE_MCP_HTTP_TOKEN` or `startHTTP({ authToken })`, and binds to `127.0.0.1` unless a caller opts into another host.
 - Network attackers do not know wallet secrets directly. HTTP attackers also need the MCP bearer token unless another bug leaks or forwards it.
-- External APIs such as Li.Fi, Polymarket, Hyperliquid, CoinGecko, RPC providers, and IPFS gateways are semi-trusted dependencies, not controlled by this repository.
+- External APIs and tools such as Li.Fi, Polymarket, Hyperliquid, CoinGecko, RPC providers, IPFS gateways, the official `polymarket` CLI binary, and `platform-cli` are semi-trusted dependencies, not controlled by this repository.
 - Severity assumes mainnet-capable wallets with non-trivial balances. Testnet-only usage lowers impact.
 
 Open questions that would materially change risk ranking:
@@ -32,7 +32,7 @@ Open questions that would materially change risk ranking:
 - Credential resolution: `resolveAgentSecrets` checks OpenClaw secret refs, raw env vars, macOS Keychain, then keystore fallback in `src/secrets.ts`.
 - Wallet execution core: `Evalanche.send`, `Evalanche.call`, bridge/swap/perp/DeFi helpers sign transactions through an ethers wallet in `src/agent.ts`.
 - MCP server: `EvalancheMCPServer` exposes wallet, bridge, swap, Polymarket, perp, policy, service, memory, and platform-cli tools over stdio or HTTP in `src/mcp/server.ts`.
-- External integrations: Li.Fi, Gas.zip through Li.Fi, Polymarket CLOB/bridge/Gamma APIs, Hyperliquid, dYdX, CoinGecko, RPC providers, IPFS, and `platform-cli`.
+- External integrations: Li.Fi, Gas.zip through Li.Fi, Polymarket CLOB/bridge/Gamma APIs, the official `polymarket` CLI, Hyperliquid, dYdX, CoinGecko, RPC providers, IPFS, and `platform-cli`.
 
 ### Data flows and trust boundaries
 
@@ -40,6 +40,7 @@ Open questions that would materially change risk ranking:
 - MCP client -> MCP server: JSON-RPC messages over stdio or HTTP. Stdio inherits the parent process trust boundary. HTTP now requires a bearer token, defaults to loopback, rejects oversized bodies, and uses POST JSON parsing.
 - MCP server -> wallet signer: tool arguments become signatures, native transfers, contract calls, token approvals, bridge/swap execution, Polymarket orders, and perp orders. Native send/call, generic approval/proxy helpers, Li.Fi bridge/swap, and Gas.zip execution now run through the active policy hook.
 - SDK -> external APIs/RPCs: quote, route, orderbook, market, and registration metadata over HTTPS or JSON-RPC. `safeFetch` enforces HTTPS, timeout, redirect blocking, and response byte caps, with private-network blocking only when callers opt in.
+- MCP server -> official `polymarket` CLI: authenticated Polymarket reads, orders, cancellations, balances, approvals, bridge status/deposits, and CTF redemption become subprocess arguments via `execFile`, with `-o json` forced on every invocation. Wallet private keys are never passed in argv; the wrapper passes only a minimal environment including `PATH`, `HOME`, proxy/cert settings, signature type, and `POLYMARKET_PRIVATE_KEY` when signing is required. Non-JSON output fails closed and subprocess errors are redacted.
 - MCP server -> `platform-cli`: selected tool arguments become subprocess arguments via `execFile`, not shell interpolation. The subprocess inherits most environment variables and may receive wallet private key via env when configured.
 - x402 client/service -> remote peer: a 402 challenge is converted into a signed JSON proof and replayed in an HTTP header. Service endpoints now require a settlement verifier by default; the prior signature-only behavior is available only through explicit `paymentMode: 'signed-intent'`.
 
@@ -56,6 +57,7 @@ flowchart LR
   C --> H["EVM and Avalanche RPC"]
   E --> I["LiFi and market APIs"]
   E --> J["platform-cli"]
+  E --> M["polymarket CLI"]
   K["x402 peer"] --> L["Service host"]
   C --> K
 ```
@@ -66,6 +68,7 @@ flowchart LR
 | --- | --- | --- |
 | Private key / mnemonic / keystore entropy | Direct control of wallet funds and agent identity | C/I |
 | Wallet balances and approvals | Loss of funds or persistent token-spender risk | I |
+| Polymarket CLI binary and subprocess environment | Authenticated trading now depends on a local external executable and signer env isolation | C/I/A |
 | Agent identity and reputation actions | On-chain identity, trust score, and service reputation can be manipulated | I |
 | MCP tool surface | It can sign messages, execute transactions, trade, bridge, and call subprocesses | I/A |
 | Spending policy state | Intended guardrail for automated spending | I |
@@ -81,6 +84,7 @@ flowchart LR
 - Influence LLM/tool outputs or local automation that calls MCP tools.
 - Control remote HTTPS endpoints used by `pay_and_fetch` or agent registration metadata.
 - Return malicious or misleading data from compromised external quote/order/metadata APIs.
+- Place a malicious binary earlier in `PATH` or misconfigure `EVALANCHE_POLYMARKET_CLI_BIN` if the local host or deployment packaging is compromised.
 - Exhaust process CPU or worker availability by sending frequent HTTP MCP requests after authentication.
 
 ### Non-capabilities
@@ -98,6 +102,7 @@ flowchart LR
 | MCP HTTP JSON-RPC | `EVALANCHE_MCP_HTTP_TOKEN=... evalanche-mcp --http --port 3402` | Token-bearing network caller to wallet-capable server | Requires bearer token, defaults to loopback, enforces request timeout and body limit | `src/mcp/cli.ts`, `src/mcp/server.ts` `startHTTP` |
 | Wallet actions | MCP tools `send_avax`, `call_contract`, `sign_message` | JSON args to signer | Direct signing and transaction execution | `src/mcp/server.ts:2672`, `src/mcp/server.ts:2681`, `src/mcp/server.ts:2693` |
 | Bridge/swap/gas funding | MCP tools `bridge_tokens`, `fund_destination_gas`, `lifi_swap`, `lifi_compose` | JSON args plus external quote API to signer | Execution uses quote-provided transaction request | `src/mcp/server.ts:2809`, `src/bridge/lifi.ts:318` |
+| Polymarket CLI wrapper | MCP tools `pm_order`, `pm_open_orders`, `pm_trades`, `pm_buy`, `pm_sell`, `pm_limit_sell`, `pm_approve`, and related wallet-backed venue tools | JSON args to subprocess plus signer private key in minimal env | Uses `execFile`, forces JSON output, redacts private key, removes hidden raw/diagnostic write tools | `src/polymarket/cli.ts`, `src/mcp/server.ts` `buildPolymarketCliClient` |
 | Generic approval/proxy helpers | MCP tools `approve_and_call`, `upgrade_proxy` | JSON args to arbitrary contract calls | Now calls policy authorization before executing helper transactions | `src/mcp/server.ts` |
 | Policy control | MCP tool `set_policy` | JSON args to guardrail state | Removal requires `remove=true` and `confirm="remove"` | `src/mcp/server.ts` |
 | x402 client/service | HTTP 402 challenge and `x-payment-proof` | Remote peer to signer/service | Settled endpoints require a settlement verifier; signed-intent mode is explicit | `src/x402/client.ts`, `src/economy/service.ts` |
@@ -113,6 +118,7 @@ flowchart LR
 5. x402 settlement bypass by misconfiguration: an operator deploys paid endpoints without a production verifier or intentionally uses signed-intent mode for untrusted peers, allowing access without settled funds.
 6. MCP HTTP DoS after authentication: attacker with the bearer token sends frequent requests; body size and timeout controls reduce memory risk, but there is no rate limit or concurrency cap yet.
 7. External quote/API manipulation: compromised route/order API returns malicious transaction request or misleading market data; policy catches target/value constraints, but semantic quote invariants still need local validation.
+8. Polymarket CLI substitution: attacker with local deployment influence places a malicious `polymarket` executable earlier in `PATH` or changes `EVALANCHE_POLYMARKET_CLI_BIN`; authenticated MCP calls then pass order intent and signer env to attacker-controlled code.
 
 ## Threat model table
 
@@ -124,6 +130,7 @@ flowchart LR
 | TM-004 | Malicious or compromised external route/order API | Agent uses quote/order data from external APIs and signs returned transaction requests. | Return transaction request or market data that routes value/approvals unexpectedly or misprices execution. | Fund loss through malicious calldata, excess slippage, wrong recipient, or bad approvals. | Wallet balances, approvals, trade integrity. | HTTPS, redirect blocking, timeouts, byte caps (`src/utils/safe-fetch.ts`); Li.Fi/Gas.zip transaction requests now pass through policy authorization. | Policy authorization does not yet validate semantic quote invariants like token deltas, final recipient, or known router/spender sets. | Validate quote invariants locally before signing; require chain/provider match; maintain known router/spender allowlists; simulate transaction when possible. | Log route ID, tool, tx target, token deltas; alert on unknown spender/router or destination mismatch. | Low to Medium | High | Medium |
 | TM-005 | Remote network attacker | HTTP MCP is reachable and attacker has or can send requests to the token-protected endpoint. | Stream oversized bodies or many requests. | Process memory/CPU exhaustion and agent unavailability. | MCP availability, wallet automation reliability. | POST-only, bearer auth, 10s request timeout, and max body bytes now exist (`src/mcp/server.ts` `startHTTP`). | No per-IP rate limit or concurrency cap yet. | Add rate limiting and concurrency limits for HTTP mode. | Track body sizes, parse failures, request duration, event loop delay, and per-IP rates. | Low | Medium | Low |
 | TM-006 | Supply-chain or dependency attacker | Users install package with vulnerable transitive dependencies. | Exploit reachable dependency vulnerability or compromise install/runtime package path. | Wallet compromise, code execution, or data exfiltration depending on reachability. | Wallet secrets, package integrity. | `VULN_NOTES.md` tracks audit snapshot and overrides; package provenance is enabled in `package.json`. | Current note reports `5 critical`, `3 high`, `12 low` audit findings, but reachability is unresolved. | Run reachability triage for runtime imports, remove unused heavy integrations from default path, keep overrides pinned, and gate release on reachable high/critical findings. | CI audit with allowlist expiry; alert on dependency graph changes in wallet/runtime paths. | Medium | Medium to High | Medium |
+| TM-007 | Local supply-chain or deployment attacker | Attacker can influence the installed `polymarket` binary, `PATH`, or `EVALANCHE_POLYMARKET_CLI_BIN` in the agent runtime. | Substitute a malicious CLI that receives signed trading intents and `POLYMARKET_PRIVATE_KEY` for authenticated commands. | Private-key theft, unauthorized market orders, false balances/orders, or suppressed cancellation errors. | Polymarket wallet credentials, balances, order integrity, agent availability. | Wrapper uses `execFile` with argv arrays, never puts private keys in argv, forces `-o json`, caps subprocess output/time, redacts private keys from errors, and fails closed on non-JSON (`src/polymarket/cli.ts`). Hidden raw/diagnostic MCP write paths now throw removal errors (`src/mcp/server.ts`). | The repo cannot prove the installed external CLI is official or current at runtime; no version allowlist or binary checksum enforcement exists yet. | Pin the CLI in deployment images, add a startup `polymarket --version`/checksum check, document `EVALANCHE_POLYMARKET_CLI_BIN`, and keep production wallet runs on locked images. | Log CLI binary path/version at startup without secrets; alert on binary path changes, non-JSON CLI output, repeated CLI failures, and signing commands from unexpected MCP clients. | Low to Medium | High | Medium |
 
 ## Criticality calibration
 
@@ -151,12 +158,14 @@ flowchart LR
 | `src/economy/service.ts` | Verifies proofs, requires settlement verification by default, and preserves explicit signed-intent mode. | TM-003 |
 | `src/utils/safe-fetch.ts` | Common URL-fetch control point for SSRF, redirects, timeouts, and response caps. | TM-004 |
 | `src/avalanche/platform-cli.ts` | Subprocess execution boundary for privileged Avalanche operations. | TM-001, TM-002 |
+| `src/polymarket/cli.ts` | Subprocess execution boundary for official Polymarket CLI authentication, trading, balances, approvals, and redaction controls. | TM-002, TM-007 |
+| `src/polymarket/client.ts` | Public Polymarket client now delegates authenticated venue operations to the CLI while retaining direct public market reads and bridge/withdraw helpers. | TM-004, TM-007 |
 | `package.json` and `VULN_NOTES.md` | Dependency and release posture for wallet-capable package. | TM-006 |
 
 ## Quality check
 
-- Covered discovered runtime entry points: SDK API, MCP stdio, MCP HTTP, x402, external API fetches, platform-cli subprocesses, and credential resolution.
-- Covered trust boundaries in threats: network-to-MCP, MCP-to-signer, MCP-to-policy, SDK-to-external APIs, x402 peer-to-service, and package-to-dependency tree.
+- Covered discovered runtime entry points: SDK API, MCP stdio, MCP HTTP, x402, external API fetches, platform-cli subprocesses, official Polymarket CLI subprocesses, and credential resolution.
+- Covered trust boundaries in threats: network-to-MCP, MCP-to-signer, MCP-to-policy, SDK-to-external APIs, MCP-to-CLI subprocesses, x402 peer-to-service, and package-to-dependency tree.
 - Separated runtime from CI/dev: release scripts, website, and tests are out of scope except where they document posture.
 - User clarifications: none provided yet; token handling, caller trust, and production x402 verifier choice remain explicit assumptions.
 - Graph orientation: local code-review graph built successfully for 142 files / 1,698 nodes / 13,883 edges on branch `main`.

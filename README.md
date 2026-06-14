@@ -5,13 +5,13 @@ Avalanche-first agent wallet and execution SDK for AI agents, with multi-EVM sup
 <!-- GENERATED:release-summary:start -->
 ## Current Release
 
-- Latest release: [v1.9.7](docs/releases/RELEASE_NOTES_1.9.7.md)
-- Published package: `evalanche@1.9.7`
+- Latest release: [v1.11.0](docs/releases/RELEASE_NOTES_1.11.0.md)
+- Published package: `evalanche@1.11.0`
 - Current package surface:
-  - Hardened MCP HTTP mode so it now requires an explicit bearer token, binds to loopback by default, enforces request timeouts, and rejects oversized request bodies before parsing.
-  - Routed high-risk execution helpers through active spending-policy checks, including approve-and-call, UUPS proxy upgrades, Li.Fi bridge/swap execution, and Gas.zip funding.
-  - Tightened x402 paid-service hosting so settled endpoints require a settlement verifier by default, while preserving explicit `signed-intent` mode for trusted peer flows and tests.
-  - Fixed Polymarket collateral normalization for live pUSD spender allowances, and made `pm_approve` / `pm_deposit` sync both wallet USDC.e -> CLOB approval and Polygon pUSD spender approvals.
+  - Replaces the Polymarket SDK execution path with the official `polymarket` CLI for authenticated venue operations.
+  - Routes the MCP Polymarket wallet tools through a hardened CLI adapter that uses `execFile`, forces JSON output, avoids argv secrets, redacts signer material, and fails closed on malformed CLI output.
+  - Removes `@polymarket/clob-client`, `@polymarket/clob-client-v2`, and the local Polymarket client type shim from the package dependency surface.
+  - Removes hidden raw/diagnostic Polymarket write paths so production agents use the advertised preflight, execution, and reconciliation tools.
 - Docs:
   - [Release notes](docs/releases/README.md)
   - [Roadmap](ROADMAP.md)
@@ -24,6 +24,8 @@ Avalanche-first agent wallet and execution SDK for AI agents, with multi-EVM sup
 ```bash
 npm install evalanche
 ```
+
+Polymarket authenticated actions use the official `polymarket` CLI. Install it on production agents and keep it on a pinned path, or set `EVALANCHE_POLYMARKET_CLI_BIN=/absolute/path/to/polymarket`. Evalanche passes signer material through `POLYMARKET_PRIVATE_KEY` in the child process environment and never through CLI argv.
 
 ## Quick Start
 
@@ -57,7 +59,7 @@ EVALANCHE_MCP_HTTP_TOKEN="$(openssl rand -hex 32)" npx evalanche-mcp --http --po
 - Unified holdings discovery across wallet balances, DeFi positions, prediction positions, and perp venues
 - Cross-chain bridge, swap, and gas-funding flows
 - Avalanche and multi-EVM DeFi actions
-- Polymarket market reads and execution
+- Polymarket market reads plus official-CLI-backed execution
 - Perpetual trading support for Hyperliquid and dYdX
 
 ## Also Works Across EVM

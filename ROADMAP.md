@@ -5,12 +5,12 @@ This is the active roadmap for the repository.
 <!-- GENERATED:roadmap-release:start -->
 ## Latest Shipped Release
 
-- Latest release: [v1.9.7](docs/releases/RELEASE_NOTES_1.9.7.md)
-- Shipped in `v1.9.7`:
-  - Hardened MCP HTTP mode so it now requires an explicit bearer token, binds to loopback by default, enforces request timeouts, and rejects oversized request bodies before parsing.
-  - Routed high-risk execution helpers through active spending-policy checks, including approve-and-call, UUPS proxy upgrades, Li.Fi bridge/swap execution, and Gas.zip funding.
-  - Tightened x402 paid-service hosting so settled endpoints require a settlement verifier by default, while preserving explicit `signed-intent` mode for trusted peer flows and tests.
-  - Fixed Polymarket collateral normalization for live pUSD spender allowances, and made `pm_approve` / `pm_deposit` sync both wallet USDC.e -> CLOB approval and Polygon pUSD spender approvals.
+- Latest release: [v1.11.0](docs/releases/RELEASE_NOTES_1.11.0.md)
+- Shipped in `v1.11.0`:
+  - Replaces the Polymarket SDK execution path with the official `polymarket` CLI for authenticated venue operations.
+  - Routes the MCP Polymarket wallet tools through a hardened CLI adapter that uses `execFile`, forces JSON output, avoids argv secrets, redacts signer material, and fails closed on malformed CLI output.
+  - Removes `@polymarket/clob-client`, `@polymarket/clob-client-v2`, and the local Polymarket client type shim from the package dependency surface.
+  - Removes hidden raw/diagnostic Polymarket write paths so production agents use the advertised preflight, execution, and reconciliation tools.
 
 ## Current Focus
 

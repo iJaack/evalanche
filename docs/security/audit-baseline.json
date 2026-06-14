@@ -1,12 +1,12 @@
 {
-  "version": "1.10.0",
+  "version": "1.11.0",
   "counts": {
     "critical": 1,
-    "high": 16,
-    "moderate": 14,
-    "low": 16,
+    "high": 13,
+    "moderate": 12,
+    "low": 12,
     "info": 0,
-    "total": 47
+    "total": 38
   },
   "highPackages": [
     "@avalabs/core-wallets-sdk",
@@ -20,9 +20,6 @@
     "@ledgerhq/evm-tools",
     "@ledgerhq/hw-app-btc",
     "@ledgerhq/hw-app-eth",
-    "@polymarket/builder-signing-sdk",
-    "@polymarket/clob-client",
-    "@polymarket/clob-client-v2",
     "axios",
     "tiny-secp256k1"
   ],

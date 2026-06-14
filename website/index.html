@@ -6,12 +6,12 @@
     <title>Evalanche — Multi-EVM agent wallet SDK</title>
     <meta
       name="description"
-      content="Evalanche v1.9.7 is a multi-EVM agent wallet SDK for identity, payments, cross-chain execution, policy-guarded automation, and Polymarket-ready execution."
+      content="Evalanche v1.11.0 is a multi-EVM agent wallet SDK for identity, payments, cross-chain execution, policy-guarded automation, and official-CLI-backed Polymarket execution."
     />
     <meta property="og:title" content="Evalanche — Multi-EVM agent wallet SDK" />
     <meta
       property="og:description"
-      content="Avalanche-first agent wallet infrastructure with policy-guarded execution, hardened MCP HTTP transport, and live Polymarket collateral handling."
+      content="Avalanche-first agent wallet infrastructure with policy-guarded execution, hardened MCP HTTP transport, and official Polymarket CLI routing."
     />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://evalanche.xyz" />
@@ -20,7 +20,7 @@
     <meta name="twitter:title" content="Evalanche — Multi-EVM agent wallet SDK" />
     <meta
       name="twitter:description"
-      content="Avalanche-first agent wallet infrastructure with policy-guarded execution, hardened MCP HTTP transport, and live Polymarket collateral handling."
+      content="Avalanche-first agent wallet infrastructure with policy-guarded execution, hardened MCP HTTP transport, and official Polymarket CLI routing."
     />
     <meta name="twitter:image" content="https://evalanche.xyz/social-card.svg" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
@@ -47,8 +47,8 @@
             <h1 class="ev-wordmark">
               <span class="ev-red">eva</span>lanche
             </h1>
-            <p class="ev-tagline">Avalanche-first agent wallet infrastructure with multi-EVM execution, policy rails, and Polymarket-ready collateral flows.</p>
-            <div class="ev-release-pill">Now shipping v1.9.7</div>
+            <p class="ev-tagline">Avalanche-first agent wallet infrastructure with multi-EVM execution, policy rails, and official-CLI-backed Polymarket flows.</p>
+            <div class="ev-release-pill">Now shipping v1.11.0</div>
             <div class="ev-badges">
               <span class="ev-badge">ERC-8004</span>
               <span class="ev-badge">x402</span>
@@ -69,7 +69,7 @@
           <div class="ev-hero-code">
             <div class="ev-code-bar">
               <span class="ev-dot"></span><span class="ev-dot"></span><span class="ev-dot"></span>
-              <span class="ev-code-title">evalanche-v1.9.7.ts</span>
+              <span class="ev-code-title">evalanche-v1.11.0.ts</span>
             </div>
             <pre class="ev-code-body"><code>const { agent } = await Evalanche.boot({ network: "polygon" });
 
@@ -118,7 +118,7 @@ const topup = await agent.bridgeTokensDetailed({
 
       <section class="ev-section" id="install">
         <div class="ev-container">
-          <h2 class="ev-section-title">Why v1.9.7 matters</h2>
+          <h2 class="ev-section-title">Why v1.11.0 matters</h2>
           <div class="ev-steps">
             <div class="ev-step">
               <div class="ev-step-meta">
@@ -130,9 +130,9 @@ const topup = await agent.bridgeTokensDetailed({
             <div class="ev-step">
               <div class="ev-step-meta">
                 <span class="ev-step-num">02</span>
-                <span class="ev-step-label">Live Polymarket collateral truth</span>
+                <span class="ev-step-label">Official Polymarket CLI routing</span>
               </div>
-              <pre class="ev-step-code"><code>Venue balances now normalize live pUSD spender allowances, while pm_approve and pm_deposit keep wallet-side USDC.e and venue-side pUSD approvals in sync.</code></pre>
+              <pre class="ev-step-code"><code>Authenticated Polymarket tools now route through the official CLI with JSON-only parsing, no argv secrets, and redacted subprocess failures.</code></pre>
             </div>
             <div class="ev-step">
               <div class="ev-step-meta">

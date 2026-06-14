@@ -9,7 +9,7 @@ import { getAllChains } from '../utils/chains';
 import { NATIVE_TOKEN } from '../bridge/lifi';
 import { safeFetch } from '../utils/safe-fetch';
 import { CoinGeckoClient } from '../market/coingecko';
-import { PolymarketClient } from '../polymarket';
+import { PolymarketCli, PolymarketClient } from '../polymarket';
 import { DiscoveryClient } from '../economy/discovery';
 import { AgentServiceHost } from '../economy/service';
 import { NegotiationClient } from '../economy/negotiation';
@@ -1569,8 +1569,8 @@ export class EvalancheMCPServer {
   private coingecko: CoinGeckoClient;
   private readonly dappRegistry = createDefaultDappRegistry();
   private polymarket: PolymarketClient | null = null;
+  private polymarketCli: PolymarketCli;
   private authedClobClient: any = null;
-  private lastPolymarketNonce = 0;
 
 
   constructor(config: EvalancheConfig) {
@@ -1583,6 +1583,7 @@ export class EvalancheMCPServer {
     this.memory = new AgentMemory(); // in-memory by default; can be swapped for file-backed
     this.interopResolver = new InteropIdentityResolver(this.agent.provider);
     this.coingecko = new CoinGeckoClient();
+    this.polymarketCli = new PolymarketCli({ privateKey: this.agent.wallet.privateKey });
   }
 
   private rebindAgentState(): void {
@@ -1590,6 +1591,7 @@ export class EvalancheMCPServer {
     this.settlement = new SettlementClient(this.agent.wallet, this.negotiation);
     this.interopResolver = new InteropIdentityResolver(this.agent.provider);
     this.polymarket = null;
+    this.polymarketCli = new PolymarketCli({ privateKey: this.agent.wallet.privateKey });
     this.authedClobClient = null;
   }
 
@@ -1661,30 +1663,6 @@ export class EvalancheMCPServer {
     }
     return this.polymarket;
 
-  }
-
-  // Polymarket CLOB order nonces must exceed the CLOB's tracked counter.
-  // Use (Date.now() * 1M) as base to ensure nonces are always >> CLOB counter (~1.77T).
-  // This gives ~1.77T * 1M = 1.77Q unique nonces per millisecond.
-  // Also use _polymarketNonceSeq as a per-session sequence to handle sub-ms calls.
-  // Polymarket CLOB uses int64 for off-chain nonce validation.
-  // Nonces must be: 0 < nonce <= 9,223,372,036,854,775,807 (max int64).
-  // Use Date.now() * 1000 + sequence as nonce — ~1.77 * 10^15, safely within int64.
-  // Lazy-initialize the base on first use so it works without a constructor.
-  private _polymarketNonceBase: number | null = null;
-  private _polymarketNonceSeq = 0;
-
-  private get polymarketNonceBase(): number {
-    if (this._polymarketNonceBase === null) {
-      // Set the session base: timestamp * 1000 ensures each session starts
-      // with nonces >> any previous session's range, within int64 bounds.
-      this._polymarketNonceBase = Date.now() * 1000;
-    }
-    return this._polymarketNonceBase;
-  }
-
-  private nextPolymarketNonce(): number {
-    return this.polymarketNonceBase + ++this._polymarketNonceSeq;
   }
 
   private estimateSellFill(orderBook: { bids: Array<{ price: number; size: number }> }, size: number): {
@@ -1868,7 +1846,7 @@ export class EvalancheMCPServer {
    * at order settlement time. The previous pm_approve only called the L2 API
    * (updateBalanceAllowance), which does NOT set the ERC20 allowance.
    *
-   * Addresses are from @polymarket/clob-client/dist/config.ts:
+   * Addresses match Polymarket's Polygon CLOB deployment:
    *   Polygon USDC:  0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174
    *   Polygon CLOB:  0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E
    */
@@ -2081,7 +2059,7 @@ export class EvalancheMCPServer {
    * which can be stale). Use this when the CLOB API's getBalanceAllowance
    * returns 0 despite a recent approveUsdcToCLOB() call.
    *
-   * Polygon addresses from @polymarket/clob-client/dist/config.ts:
+   * Polygon addresses match Polymarket's CLOB collateral deployment:
    *   USDC:  0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174
    *   CLOB:  0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E
    */
@@ -2676,66 +2654,84 @@ export class EvalancheMCPServer {
     };
   }
 
-  /**
-   * Build an authenticated Polymarket CLOB client.
-   * Handles the case where the wallet already has an API key — in that case
-   * createApiKey returns 400 and we fall back to deriveApiKey (GET /auth/api-key).
-   */
-  private async buildAuthedClobClient(walletClient: any, accountAddress: string): Promise<any> {
-    const { ClobClient } = await import('@polymarket/clob-client');
-    const ClobAny = ClobClient as any;
-    const host = 'https://clob.polymarket.com';
-    const chainId = 137;
+  private unwrapPolymarketCliList(payload: unknown, key?: string): any[] {
+    if (Array.isArray(payload)) return payload;
+    const record = (payload ?? {}) as Record<string, unknown>;
+    if (key && Array.isArray(record[key])) return record[key] as any[];
+    if (Array.isArray(record.data)) return record.data as any[];
+    if (Array.isArray(record.orders)) return record.orders as any[];
+    if (Array.isArray(record.trades)) return record.trades as any[];
+    if (Array.isArray(record.positions)) return record.positions as any[];
+    return [];
+  }
 
-    // Step 1: create a temporary client to derive/create API credentials
-    const tempClient = new ClobAny(host, chainId, walletClient);
-    let creds: { key: string; secret: string; passphrase: string };
+  private normalizeCliSide(side: unknown): 'buy' | 'sell' {
+    const value = String(side ?? '').toLowerCase();
+    if (value === 'buy' || value === 'sell') return value;
+    if (value.includes('buy')) return 'buy';
+    if (value.includes('sell')) return 'sell';
+    throw new Error(`Unsupported Polymarket side: ${String(side)}`);
+  }
 
-    // Use deriveApiKey() with no nonce — this uses nonce=0 in L1 auth headers.
-    // The CLOB accepts nonce=0 for credential derivation without validating against
-    // the off-chain order nonce counter.
-    try {
-      creds = await tempClient.deriveApiKey();
-      if (!creds?.key || !creds?.secret || !creds?.passphrase) {
-        throw Object.assign(
-          new Error(`deriveApiKey returned incomplete credentials`),
-          { status: 200, incomplete: true },
-        );
-      }
-    } catch (deriveErr: any) {
-      const deriveStatus = deriveErr?.response?.status ?? deriveErr?.status ?? 0;
-      const deriveMsg = deriveErr?.message ?? String(deriveErr);
-      const isIncomplete = deriveErr?.incomplete === true;
-
-      if (deriveStatus === 400 || isIncomplete || deriveMsg.includes('400')) {
-        try {
-          creds = await tempClient.createOrDeriveApiKey();
-          if (!creds?.key || !creds?.secret || !creds?.passphrase) {
-            throw Object.assign(
-              new Error(`createOrDeriveApiKey returned incomplete credentials`),
-              { status: 200, incomplete: true },
-            );
-          }
-        } catch (createErr: any) {
-          const createMsg = createErr?.message ?? String(createErr);
-          const createStatus = createErr?.response?.status ?? createErr?.status ?? 0;
-          throw new Error(
-            `Polymarket CLOB auth failed. createOrDeriveApiKey: status=${createStatus}, msg=${createMsg}. ` +
-            `Manual step required: visit https://clob.polymarket.com/keys to create or retrieve your API key.`,
-          );
-        }
-      } else {
-        throw new Error(
-          `Polymarket deriveApiKey failed: ${deriveMsg} (status ${deriveStatus}). ` +
-          `Check wallet connectivity and server clock.`,
-        );
-      }
-    }
-
-    // Step 2: build the final authed client with credentials and explicit address
-    const authed = new ClobAny(host, chainId, walletClient, creds, 0, accountAddress);
-    (authed as any).__evalancheClientVersion = 'legacy';
-    return authed;
+  private buildPolymarketCliClient(): any {
+    const cli = this.polymarketCli;
+    return {
+      __evalancheClientVersion: 'official-cli',
+      getMarket: (conditionId: string) => cli.clobMarket(conditionId),
+      getOrderBook: (tokenId: string) => cli.orderBook(tokenId),
+      getOpenOrders: async (tokenId?: string) => this.unwrapPolymarketCliList(await cli.openOrders(tokenId), 'orders'),
+      getTrades: async (tokenId?: string) => this.unwrapPolymarketCliList(await cli.trades(tokenId), 'trades'),
+      getOrder: (orderId: string) => cli.order(orderId),
+      cancelOrder: (orderId: string) => cli.cancelOrder(orderId),
+      getBalances: async () => ({ collateral: await cli.balance('collateral') }),
+      getBalanceAllowance: async (request: Record<string, unknown>) => {
+        const assetType = String(request.asset_type ?? request.assetType ?? 'COLLATERAL').toLowerCase() === 'conditional'
+          ? 'conditional'
+          : 'collateral';
+        const tokenId = typeof request.token_id === 'string'
+          ? request.token_id
+          : typeof request.tokenId === 'string'
+            ? request.tokenId
+            : undefined;
+        return cli.balance(assetType, tokenId);
+      },
+      updateBalanceAllowance: async (request: Record<string, unknown>) => {
+        const assetType = String(request.asset_type ?? request.assetType ?? 'COLLATERAL').toLowerCase() === 'conditional'
+          ? 'conditional'
+          : 'collateral';
+        const tokenId = typeof request.token_id === 'string'
+          ? request.token_id
+          : typeof request.tokenId === 'string'
+            ? request.tokenId
+            : undefined;
+        const args = ['clob', 'update-balance', '--asset-type', assetType];
+        if (tokenId) args.push('--token', tokenId);
+        return cli.runJson(args, { requiresPrivateKey: true });
+      },
+      createAndPostOrder: (order: Record<string, unknown>, _marketOptions?: Record<string, unknown>, orderType?: string) => cli.createOrder({
+        tokenId: String(order.tokenID ?? order.tokenId ?? order.token ?? ''),
+        side: this.normalizeCliSide(order.side),
+        price: String(order.price),
+        size: String(order.size),
+        orderType: orderType ?? String(order.orderType ?? 'GTC'),
+        postOnly: Boolean(order.postOnly),
+      }),
+      createAndPostMarketOrder: (order: Record<string, unknown>) => cli.marketOrder({
+        tokenId: String(order.tokenID ?? order.tokenId ?? order.token ?? ''),
+        side: this.normalizeCliSide(order.side),
+        amount: String(order.amount),
+        orderType: String(order.orderType ?? 'FOK'),
+      }),
+      createOrder: async (order: Record<string, unknown>) => order,
+      postOrder: async (order: Record<string, unknown>, orderType = 'GTC', _deferExec = false, postOnly = false) => cli.createOrder({
+        tokenId: String(order.tokenID ?? order.tokenId ?? order.token ?? ''),
+        side: this.normalizeCliSide(order.side),
+        price: String(order.price),
+        size: String(order.size),
+        orderType,
+        postOnly,
+      }),
+    };
   }
 
   private async getPolygonWalletContext(): Promise<{ walletClient: any; account: { address: `0x${string}` } }> {
@@ -2758,30 +2754,12 @@ export class EvalancheMCPServer {
   }
 
   private async getAuthedClobClient(): Promise<any> {
-    // Fresh authed client every time to avoid stale nonce counter issues
-    this.authedClobClient = null;
-    const { walletClient, account } = await this.getPolygonWalletContext();
-    this.authedClobClient = await this.buildAuthedClobClient(walletClient, account.address);
+    this.authedClobClient = this.buildPolymarketCliClient();
     return this.authedClobClient;
   }
 
   private async getAuthedClobClientV2(): Promise<any> {
-    const { ClobClient, Chain } = await import('@polymarket/clob-client-v2');
-    const { walletClient, account } = await this.getPolygonWalletContext();
-    const legacy = await this.buildAuthedClobClient(walletClient, account.address);
-    const creds = legacy?.creds;
-    if (!creds?.key || !creds?.secret || !creds?.passphrase) {
-      throw new Error('Polymarket v2 auth failed: missing API credentials from legacy auth path.');
-    }
-    const client = new (ClobClient as any)({
-      host: 'https://clob.polymarket.com',
-      chain: (Chain as any).POLYGON,
-      signer: walletClient,
-      creds,
-      throwOnError: true,
-    });
-    (client as any).__evalancheClientVersion = 'v2';
-    return client;
+    return this.getAuthedClobClient();
   }
 
   async handleRequest(request: MCPRequest): Promise<MCPResponse> {
@@ -4451,78 +4429,12 @@ export class EvalancheMCPServer {
           break;
         }
 
-        // Diagnostic: probe CLOB nonce counter with sequential values via market order
-        // Full diagnostic: check everything about the user's CLOB state
         case 'pm_diag': {
-          const auth = await this.getAuthedClobClient();
-          const allowance = await auth.getBalanceAllowance({ asset_type: 'COLLATERAL' }).catch((e:any) => ({ error: e.message }));
-          const onChainAllowance = await this.getOnChainUsdcAllowance().catch(() => 0n);
-          // Try registerCollateral via eth_call to see if it exists
-          const { createWalletClient, http } = await import('viem');
-          const { polygon } = await import('viem/chains');
-          const { privateKeyToAccount } = await import('viem/accounts');
-          let pk = this.agent.wallet.privateKey;
-          if (!pk.startsWith('0x')) pk = `0x${pk}`;
-          const account = privateKeyToAccount(pk as `0x${string}`);
-          const walletClient = createWalletClient({ account, chain: polygon, transport: http() });
-          const publicClient = await import('viem').then(m => m.createPublicClient({ chain: polygon, transport: http() }));
-          
-          let regResult = null;
-          try {
-            const r = await publicClient.simulateContract({
-              address: '0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E',
-              functionName: 'registerCollateral',
-              args: [1000000n],
-              abi: [{type:'function', name:'registerCollateral', stateMutability:'nonpayable', inputs:[{type:'uint256'}], outputs:[{type:'bool'}]}],
-              account,
-            });
-            regResult = { success: true, result: JSON.stringify(r).slice(0,100) };
-          } catch(e: any) {
-            regResult = { error: (e.message||'').slice(0,100) };
-          }
-          
-          // Try submitting registerCollateral as a real tx
-          let regTxResult = null;
-          try {
-            const regTxHash = await walletClient.writeContract({
-              address: '0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E',
-              functionName: 'registerCollateral',
-              args: [1000000n],
-              abi: [{type:'function', name:'registerCollateral', stateMutability:'nonpayable', inputs:[{type:'uint256'}], outputs:[{type:'bool'}]}],
-            });
-            const rcpt = await publicClient.waitForTransactionReceipt({ hash: regTxHash });
-            regTxResult = { hash: regTxHash, status: rcpt.status, blockNumber: rcpt.blockNumber.toString() };
-          } catch(e: any) {
-            regTxResult = { error: (e.shortMessage || e.message || String(e)).slice(0, 100) };
-          }
-          
-          result = { allowance, onChainAllowance: onChainAllowance.toString(), registerCollateral: regTxResult };
-          break;
+          throw new Error('pm_diag was removed. Use advertised read-only Polymarket tools plus pm_preflight/pm_reconcile.');
         }
 
         case 'pm_nonce_probe': {
-          const auth = await this.getAuthedClobClient();
-          const { Side } = await import('@polymarket/clob-client');
-          const TOKEN = args.tokenId ?? '4535122699075910617296689739209052182591729434840370870460954445200030058884';
-          const results = [];
-          for (let n = 0; n <= 5; n++) {
-            try {
-              const r = await auth.createAndPostMarketOrder({
-                tokenID: TOKEN,
-                side: Side.BUY,
-                amount: 1,
-                feeRateBps: 0,
-                nonce: n,
-              });
-              results.push({ nonce: n, success: true, msg: String(r).slice(0, 80) });
-              break;
-            } catch (e: any) {
-              const msg = e?.error?.message ?? e?.message ?? '';
-              results.push({ nonce: n, success: false, error: msg.slice(0, 100) });
-            }
-          }
-          result = results;
-          break;
+          throw new Error('pm_nonce_probe was removed. Official Polymarket CLI manages order authentication and nonce handling.');
         }
 
         case 'pm_buy': {
@@ -4566,58 +4478,21 @@ export class EvalancheMCPServer {
               const tickSize = parseFloat(marketInfo?.minimum_tick_size ?? '0.01');
               const negRisk = marketInfo?.neg_risk ?? false;
 
-              const isV2 = authedBuy?.__evalancheClientVersion === 'v2';
-              if (isV2) {
-                const { Side, OrderType } = await import('@polymarket/clob-client-v2');
-                orderResult = await authedBuy.createAndPostOrder(
-                  {
-                    tokenID: tokenId,
-                    price: limitPrice,
-                    side: Side.BUY,
-                    size,
-                    nonce: this.nextPolymarketNonce(),
-                  },
-                  { tickSize: String(tickSize), negRisk },
-                  OrderType.GTC,
-                );
-              } else {
-                const { Side } = await import('@polymarket/clob-client');
-                orderResult = await authedBuy.createAndPostOrder({
-                  tokenID: tokenId,
-                  price: limitPrice,
-                  side: Side.BUY,
-                  size,
-                  feeRateBps: 0,
-                  nonce: this.nextPolymarketNonce(),
-                  tickSize: String(tickSize),
-                  negRisk,
-                });
-              }
+              orderResult = await authedBuy.createAndPostOrder({
+                tokenID: tokenId,
+                price: limitPrice,
+                side: 'buy',
+                size,
+                tickSize: String(tickSize),
+                negRisk,
+              }, undefined, 'GTC');
             } else {
-              const isV2 = authedBuy?.__evalancheClientVersion === 'v2';
-              if (isV2) {
-                const { Side, OrderType } = await import('@polymarket/clob-client-v2');
-                orderResult = await authedBuy.createAndPostMarketOrder(
-                  {
-                    tokenID: tokenId,
-                    side: Side.BUY,
-                    amount: amountUSDC,
-                    orderType: OrderType.FOK,
-                  },
-                  { tickSize: '0.01' },
-                  OrderType.FOK,
-                );
-              } else {
-                // Market order — use legacy SDK native createAndPostMarketOrder
-                const { Side } = await import('@polymarket/clob-client');
-                orderResult = await authedBuy.createAndPostMarketOrder({
-                  tokenID: tokenId,
-                  side: Side.BUY,
-                  amount: amountUSDC,
-                  feeRateBps: 0,
-                  nonce: this.nextPolymarketNonce(),
-                });
-              }
+              orderResult = await authedBuy.createAndPostMarketOrder({
+                tokenID: tokenId,
+                side: 'buy',
+                amount: amountUSDC,
+                orderType: 'FOK',
+              });
             }
 
             // Surface CLOB rejections clearly
@@ -4738,16 +4613,13 @@ export class EvalancheMCPServer {
           const tickSize = Math.max(parseFloat(tickSizeRaw) || 0.01, 0.0001);
           const negRisk = marketInfo?.neg_risk ?? false;
           const limitPrice = this.roundUpToTick(minAcceptablePrice, tickSize);
-          const { Side } = await import('@polymarket/clob-client');
-
           const signedOrder = await authed.createOrder(
             {
               tokenID: sellTokenId,
               price: limitPrice,
-              side: Side.SELL,
+              side: 'sell',
               size,
               feeRateBps: 0,
-              nonce: this.nextPolymarketNonce(),
             },
             {
               tickSize: String(tickSize),
@@ -4885,34 +4757,8 @@ export class EvalancheMCPServer {
         }
 
 
-        // Raw direct order submission bypassing SDK's nonce tracking
         case 'pm_raw_order': {
-          const rawTokenId = args.tokenId as string;
-          const rawSide = (args.side as string).toUpperCase();
-          const rawPrice = parseFloat(String(args.price));
-          const rawSize = parseFloat(String(args.size));
-          const rawOrderType = (args.orderType as string ?? 'GTC').toUpperCase();
-          const rawDeferExec = args.deferExec as boolean ?? false;
-          const rawPostOnly = args.postOnly as boolean ?? false;
-          if (!rawTokenId || !['BUY', 'SELL'].includes(rawSide) || isNaN(rawPrice) || isNaN(rawSize)) {
-            throw new Error('pm_raw_order requires: tokenId, side (BUY/SELL), price (0-1), size (number)');
-          }
-          // Get fresh authed client
-          const rawAuth = await this.getAuthedClobClient();
-          const { Side } = await import('@polymarket/clob-client');
-          // Use a raw nonce that's guaranteed to be fresh: timestamp*10^12 + random
-          const rawNonce = BigInt(Date.now()) * 1000000000000n + BigInt(Math.floor(Math.random() * 999999));
-          const rawSignedOrder = await rawAuth.createOrder({
-            tokenID: rawTokenId,
-            price: rawPrice,
-            side: rawSide === 'BUY' ? Side.BUY : Side.SELL,
-            size: rawSize,
-            feeRateBps: 0,
-            nonce: rawNonce,
-          }, { tickSize: '0.01', negRisk: false });
-          const rawResult = await rawAuth.postOrder(rawSignedOrder, rawOrderType, rawDeferExec, rawPostOnly);
-          result = rawResult;
-          break;
+          throw new Error('pm_raw_order was removed. Use pm_buy, pm_sell, or pm_limit_sell with preflight and reconciliation.');
         }
 
         case 'pm_limit_sell': {
@@ -4947,7 +4793,7 @@ export class EvalancheMCPServer {
             }
             // Validate: does the client have credentials?
             if (!authed.creds?.key || !authed.creds?.secret) {
-              throw new Error('Authenticated client has no API credentials — deriveApiKey likely failed silently');
+              throw new Error('Authenticated Polymarket CLI adapter is unavailable.');
             }
           } catch (err: any) {
             const msg = err?.message ?? String(err);
@@ -4971,9 +4817,6 @@ export class EvalancheMCPServer {
           const tickSize = isNaN(parseFloat(tsRaw)) ? '0.01' : String(parseFloat(tsRaw));
           const negRisk = marketInfo?.neg_risk ?? false;
 
-          // Get Side enum — use SDK's Side enum directly
-          const { Side } = await import('@polymarket/clob-client');
-
           // Step 4: place the GTC limit sell order using two-step (createOrder + postOrder).
           // This gives us better error control than createAndPostOrder.
           // deferExec=true: do NOT attempt immediate matching against AMM/CLOB bids
@@ -4984,10 +4827,9 @@ export class EvalancheMCPServer {
               {
                 tokenID: lsTokenId,
                 price: lsPrice,
-                side: Side.SELL,
+                side: 'sell',
                 size: lsShares,
                 feeRateBps: 0,
-                nonce: this.nextPolymarketNonce(),
               },
               {
                 tickSize,

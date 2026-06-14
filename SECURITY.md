@@ -7,8 +7,8 @@ Security fixes are applied to the current maintained release line only.
 
 | Version | Supported |
 | ------- | --------- |
-| 1.9.x   | :white_check_mark: |
-| < 1.9   | :x: |
+| 1.11.x   | :white_check_mark: |
+| < 1.11   | :x: |
 
 For current package and release history, see:
 
