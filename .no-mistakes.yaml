@@ -1,0 +1,22 @@
+agent: codex
+
+commands:
+  lint: "npm run typecheck && npm run build"
+  test: "npm test"
+
+ignore_patterns:
+  - "node_modules/**"
+  - "dist/**"
+  - "website-dist/**"
+  - ".release-artifacts/**"
+  - "*.tsbuildinfo"
+
+auto_fix:
+  review: 0
+  lint: 2
+  test: 2
+  document: 2
+
+test:
+  evidence:
+    store_in_repo: false
