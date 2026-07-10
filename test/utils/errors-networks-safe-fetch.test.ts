@@ -20,6 +20,12 @@ describe('networks', () => {
     const cfg = getNetworkConfig('base');
     expect(cfg.chainId).toBe(8453);
     expect(cfg.rpcUrl.length).toBeGreaterThan(0);
+    expect(NETWORKS.robinhood.chainId).toBe(4663);
+    expect(getNetworkConfig('robinhood')).toMatchObject({
+      chainId: 4663,
+      name: 'Robinhood Chain',
+      explorer: 'https://robinhoodchain.blockscout.com',
+    });
   });
 
   it('throws on unknown alias', () => {

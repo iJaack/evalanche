@@ -109,6 +109,15 @@ describe('Evalanche', () => {
       expect(agent.address).toBe('0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266');
     });
 
+    it('should create an agent on Robinhood Chain', () => {
+      const agent = new Evalanche({
+        privateKey: TEST_PRIVATE_KEY,
+        network: 'robinhood',
+      });
+
+      expect(agent.address).toBe('0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266');
+    });
+
     it('should throw for unknown network name', () => {
       expect(() => new Evalanche({
         privateKey: TEST_PRIVATE_KEY,
@@ -152,6 +161,19 @@ describe('Evalanche', () => {
       const info = agent.getChainInfo();
       expect(info.id).toBe(31337);
     });
+
+    it('should return Robinhood Chain info', () => {
+      const agent = new Evalanche({
+        privateKey: TEST_PRIVATE_KEY,
+        network: 'robinhood',
+      });
+
+      expect(agent.getChainInfo()).toMatchObject({
+        id: 4663,
+        name: 'Robinhood Chain',
+        currency: { symbol: 'ETH' },
+      });
+    });
   });
 
   describe('switchNetwork', () => {
@@ -166,6 +188,18 @@ describe('Evalanche', () => {
 
       const baseInfo = baseAgent.getChainInfo();
       expect('currency' in baseInfo && baseInfo.name).toBe('Base');
+    });
+
+    it('should switch to Robinhood Chain', () => {
+      const agent = new Evalanche({
+        privateKey: TEST_PRIVATE_KEY,
+        network: 'ethereum',
+      });
+
+      expect(agent.switchNetwork('robinhood').getChainInfo()).toMatchObject({
+        id: 4663,
+        name: 'Robinhood Chain',
+      });
     });
   });
 

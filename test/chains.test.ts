@@ -11,7 +11,7 @@ import {
 describe('Chain Registry', () => {
   describe('CHAINS', () => {
     it('should contain all required mainnets', () => {
-      const requiredIds = [1, 10, 25, 56, 100, 137, 250, 324, 1284, 5000, 8453, 42161, 42220, 43114, 59144, 80094, 81457, 534352];
+      const requiredIds = [1, 10, 25, 56, 100, 137, 250, 324, 1284, 4663, 5000, 8453, 42161, 42220, 43114, 59144, 80094, 81457, 534352];
       for (const id of requiredIds) {
         expect(CHAINS[id], `Missing chain ID ${id}`).toBeDefined();
       }
@@ -39,6 +39,25 @@ describe('Chain Registry', () => {
       }
     });
 
+    it('should contain Robinhood Chain mainnet with official metadata', () => {
+      expect(CHAINS[4663]).toMatchObject({
+        id: 4663,
+        name: 'Robinhood Chain',
+        shortName: 'rh',
+        currency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+        explorer: 'https://robinhoodchain.blockscout.com',
+        lifiChainKey: 'out',
+      });
+      expect(CHAINS[4663].rpc).toContain('https://rpc.mainnet.chain.robinhood.com');
+      expect(CHAINS[4663].isTestnet).not.toBe(true);
+    });
+
+    it('should expose only Robinhood mainnet', () => {
+      expect(CHAIN_ALIASES.robinhood).toBe(4663);
+      expect(CHAINS[46630]).toBeUndefined();
+      expect(getAllChains(false).some((chain) => chain.id === 4663)).toBe(true);
+    });
+
     it('should include Routescan RPCs for supported chains', () => {
       // Base Routescan RPC currently returns 404/403; keep Base on healthy public endpoints instead.
       const routescanChains = [10, 25, 56, 137, 250, 42161, 43114, 80094];
@@ -54,7 +73,7 @@ describe('Chain Registry', () => {
         'ethereum', 'base', 'arbitrum', 'optimism', 'polygon', 'bsc',
         'avalanche', 'fuji', 'fantom', 'gnosis', 'zksync', 'linea',
         'scroll', 'blast', 'mantle', 'celo', 'moonbeam', 'cronos',
-        'berachain', 'sepolia', 'base-sepolia',
+        'berachain', 'robinhood', 'sepolia', 'base-sepolia',
       ];
       for (const alias of requiredAliases) {
         expect(CHAIN_ALIASES[alias], `Missing alias: ${alias}`).toBeDefined();

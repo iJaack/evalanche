@@ -155,4 +155,24 @@ describe('HoldingsClient', () => {
     expect(result.holdings.some((holding) => holding.holdingType === 'perp' && holding.protocolId === 'dydx')).toBe(true);
     expect(result.warnings).toEqual([]);
   });
+
+  it('includes Robinhood Chain in the default native-balance scan', async () => {
+    const switchedChains: string[] = [];
+    const makeAgent = (chain: string): any => ({
+      address: '0x0fe61780bd5508b3C99e420662050e5560608cA4',
+      provider: { getBalance: vi.fn().mockResolvedValue(0n) },
+      getChainInfo: () => ({ id: 0, name: chain, currency: { symbol: 'ETH' } }),
+      switchNetwork: (next: string) => {
+        switchedChains.push(next);
+        return makeAgent(next);
+      },
+      hyperliquid: vi.fn(),
+      dydx: vi.fn(),
+    });
+
+    const client = new HoldingsClient(makeAgent('ethereum'));
+    await client.scan({ include: ['native'] });
+
+    expect(switchedChains).toContain('robinhood');
+  });
 });

@@ -542,6 +542,26 @@ describe('EvalancheMCPServer', () => {
     expect(parsed.chains[0]).toHaveProperty('name');
   });
 
+  it('lists Robinhood Chain as a supported mainnet', async () => {
+    const res = await server.handleRequest({
+      jsonrpc: '2.0',
+      id: 9_4663,
+      method: 'tools/call',
+      params: { name: 'get_supported_chains', arguments: { includeTestnets: false } },
+    });
+    const result = res.result as { content: Array<{ text: string }> };
+    const parsed = JSON.parse(result.content[0].text);
+
+    expect(parsed.chains).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 4663,
+        name: 'Robinhood Chain',
+        currency: 'ETH',
+        isTestnet: false,
+      }),
+    ]));
+  });
+
   it('handles get_chain_info for current chain', async () => {
     const res = await server.handleRequest({
       jsonrpc: '2.0',
@@ -579,6 +599,23 @@ describe('EvalancheMCPServer', () => {
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.network).toBe('base');
     expect(parsed.address).toMatch(/^0x/);
+  });
+
+  it('switches the MCP wallet to Robinhood Chain', async () => {
+    const res = await server.handleRequest({
+      jsonrpc: '2.0',
+      id: 10_4663,
+      method: 'tools/call',
+      params: { name: 'switch_network', arguments: { network: 'robinhood' } },
+    });
+    const result = res.result as { content: Array<{ text: string }> };
+    const parsed = JSON.parse(result.content[0].text);
+
+    expect(parsed).toMatchObject({
+      network: 'robinhood',
+      chainId: 4663,
+      name: 'Robinhood Chain',
+    });
   });
 
   it('returns error for unknown method', async () => {

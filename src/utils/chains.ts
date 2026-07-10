@@ -159,6 +159,19 @@ export const CHAINS: Record<number, ChainConfig> = {
     lifiChainKey: 'MOO',
   },
 
+  4663: {
+    id: 4663,
+    name: 'Robinhood Chain',
+    shortName: 'rh',
+    currency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+    rpc: withEnvRpcOverrides(
+      ['https://rpc.mainnet.chain.robinhood.com'],
+      ['ROBINHOOD_RPC_URLS', 'EVALANCHE_ROBINHOOD_RPC_URLS'],
+    ),
+    explorer: 'https://robinhoodchain.blockscout.com',
+    lifiChainKey: 'out',
+  },
+
   5000: {
     id: 5000,
     name: 'Mantle',
@@ -312,6 +325,7 @@ export const CHAIN_ALIASES: Record<string, number> = {
   mantle: 5000,
   celo: 42220,
   moonbeam: 1284,
+  robinhood: 4663,
   cronos: 25,
   berachain: 80094,
   sepolia: 11155111,

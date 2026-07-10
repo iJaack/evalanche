@@ -14,7 +14,7 @@ export type ChainName =
   | 'ethereum' | 'base' | 'arbitrum' | 'optimism' | 'polygon' | 'bsc'
   | 'avalanche' | 'fuji' | 'fantom' | 'gnosis' | 'zksync' | 'linea'
   | 'scroll' | 'blast' | 'mantle' | 'celo' | 'moonbeam' | 'cronos'
-  | 'berachain' | 'sepolia' | 'base-sepolia';
+  | 'berachain' | 'robinhood' | 'sepolia' | 'base-sepolia';
 
 /** Network specifier: named chain, custom config, or chain ID */
 export type NetworkOption =
