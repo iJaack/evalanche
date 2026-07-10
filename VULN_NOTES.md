@@ -5,7 +5,7 @@ This file is a short current-state security posture note, not a historical remed
 <!-- GENERATED:vuln-snapshot:start -->
 ## Current Release Snapshot
 
-- Current release: `1.11.0`
+- Current release: `1.12.0`
 - `npm audit --omit=dev`: `1 critical`, `13 high`, `12 low`
 
 ## Active Overrides
@@ -13,6 +13,9 @@ This file is a short current-state security posture note, not a historical remed
 - `@ledgerhq/cryptoassets`: `9.13.0`
 - `@hpke/core`: `^1.9.0`
 - `axios`: `1.13.6`
+- `form-data`: `4.0.6`
+- `ws`: `8.21.0`
+- `@cosmjs/socket.ws`: `7.5.11`
 - `@osmonauts/lcd.axios`: `^1.13.6`
 <!-- GENERATED:vuln-snapshot:end -->
 

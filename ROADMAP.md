@@ -5,12 +5,12 @@ This is the active roadmap for the repository.
 <!-- GENERATED:roadmap-release:start -->
 ## Latest Shipped Release
 
-- Latest release: [v1.11.0](docs/releases/RELEASE_NOTES_1.11.0.md)
-- Shipped in `v1.11.0`:
-  - Replaces the Polymarket SDK execution path with the official `polymarket` CLI for authenticated venue operations.
-  - Routes the MCP Polymarket wallet tools through a hardened CLI adapter that uses `execFile`, forces JSON output, avoids argv secrets, redacts signer material, and fails closed on malformed CLI output.
-  - Removes `@polymarket/clob-client`, `@polymarket/clob-client-v2`, and the local Polymarket client type shim from the package dependency surface.
-  - Removes hidden raw/diagnostic Polymarket write paths so production agents use the advertised preflight, execution, and reconciliation tools.
+- Latest release: [v1.12.0](docs/releases/RELEASE_NOTES_1.12.0.md)
+- Shipped in `v1.12.0`:
+  - Adds first-class Robinhood Chain mainnet support through the named `robinhood` network alias and chain ID `4663`, with official ETH, RPC, explorer, and LI.FI metadata.
+  - Extends wallet boot, network switching, MCP chain discovery and switching, and native holdings scans to Robinhood Chain through Evalanche's central EVM registry.
+  - Adds production RPC overrides through `ROBINHOOD_RPC_URLS`, `EVALANCHE_ROBINHOOD_RPC_URLS`, and MCP `AVALANCHE_RPC_URL` while keeping the selected network alias authoritative.
+  - Certifies LI.FI native ETH quote construction for Robinhood Chain and prevents non-Gas.zip routes from being mislabeled as Gas.zip.
 
 ## Current Focus
 

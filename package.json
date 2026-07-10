@@ -1,6 +1,6 @@
 {
   "name": "evalanche",
-  "version": "1.11.0",
+  "version": "1.12.0",
   "description": "Multi-EVM agent wallet SDK with unified holdings discovery, onchain identity (ERC-8004), x402 payments, cross-chain liquidity (Li.Fi + Gas.zip), prediction markets, DeFi, and perpetual futures",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
@@ -67,6 +67,11 @@
     "@ledgerhq/cryptoassets": "9.13.0",
     "@hpke/core": "^1.9.0",
     "axios": "1.13.6",
+    "form-data": "4.0.6",
+    "ws": "8.21.0",
+    "@cosmjs/socket": {
+      "ws": "7.5.11"
+    },
     "@osmonauts/lcd": {
       "axios": "^1.13.6"
     }
