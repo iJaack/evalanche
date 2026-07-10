@@ -49,6 +49,7 @@ describe('Chain Registry', () => {
         lifiChainKey: 'out',
       });
       expect(CHAINS[4663].rpc).toContain('https://rpc.mainnet.chain.robinhood.com');
+      expect(CHAINS[4663].gasZipSupported).toBe(false);
       expect(CHAINS[4663].isTestnet).not.toBe(true);
     });
 

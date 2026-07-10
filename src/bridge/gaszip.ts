@@ -10,6 +10,7 @@
  */
 
 import type { AgentSigner } from '../wallet/signer';
+import { getChainById } from '../utils/chains';
 import { EvalancheError, EvalancheErrorCode } from '../utils/errors';
 import { safeFetch } from '../utils/safe-fetch';
 import { formatEther, parseEther } from 'ethers';
@@ -128,7 +129,20 @@ export class GasZipClient {
     }
   }
 
+  private assertSupportedChainPair(params: GasZipParams): void {
+    for (const chainId of [params.fromChainId, params.toChainId]) {
+      const chain = getChainById(chainId);
+      if (chain?.gasZipSupported === false) {
+        throw new EvalancheError(
+          `Gas.zip does not currently support ${chain.name} (${chain.id})`,
+          EvalancheErrorCode.GAS_ZIP_ERROR,
+        );
+      }
+    }
+  }
+
   private async findQuote(params: GasZipParams): Promise<GasZipQuote> {
+    this.assertSupportedChainPair(params);
     const targetToAmountWei = parseEther(params.destinationGasAmount ?? DEFAULT_DESTINATION_GAS_AMOUNT);
     let low = targetToAmountWei;
     let lowQuote = await this.fetchLiFiQuote(params, low);
@@ -187,6 +201,7 @@ export class GasZipClient {
       fromAddress,
       toAddress: params.toAddress,
       integrator: 'evalanche',
+      allowBridges: 'gasZipBridge',
     });
 
     const res = await safeFetch(`${LIFI_API}/quote?${searchParams}`, {

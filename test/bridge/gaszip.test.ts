@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { GasZipClient } from '../../src/bridge/gaszip';
 import type { GasZipParams } from '../../src/bridge/gaszip';
+import { EvalancheErrorCode } from '../../src/utils/errors';
 
 // Mock global fetch
 const mockFetch = vi.fn();
@@ -54,16 +55,28 @@ describe('GasZipClient', () => {
       const quote = await client.getQuote(baseParams);
 
       expect(mockFetch).toHaveBeenCalledTimes(1);
-      const callUrl = mockFetch.mock.calls[0][0] as string;
-      expect(callUrl).toContain('li.quest/v1/quote');
-      expect(callUrl).toContain('fromChain=1');
-      expect(callUrl).toContain('toChain=42161');
+      const callUrl = new URL(mockFetch.mock.calls[0][0] as string);
+      expect(callUrl.toString()).toContain('li.quest/v1/quote');
+      expect(callUrl.searchParams.get('fromChain')).toBe('1');
+      expect(callUrl.searchParams.get('toChain')).toBe('42161');
+      expect(callUrl.searchParams.get('allowBridges')).toBe('gasZipBridge');
 
       expect(quote.fromChainId).toBe(1);
       expect(quote.toChainId).toBe(42161);
       expect(quote.depositAddress).toBe('0xgaszipdepositaddress');
       expect(quote.fromAmount).toBe('0.01');
       expect(quote.toAmount).toBe('0.01');
+    });
+
+    it('should reject Robinhood Chain before requesting a quote', async () => {
+      const error = await client.getQuote({
+        ...baseParams,
+        toChainId: 4663,
+      }).catch((caught) => caught);
+
+      expect(error).toMatchObject({ code: EvalancheErrorCode.GAS_ZIP_ERROR });
+      expect(error.message).toContain('Robinhood Chain (4663)');
+      expect(mockFetch).not.toHaveBeenCalled();
     });
 
     it('should throw on API error', async () => {

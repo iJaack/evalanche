@@ -78,6 +78,51 @@ describe('LiFiClient', () => {
       expect(quote.estimatedTime).toBe(120);
     });
 
+    it('should construct a native ETH quote to Robinhood Chain', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: 'ethereum-robinhood-eth',
+          tool: 'across',
+          action: {
+            fromChainId: 1,
+            toChainId: 4663,
+            fromToken: { address: NATIVE_TOKEN },
+            toToken: { address: NATIVE_TOKEN },
+            fromAmount: '1000000000000000',
+          },
+          estimate: {
+            toAmount: '985000000000000',
+            gasCosts: [{ amountUSD: '0.25' }],
+            executionDuration: 10,
+          },
+          transactionRequest: {
+            to: '0xbridge',
+            data: '0x',
+            value: '1000000000000000',
+          },
+        }),
+      });
+
+      const quote = await client.getQuote({
+        ...baseParams,
+        toChainId: 4663,
+        fromAmount: '0.001',
+      });
+
+      const callUrl = new URL(mockFetch.mock.calls[0][0] as string);
+      expect(callUrl.searchParams.get('fromChain')).toBe('1');
+      expect(callUrl.searchParams.get('toChain')).toBe('4663');
+      expect(callUrl.searchParams.get('fromToken')).toBe(NATIVE_TOKEN);
+      expect(callUrl.searchParams.get('toToken')).toBe(NATIVE_TOKEN);
+      expect(quote).toMatchObject({
+        id: 'ethereum-robinhood-eth',
+        fromChainId: 1,
+        toChainId: 4663,
+        tool: 'across',
+      });
+    });
+
     it('should flatten CAIP-style EVM sender addresses for Base to Polygon USDC quotes', async () => {
       const walletAddress = '0x0fE61780BD5508b3C99E420662050E5560608cA4';
       const baseUsdc = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';

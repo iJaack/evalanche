@@ -27,6 +27,8 @@ export interface ChainConfig {
   routescanExplorer?: string;
   /** Li.Fi chain key for bridging */
   lifiChainKey?: string;
+  /** Explicit Gas.zip availability override; undefined delegates to live vendor behavior. */
+  gasZipSupported?: boolean;
   /** Whether this is a testnet */
   isTestnet?: boolean;
 }
@@ -170,6 +172,7 @@ export const CHAINS: Record<number, ChainConfig> = {
     ),
     explorer: 'https://robinhoodchain.blockscout.com',
     lifiChainKey: 'out',
+    gasZipSupported: false,
   },
 
   5000: {
