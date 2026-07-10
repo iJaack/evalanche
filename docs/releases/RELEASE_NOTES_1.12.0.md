@@ -7,7 +7,7 @@
 - Rejects Gas.zip requests involving Robinhood Chain before network access while LI.FI's live `gasZipBridge` capability matrix excludes chain `4663`.
 - Scopes MCP RPC overrides to their selected network so switching chains cannot retain a stale wrong-chain provider.
 - Pins patched `form-data` and `ws` transitive releases, clearing the newly disclosed advisories without increasing the accepted production-audit baseline.
-- Pins release automation to npm `11.12.1`, the supported npm line for the workflow's Node.js 20 runtime.
+- Pin the release workflow npm version to `11.12.1`, the supported npm line for its Node.js 20 runtime.
 
 ## Validation
 
