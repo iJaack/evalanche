@@ -2,6 +2,7 @@ node_modules/
 dist/
 website-dist/
 .release-artifacts/
+.worktrees/
 *.tsbuildinfo
 *.db
 .DS_Store
