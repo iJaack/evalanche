@@ -10,7 +10,7 @@
  *   AGENT_MNEMONIC     — Agent wallet mnemonic (optional alternative to private key)
  *   AGENT_ID           — ERC-8004 agent ID (optional, enables identity)
  *   AGENT_REGISTRY     — ERC-8004 registry address (optional, defaults to mainnet)
- *   AVALANCHE_NETWORK  — "avalanche" | "fuji" (default: "avalanche")
+ *   AVALANCHE_NETWORK  — named EVM alias such as "avalanche", "base", or "robinhood" (default: "avalanche")
  *   AVALANCHE_RPC_URL  — Custom RPC URL (overrides network default)
  *   EVALANCHE_MCP_HTTP_TOKEN — Required bearer token for --http mode
  */

@@ -310,7 +310,10 @@ const TOOLS: MCPTool[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        network: { type: 'string', description: 'Network name (e.g. "ethereum", "base", "arbitrum", "optimism", "polygon")' },
+        network: {
+          type: 'string',
+          description: 'Network name (e.g. "ethereum", "base", "robinhood", "arbitrum", "optimism", "polygon")',
+        },
       },
       required: ['network'],
     },

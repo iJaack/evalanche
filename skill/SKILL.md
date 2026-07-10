@@ -4,7 +4,7 @@ description: >
   Multi-EVM agent wallet SDK with onchain identity (ERC-8004), payment rails (x402),
   cross-chain liquidity (Li.Fi bridging + DEX aggregation + DeFi Composer), destination gas funding (Gas.zip),
   perpetual futures trading (dYdX v4), market intelligence (CoinGecko), prediction markets (Polymarket CLOB), and DeFi operations (liquid staking + EIP-4626 vaults).
-  Supports 21+ EVM chains: Ethereum, Base, Arbitrum, Optimism, Polygon, BSC, Avalanche, and more.
+  Supports 22+ EVM chains: Ethereum, Base, Arbitrum, Optimism, Polygon, BSC, Avalanche, and more.
   Agents generate and manage their own keys — no human input required.
   Use when: booting an autonomous agent wallet on any EVM chain, sending tokens, calling contracts,
   resolving agent identity, checking reputation, making x402 payment-gated API calls,
@@ -56,7 +56,7 @@ metadata:
             },
             {
               "name": "AVALANCHE_NETWORK",
-              "description": "EVM chain alias: 'ethereum', 'base', 'arbitrum', 'optimism', 'polygon', 'bsc', 'avalanche', 'fuji', etc. Default: avalanche.",
+              "description": "EVM chain alias: 'ethereum', 'base', 'robinhood', 'arbitrum', 'optimism', 'polygon', 'bsc', 'avalanche', 'fuji', etc. Default: avalanche.",
               "required": false,
             },
             {
@@ -92,14 +92,14 @@ metadata:
 
 # Evalanche — Multi-EVM Agent Wallet
 
-Headless wallet SDK with ERC-8004 identity, x402 payments, Li.Fi cross-chain liquidity (bridging + DEX aggregation + DeFi Composer), Gas.zip gas funding, dYdX v4 perpetuals, CoinGecko market intelligence, Polymarket market discovery and execution, contract interaction helpers (approve-and-call + UUPS upgrade), and DeFi operations (liquid staking + EIP-4626 vaults). Works on 21+ EVM chains. Works as CLI or MCP server.
+Headless wallet SDK with ERC-8004 identity, x402 payments, Li.Fi cross-chain liquidity (bridging + DEX aggregation + DeFi Composer), Gas.zip gas funding, dYdX v4 perpetuals, CoinGecko market intelligence, Polymarket market discovery and execution, contract interaction helpers (approve-and-call + UUPS upgrade), and DeFi operations (liquid staking + EIP-4626 vaults). Works on 22+ EVM chains. Works as CLI or MCP server.
 
 **Source:** https://github.com/iJaack/evalanche
 **License:** MIT
 
 ## Supported Chains
 
-Ethereum, Base, Arbitrum, Optimism, Polygon, BSC, Avalanche, Fantom, Gnosis, zkSync Era, Linea, Scroll, Blast, Mantle, Celo, Moonbeam, Cronos, Berachain, + testnets (Fuji, Sepolia, Base Sepolia).
+Ethereum, Base, Arbitrum, Optimism, Polygon, BSC, Avalanche, Robinhood Chain, Fantom, Gnosis, zkSync Era, Linea, Scroll, Blast, Mantle, Celo, Moonbeam, Cronos, Berachain, + testnets (Fuji, Sepolia, Base Sepolia).
 
 Routescan RPCs preferred where available, with public fallback RPCs.
 
@@ -191,7 +191,7 @@ AVALANCHE_NETWORK=base evalanche-mcp
 | Tool | Description |
 |------|-------------|
 | `get_network` | Get current network config |
-| `get_supported_chains` | List all 21+ supported chains |
+| `get_supported_chains` | List all 22+ supported chains |
 | `get_chain_info` | Get details for a specific chain |
 | `switch_network` | Switch to different EVM chain |
 

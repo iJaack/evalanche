@@ -95,3 +95,12 @@ Do not ship if any of these fail:
 - venue or protocol verification disagrees with the local submission result
 - a previously fixed bug reproduces without a failing automated test
 - the report-closure matrix still has any in-scope claim without regression coverage
+
+## Robinhood Chain mainnet
+
+- `eth_chainId` against `https://rpc.mainnet.chain.robinhood.com` returns `0x1237` (`4663`).
+- `Evalanche.getSupportedChains(false)` includes `Robinhood Chain` and excludes chain `46630`.
+- MCP `get_supported_chains` and `switch_network` expose alias `robinhood` and chain ID `4663`.
+- A read-only LI.FI native ETH quote from Ethereum (`1`) to Robinhood Chain (`4663`) returns a route or an exact current liquidity/provider error.
+- `fund_destination_gas` involving chain `4663` fails before execution with `Gas.zip does not currently support Robinhood Chain (4663)`.
+- No bridge, gas-funding, transfer, or contract transaction is broadcast during this smoke pass.

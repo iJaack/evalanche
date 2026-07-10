@@ -40,6 +40,13 @@ const holdings = await agent.holdings().scan();
 console.log(holdings.summary);
 ```
 
+```ts
+const { agent: robinhoodAgent } = await Evalanche.boot({ network: 'robinhood' });
+console.log(robinhoodAgent.getChainInfo()); // Robinhood Chain, chain ID 4663
+```
+
+Robinhood's public RPC is rate-limited. For production, set `ROBINHOOD_RPC_URLS` or `EVALANCHE_ROBINHOOD_RPC_URLS` to a comma-separated list of provider endpoints. LI.FI bridging is supported when a live route is available; Gas.zip does not currently advertise Robinhood Chain support.
+
 ## MCP
 
 ```bash
@@ -64,7 +71,7 @@ EVALANCHE_MCP_HTTP_TOKEN="$(openssl rand -hex 32)" npx evalanche-mcp --http --po
 
 ## Also Works Across EVM
 
-Avalanche is the primary path, but Evalanche also supports Base, Ethereum, Arbitrum, Optimism, Polygon, BSC, and other EVM networks for execution and holdings discovery.
+Avalanche is the primary path, but Evalanche also supports Robinhood Chain, Base, Ethereum, Arbitrum, Optimism, Polygon, BSC, and other EVM networks for execution and holdings discovery.
 
 ## Docs
 
