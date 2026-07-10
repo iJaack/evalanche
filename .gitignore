@@ -3,6 +3,7 @@ dist/
 website-dist/
 .release-artifacts/
 .worktrees/
+.superpowers/
 *.tsbuildinfo
 *.db
 .DS_Store
