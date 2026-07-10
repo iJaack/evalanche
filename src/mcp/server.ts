@@ -3030,7 +3030,12 @@ export class EvalancheMCPServer {
           // Validate the network name
           const networkConfig = getNetworkConfig(networkName as EvalancheConfig['network'] & string);
           // Recreate agent on the new network
-          this.config = { ...this.config, network: networkName as EvalancheConfig['network'] & string };
+          const currentNetwork = this.config.network ?? 'avalanche';
+          this.config = {
+            ...this.config,
+            network: networkName as EvalancheConfig['network'] & string,
+            rpcOverride: currentNetwork === networkName ? this.config.rpcOverride : undefined,
+          };
           this.agent = new Evalanche(this.config);
           this.rebindAgentState();
           result = { network: networkName, ...networkConfig, address: this.agent.address };

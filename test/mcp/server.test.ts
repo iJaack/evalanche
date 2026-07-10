@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { request } from 'http';
 import { EvalancheMCPServer } from '../../src/mcp/server';
+import { getNetworkConfig } from '../../src/utils/networks';
 
 const mockProvider = {
   getBalance: vi.fn().mockResolvedValue(BigInt('1000000000000000000')),
@@ -599,6 +600,88 @@ describe('EvalancheMCPServer', () => {
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.network).toBe('base');
     expect(parsed.address).toMatch(/^0x/);
+  });
+
+  it('uses the Base registry RPC after switching away from a Robinhood override', async () => {
+    const robinhoodRpc = 'https://robinhood-rpc.example';
+    const switchingServer = new EvalancheMCPServer({
+      privateKey: '0x' + 'a'.repeat(64),
+      network: 'robinhood',
+      rpcOverride: robinhoodRpc,
+    });
+    expect(lastJsonRpcProviderArgs[0]).toBe(robinhoodRpc);
+
+    const res = await switchingServer.handleRequest({
+      jsonrpc: '2.0',
+      id: 10_8453,
+      method: 'tools/call',
+      params: { name: 'switch_network', arguments: { network: 'base' } },
+    });
+    const result = res.result as { content: Array<{ text: string }> };
+    const parsed = JSON.parse(result.content[0].text);
+
+    expect(parsed).toMatchObject({ network: 'base', chainId: 8453, name: 'Base' });
+    expect(lastJsonRpcProviderArgs[0]).toBe(getNetworkConfig('base').rpcUrl);
+    expect(lastJsonRpcProviderArgs[0]).not.toBe(robinhoodRpc);
+  });
+
+  it('preserves an RPC override when switching to the same named network', async () => {
+    const robinhoodRpc = 'https://robinhood-rpc.example';
+    const switchingServer = new EvalancheMCPServer({
+      privateKey: '0x' + 'a'.repeat(64),
+      network: 'robinhood',
+      rpcOverride: robinhoodRpc,
+    });
+
+    await switchingServer.handleRequest({
+      jsonrpc: '2.0',
+      id: 10_4663_1,
+      method: 'tools/call',
+      params: { name: 'switch_network', arguments: { network: 'robinhood' } },
+    });
+
+    expect(lastJsonRpcProviderArgs[0]).toBe(robinhoodRpc);
+  });
+
+  it('treats an omitted startup network as avalanche when preserving an RPC override', async () => {
+    const avalancheRpc = 'https://avalanche-rpc.example';
+    const switchingServer = new EvalancheMCPServer({
+      privateKey: '0x' + 'a'.repeat(64),
+      rpcOverride: avalancheRpc,
+    });
+
+    await switchingServer.handleRequest({
+      jsonrpc: '2.0',
+      id: 10_43114,
+      method: 'tools/call',
+      params: { name: 'switch_network', arguments: { network: 'avalanche' } },
+    });
+
+    expect(lastJsonRpcProviderArgs[0]).toBe(avalancheRpc);
+  });
+
+  it('clears an RPC override when switching from a custom network object', async () => {
+    const customRpcOverride = 'https://custom-override.example';
+    const switchingServer = new EvalancheMCPServer({
+      privateKey: '0x' + 'a'.repeat(64),
+      network: {
+        rpcUrl: 'https://custom-network.example',
+        chainId: 999,
+        name: 'Custom Network',
+      },
+      rpcOverride: customRpcOverride,
+    });
+    expect(lastJsonRpcProviderArgs[0]).toBe(customRpcOverride);
+
+    await switchingServer.handleRequest({
+      jsonrpc: '2.0',
+      id: 10_43114_2,
+      method: 'tools/call',
+      params: { name: 'switch_network', arguments: { network: 'avalanche' } },
+    });
+
+    expect(lastJsonRpcProviderArgs[0]).toBe(getNetworkConfig('avalanche').rpcUrl);
+    expect(lastJsonRpcProviderArgs[0]).not.toBe(customRpcOverride);
   });
 
   it('switches the MCP wallet to Robinhood Chain', async () => {
