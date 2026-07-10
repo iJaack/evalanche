@@ -10,8 +10,8 @@ Avalanche-first agent wallet and execution SDK for AI agents, with multi-EVM sup
 - Current package surface:
   - Adds first-class Robinhood Chain mainnet support through the named `robinhood` network alias and chain ID `4663`, with official ETH, RPC, explorer, and LI.FI metadata.
   - Extends wallet boot, network switching, MCP chain discovery and switching, and native holdings scans to Robinhood Chain through Evalanche's central EVM registry.
-  - Adds production RPC overrides through `ROBINHOOD_RPC_URLS`, `EVALANCHE_ROBINHOOD_RPC_URLS`, and MCP `AVALANCHE_RPC_URL` while keeping the selected network alias authoritative.
-  - Certifies LI.FI native ETH quote construction for Robinhood Chain and prevents non-Gas.zip routes from being mislabeled as Gas.zip.
+  - Preserves the Robinhood network with RPC overrides supplied through `ROBINHOOD_RPC_URLS`, `EVALANCHE_ROBINHOOD_RPC_URLS`, and MCP `AVALANCHE_RPC_URL`, keeping the selected network alias authoritative.
+  - Tests certify Robinhood bridge capabilities through LI.FI native ETH quote construction and prevent non-Gas.zip routes from being mislabeled as Gas.zip.
 - Docs:
   - [Release notes](docs/releases/README.md)
   - [Roadmap](ROADMAP.md)
