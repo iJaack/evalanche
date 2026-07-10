@@ -77,6 +77,19 @@ describe('GasZipClient', () => {
       expect(error).toMatchObject({ code: EvalancheErrorCode.GAS_ZIP_ERROR });
       expect(error.message).toContain('Robinhood Chain (4663)');
       expect(mockFetch).not.toHaveBeenCalled();
+      expect(mockSigner.sendTransaction).not.toHaveBeenCalled();
+    });
+
+    it('should reject Robinhood Chain as the source before requesting a quote', async () => {
+      const error = await client.getQuote({
+        ...baseParams,
+        fromChainId: 4663,
+      }).catch((caught) => caught);
+
+      expect(error).toMatchObject({ code: EvalancheErrorCode.GAS_ZIP_ERROR });
+      expect(error.message).toContain('Robinhood Chain (4663)');
+      expect(mockFetch).not.toHaveBeenCalled();
+      expect(mockSigner.sendTransaction).not.toHaveBeenCalled();
     });
 
     it('should throw on API error', async () => {
@@ -91,6 +104,18 @@ describe('GasZipClient', () => {
   });
 
   describe('fundGas', () => {
+    it.each([
+      ['source', { ...baseParams, fromChainId: 4663 }],
+      ['destination', { ...baseParams, toChainId: 4663 }],
+    ])('should reject Robinhood Chain as the %s before fetching or sending', async (_label, params) => {
+      await expect(client.fundGas(params, mockSigner)).rejects.toMatchObject({
+        code: EvalancheErrorCode.GAS_ZIP_ERROR,
+      });
+
+      expect(mockFetch).not.toHaveBeenCalled();
+      expect(mockSigner.sendTransaction).not.toHaveBeenCalled();
+    });
+
     it('should get quote and send deposit transaction', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,

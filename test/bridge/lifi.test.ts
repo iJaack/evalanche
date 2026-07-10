@@ -79,6 +79,7 @@ describe('LiFiClient', () => {
     });
 
     it('should construct a native ETH quote to Robinhood Chain', async () => {
+      const toAddress = '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd';
       mockFetch.mockResolvedValueOnce({
         ok: true,
         json: async () => ({
@@ -108,6 +109,7 @@ describe('LiFiClient', () => {
         ...baseParams,
         toChainId: 4663,
         fromAmount: '0.001',
+        toAddress,
       });
 
       const callUrl = new URL(mockFetch.mock.calls[0][0] as string);
@@ -115,6 +117,9 @@ describe('LiFiClient', () => {
       expect(callUrl.searchParams.get('toChain')).toBe('4663');
       expect(callUrl.searchParams.get('fromToken')).toBe(NATIVE_TOKEN);
       expect(callUrl.searchParams.get('toToken')).toBe(NATIVE_TOKEN);
+      expect(callUrl.searchParams.get('fromAmount')).toBe('1000000000000000');
+      expect(callUrl.searchParams.get('fromAddress')).toBe(baseParams.fromAddress);
+      expect(callUrl.searchParams.get('toAddress')).toBe(toAddress);
       expect(quote).toMatchObject({
         id: 'ethereum-robinhood-eth',
         fromChainId: 1,

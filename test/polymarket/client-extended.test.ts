@@ -1267,35 +1267,3 @@ describe('MCP server Polymarket inspection and reconciliation', () => {
     expect(parsed.positions.relevantPosition.asset).toBe('tok-1');
   });
 });
-
-// ── CLI: buildConfig chain mapping ──────────────────────────────────────────
-// Tested at the logic level by extracting the same chainIdMap used in cli.ts.
-
-describe('CLI chainIdMap', () => {
-  const chainIdMap: Record<string, number> = {
-    ethereum: 1,
-    optimism: 10,
-    bsc: 56,
-    polygon: 137,
-    base: 8453,
-    arbitrum: 42161,
-    avalanche: 43114,
-    fuji: 43113,
-  };
-
-  it('maps all documented network names to correct chain IDs', () => {
-    expect(chainIdMap.avalanche).toBe(43114);
-    expect(chainIdMap.fuji).toBe(43113);
-    expect(chainIdMap.polygon).toBe(137);
-    expect(chainIdMap.base).toBe(8453);
-    expect(chainIdMap.arbitrum).toBe(42161);
-    expect(chainIdMap.optimism).toBe(10);
-    expect(chainIdMap.ethereum).toBe(1);
-    expect(chainIdMap.bsc).toBe(56);
-  });
-
-  it('falls back to 43114 (avalanche) for unknown network names', () => {
-    const unknown = 'unknown-net';
-    expect(chainIdMap[unknown] ?? 43114).toBe(43114);
-  });
-});
