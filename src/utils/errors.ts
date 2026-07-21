@@ -59,6 +59,8 @@ export enum EvalancheErrorCode {
   VAULT_ERROR = 'VAULT_ERROR',
   INTEROP_ADDRESS_ERROR = 'INTEROP_ADDRESS_ERROR',
   DAPP_RESOLUTION_ERROR = 'DAPP_RESOLUTION_ERROR',
+  A2A_ERROR = 'A2A_ERROR',
+  A2A_TASK_FAILED = 'A2A_TASK_FAILED',
 }
 
 export class EvalancheError extends Error {
