@@ -9,6 +9,14 @@ Use this runbook before cutting an execution-facing release. The goal is to conf
 - Do not reuse historical output as proof; rerun the checks on the target release commit.
 - Record tx hashes, order IDs, and reconciliation output for each surface.
 
+## Automated public reads
+
+Run `npm run smoke:live -- --out .release-artifacts/live-reads.json`. This checks Avalanche and Robinhood chain IDs, Hyperliquid and Polymarket market responses and an Ethereum-to-Robinhood LI.FI quote without loading a wallet.
+
+Each check has a deadline, bounded response size and schema validation. Evidence contains the commit, timestamp, HTTP status and outcome; response bodies are not retained. The daily workflow and release workflow run the same checks. Provider errors fail the run and must be investigated; a quote or successful read does not certify execution.
+
+`node scripts/release-smoke.mjs` remains the separate deterministic smoke with mocked provider responses.
+
 ## 1. Polymarket
 
 ### Runtime prerequisites

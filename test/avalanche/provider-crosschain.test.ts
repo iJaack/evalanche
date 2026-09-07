@@ -3,15 +3,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const getDefaultMainnetProvider = vi.fn();
 const getDefaultFujiProvider = vi.fn();
 
-vi.mock('@avalabs/core-wallets-sdk', () => ({
-  Avalanche: {
+vi.mock('../../src/avalanche/sdk', () => ({
+  loadAvalancheSdk: () => ({
     JsonRpcProvider: {
       getDefaultMainnetProvider,
       getDefaultFujiProvider,
     },
     MainnetContext: { networkID: 1 },
     FujiContext: { networkID: 5 },
-  },
+  }),
 }));
 
 describe('Avalanche provider + chain ops', () => {

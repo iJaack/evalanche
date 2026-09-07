@@ -444,3 +444,11 @@ Use [docs/live-smoke-checklist.md](/Users/jaack/Desktop/Github/evalanche/docs/li
 - Hyperliquid tiny trade + order verification
 - LI.FI tiny swap/bridge execution + tx verification
 - sAVAX / EIP-4626 tiny round-trip + balance/share verification
+
+
+## v1.13.0 execution reliability
+
+- A vault position can have verified shares but no `underlyingValue` when conversion fails. Honor the scan warning and medium confidence; never substitute shares for assets.
+- The dYdX SDK is optional. An installation made with `--omit=optional` must add `@dydxprotocol/v4-client-js` before using dYdX.
+- Zero high/critical audit counts require the shipped security-overrides.json recipe at the consumer root. Plain installs still inherit upstream advisories; audit the resolved tree.
+- A2A task execution is not shipped. Existing agent-card identity support does not authorize or expose remote wallet actions.

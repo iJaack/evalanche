@@ -204,13 +204,14 @@ function buildVulnSection({ version, auditData, overrides }) {
   const critical = vulnCounts?.critical ?? 'unknown';
   const high = vulnCounts?.high ?? 'unknown';
   const low = vulnCounts?.low ?? 'unknown';
+  const moderate = vulnCounts?.moderate ?? 'unknown';
   const overrideLines = buildOverridesSnapshot(overrides);
 
   return [
     '## Current Release Snapshot',
     '',
     `- Current release: \`${version}\``,
-    `- \`npm audit --omit=dev\`: \`${critical} critical\`, \`${high} high\`, \`${low} low\``,
+    `- \`npm audit --omit=dev\` (repository overrides): \`${critical} critical\`, \`${high} high\`, \`${moderate} moderate\`, \`${low} low\``,
     '',
     '## Active Overrides',
     '',

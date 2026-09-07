@@ -103,7 +103,9 @@ describe('refreshReleaseDocs', () => {
     expect(roadmap).toContain('- First focus');
     expect(roadmap).toContain('- Second focus');
     expect(security).toContain('| 1.8.x   | :white_check_mark: |');
-    expect(vulnNotes).toContain('`0 critical`, `3 high`, `18 low`');
+    expect(vulnNotes).toContain('`0 critical`, `3 high`');
+    expect(vulnNotes).toContain('`18 low`');
+    expect(vulnNotes).toContain('(repository overrides)');
   });
 
   it('is deterministic and no-ops on the second run', async () => {

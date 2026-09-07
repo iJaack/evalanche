@@ -39,7 +39,7 @@ async function loadDydxSdk(): Promise<DydxSdk> {
       return normalizeDydxSdk(await import('@dydxprotocol/v4-client-js'));
     } catch (importError) {
       try {
-        const req = createRequire(import.meta.url);
+        const req = createRequire(typeof __filename === 'string' ? __filename : import.meta.url);
         return normalizeDydxSdk(req('@dydxprotocol/v4-client-js'));
       } catch (requireError) {
         dydxSdkPromise = null;

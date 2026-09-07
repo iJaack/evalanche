@@ -121,7 +121,7 @@ export class HoldingsClient {
 
     for (const source of defiSources) {
       try {
-        const detected = await this.scanPositionSource(source, walletAddress);
+        const detected = await this.scanPositionSource(source, walletAddress, warnings);
         holdings.push(...detected);
       } catch (error) {
         warnings.push(`${source.detectorId}:${source.protocolId}:${error instanceof Error ? error.message : String(error)}`);
@@ -223,10 +223,10 @@ export class HoldingsClient {
     };
   }
 
-  private async scanPositionSource(source: PositionSourceRecord, walletAddress: string): Promise<HoldingRecord[]> {
+  private async scanPositionSource(source: PositionSourceRecord, walletAddress: string, warnings: string[]): Promise<HoldingRecord[]> {
     switch (source.detectorId) {
       case 'erc4626_detector':
-        return this.scanVaultSource(source, walletAddress);
+        return this.scanVaultSource(source, walletAddress, warnings);
       case 'liquid_staking_detector':
         return this.scanReceiptSource(source, walletAddress, 'staking');
       case 'lending_receipt_detector':
@@ -258,7 +258,7 @@ export class HoldingsClient {
     }
   }
 
-  private async scanVaultSource(source: PositionSourceRecord, walletAddress: string): Promise<HoldingRecord[]> {
+  private async scanVaultSource(source: PositionSourceRecord, walletAddress: string, warnings: string[]): Promise<HoldingRecord[]> {
     if (!source.address || !isChainName(source.chain)) return [];
     const provider = this.getAgentForChain(source.chain).provider;
     const vault = new Contract(source.address, ERC4626_ABI, provider as any);
@@ -273,7 +273,12 @@ export class HoldingsClient {
 
     const assetRecord = this.registry.getAssets()
       .find((asset) => asset.chain === source.chain && asset.address.toLowerCase() === String(assetAddress).toLowerCase());
-    const underlyingValue: bigint = await vault.convertToAssets(balance).catch(() => balance);
+    let underlyingValue: bigint | undefined;
+    try {
+      underlyingValue = await vault.convertToAssets(balance);
+    } catch {
+      warnings.push(`${source.detectorId}:${source.protocolId}:underlying value unavailable; convertToAssets failed`);
+    }
     const protocol = this.getProtocol(source.protocolId);
 
     return [{
@@ -286,7 +291,7 @@ export class HoldingsClient {
       symbol: String(symbol),
       displayBalance: formatUnits(balance, Number(shareDecimals)),
       rawBalance: balance.toString(),
-      underlyingValue: assetRecord
+      underlyingValue: underlyingValue === undefined ? undefined : assetRecord
         ? formatUnits(underlyingValue, assetRecord.decimals)
         : underlyingValue.toString(),
       underlyingToken: assetRecord?.symbol,
@@ -295,7 +300,7 @@ export class HoldingsClient {
         shareDecimals: Number(shareDecimals),
       },
       source: source.source,
-      confidence: 'high',
+      confidence: underlyingValue === undefined ? 'medium' : 'high',
     }];
   }
 

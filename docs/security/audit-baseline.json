@@ -1,31 +1,14 @@
 {
-  "version": "1.11.0",
+  "version": "1.13.0",
   "counts": {
-    "critical": 1,
-    "high": 13,
-    "moderate": 12,
-    "low": 12,
     "info": 0,
-    "total": 38
+    "low": 23,
+    "moderate": 5,
+    "high": 0,
+    "critical": 0,
+    "total": 28
   },
-  "highPackages": [
-    "@avalabs/core-wallets-sdk",
-    "@avalabs/hw-app-avalanche",
-    "@confio/ics23",
-    "@cosmjs/stargate",
-    "@cosmjs/tendermint-rpc",
-    "@dydxprotocol/v4-client-js",
-    "@dydxprotocol/v4-proto",
-    "@ledgerhq/domain-service",
-    "@ledgerhq/evm-tools",
-    "@ledgerhq/hw-app-btc",
-    "@ledgerhq/hw-app-eth",
-    "axios",
-    "tiny-secp256k1"
-  ],
-  "criticalPackages": [
-    "protobufjs"
-  ],
-  "allowlistedHighPackages": [],
-  "allowlistedCriticalPackages": []
+  "highPackages": [],
+  "criticalPackages": [],
+  "highCriticalAdvisories": []
 }

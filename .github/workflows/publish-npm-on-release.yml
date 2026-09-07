@@ -181,6 +181,16 @@ jobs:
           VERSION="${{ steps.meta.outputs.version }}"
           node scripts/release-smoke.mjs --out "$RELEASE_ARTIFACT_DIR/release-smoke-v${VERSION}.json"
 
+      - name: Consumer install gate
+        run: |
+          VERSION="${{ steps.meta.outputs.version }}"
+          node scripts/check-consumer-install.mjs --pack-json "$RELEASE_ARTIFACT_DIR/npm-pack-v${VERSION}.json" --out "$RELEASE_ARTIFACT_DIR/consumer-install-v${VERSION}.json"
+
+      - name: Live read compatibility gate
+        run: |
+          VERSION="${{ steps.meta.outputs.version }}"
+          node scripts/live-read-smoke.mjs --out "$RELEASE_ARTIFACT_DIR/live-reads-v${VERSION}.json"
+
       - name: Audit regression gate
         shell: bash
         run: |
@@ -282,6 +292,8 @@ jobs:
             "$RELEASE_ARTIFACT_DIR/audit-report-v${VERSION}.json" \
             "$RELEASE_ARTIFACT_DIR/audit-regression-v${VERSION}.json" \
             "$RELEASE_ARTIFACT_DIR/release-smoke-v${VERSION}.json" \
+            "$RELEASE_ARTIFACT_DIR/consumer-install-v${VERSION}.json" \
+            "$RELEASE_ARTIFACT_DIR/live-reads-v${VERSION}.json" \
             "$RELEASE_ARTIFACT_DIR/release-manifest-v${VERSION}.json" \
             --clobber
 
@@ -338,7 +350,7 @@ jobs:
         shell: bash
         run: |
           VERSION="${{ steps.meta.outputs.version }}"
-          ASSETS="release-integrity-v${VERSION}.json,release-notes-coverage-v${VERSION}.json,mcp-tools-v${VERSION}.json,docs-parity-v${VERSION}.json,npm-pack-v${VERSION}.json,npm-tarball-check-v${VERSION}.json,evalanche-${VERSION}.tgz,audit-report-v${VERSION}.json,audit-regression-v${VERSION}.json,release-smoke-v${VERSION}.json,release-manifest-v${VERSION}.json"
+          ASSETS="release-integrity-v${VERSION}.json,release-notes-coverage-v${VERSION}.json,mcp-tools-v${VERSION}.json,docs-parity-v${VERSION}.json,npm-pack-v${VERSION}.json,npm-tarball-check-v${VERSION}.json,evalanche-${VERSION}.tgz,audit-report-v${VERSION}.json,audit-regression-v${VERSION}.json,release-smoke-v${VERSION}.json,consumer-install-v${VERSION}.json,live-reads-v${VERSION}.json,release-manifest-v${VERSION}.json"
           node scripts/build-release-summary.mjs \
             --version "$VERSION" \
             --release-notes "${{ steps.meta.outputs.release_notes_file }}" \

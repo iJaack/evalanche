@@ -1,4 +1,5 @@
-import { Avalanche } from '@avalabs/core-wallets-sdk';
+import type { Avalanche } from '@avalabs/core-wallets-sdk';
+import { loadAvalancheSdk } from './sdk';
 import type { AvalancheProvider } from './provider';
 import { EvalancheError, EvalancheErrorCode } from '../utils/errors';
 
@@ -20,6 +21,7 @@ export function createAvalancheSigner(
   provider: AvalancheProvider,
 ): AvalancheSigner {
   try {
+    const Avalanche = loadAvalancheSdk();
     return Avalanche.StaticSigner.fromMnemonic(
       mnemonic,
       "m/44'/9000'/0'/0/0",

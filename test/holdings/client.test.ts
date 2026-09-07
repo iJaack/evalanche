@@ -175,4 +175,26 @@ describe('HoldingsClient', () => {
 
     expect(switchedChains).toContain('robinhood');
   });
+
+  it('preserves vault shares without inventing underlying assets when conversion fails', async () => {
+    const conversion = CONTRACT_STATE['0x0000000f2eb9f69274678c76222b35eec7588a65'].convertToAssets as ReturnType<typeof vi.fn>;
+    conversion.mockRejectedValueOnce(new Error('RPC unavailable'));
+    const agent: any = {
+      address: '0x0fe61780bd5508b3C99e420662050e5560608cA4',
+      provider: {},
+      switchNetwork() { return this; },
+    };
+    const client = new HoldingsClient(agent);
+    const result = await client.scan({ chains: ['base'], include: ['defi'], protocols: ['yousd-vault'] });
+    expect(result.holdings).toHaveLength(1);
+    expect(result.holdings[0]).toMatchObject({
+      rawBalance: '24917987', displayBalance: '24.917987', confidence: 'medium',
+    });
+    expect(result.holdings[0].underlyingValue).toBeUndefined();
+    expect(result.warnings).toEqual([expect.stringContaining('underlying value unavailable')]);
+
+    const recovered = await client.scan({ chains: ['base'], include: ['defi'], protocols: ['yousd-vault'] });
+    expect(recovered.holdings[0]).toMatchObject({ underlyingValue: '26.771162', confidence: 'high' });
+    expect(recovered.warnings).toEqual([]);
+  });
 });

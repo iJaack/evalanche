@@ -1,8 +1,9 @@
-import { Avalanche } from '@avalabs/core-wallets-sdk';
+import type { Avalanche as AvalancheTypes } from '@avalabs/core-wallets-sdk';
+import { loadAvalancheSdk } from './sdk';
 import { EvalancheError, EvalancheErrorCode } from '../utils/errors';
 
 /** Avalanche provider wrapping core-wallets-sdk JsonRpcProvider */
-export type AvalancheProvider = InstanceType<typeof Avalanche.JsonRpcProvider>;
+export type AvalancheProvider = InstanceType<typeof AvalancheTypes.JsonRpcProvider>;
 
 // Cache providers by network
 const providerCache = new Map<string, AvalancheProvider>();
@@ -20,6 +21,7 @@ export async function createAvalancheProvider(
   if (cached) return cached;
 
   try {
+    const Avalanche = loadAvalancheSdk();
     // These are async factory methods that fetch context from the network
     const provider =
       network === 'avalanche'
@@ -43,7 +45,8 @@ export async function createAvalancheProvider(
  */
 export function getAvalancheContext(
   network: 'avalanche' | 'fuji',
-): typeof Avalanche.MainnetContext {
+): typeof AvalancheTypes.MainnetContext {
+  const Avalanche = loadAvalancheSdk();
   return network === 'avalanche'
     ? Avalanche.MainnetContext
     : Avalanche.FujiContext;

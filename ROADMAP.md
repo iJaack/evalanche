@@ -5,46 +5,44 @@ This is the active roadmap for the repository.
 <!-- GENERATED:roadmap-release:start -->
 ## Latest Shipped Release
 
-- Latest release: [v1.12.0](docs/releases/RELEASE_NOTES_1.12.0.md)
-- Shipped in `v1.12.0`:
-  - Adds first-class Robinhood Chain mainnet support through the named `robinhood` network alias and chain ID `4663`, with official ETH, RPC, explorer, and LI.FI metadata.
-  - Extends wallet boot, network switching, MCP chain discovery and switching, and native holdings scans to Robinhood Chain through Evalanche's central EVM registry.
-  - Preserves the Robinhood network with RPC overrides supplied through `ROBINHOOD_RPC_URLS`, `EVALANCHE_ROBINHOOD_RPC_URLS`, and MCP `AVALANCHE_RPC_URL`, keeping the selected network alias authoritative.
-  - Tests certify Robinhood bridge capabilities through LI.FI native ETH quote construction and prevent non-Gas.zip routes from being mislabeled as Gas.zip.
+- Latest release: [v1.13.0](docs/releases/RELEASE_NOTES_1.13.0.md)
+- Shipped in `v1.13.0`:
+  - Fix vault holdings conversion failures: preserve verified shares, omit unavailable underlying assets, emit a warning and lower confidence until conversion recovers.
+  - Run SDK tests, type checking, builds, docs parity, package validation and audit gates on pull requests and main pushes. Bound test workers to reduce CPU contention without increasing assertion timeouts.
+  - Add bounded live read compatibility checks for Avalanche, Robinhood Chain, Hyperliquid, Polymarket and LI.FI quotes, with timestamped commit-linked evidence and a daily workflow.
+  - Update axios, protobufjs, tiny-secp256k1, Hyperliquid, valibot, Vite, follow-redirects and @protobufjs/utf8; remove unused direct dependencies and make dYdX optional. The production audit baseline is now zero critical and zero high findings.
 
 ## Current Focus
 
-- Avalanche-first execution quality
-- Holdings coverage
-- Interop and transport
-- Security and dependency reduction
 <!-- GENERATED:roadmap-release:end -->
 
-## Near-Term Priorities
+## Milestone 1: SDK reliability — implemented in v1.13.0
 
-### 1. Avalanche-first execution quality
+- Run tests, typecheck, build, docs/exports/tarball checks and dependency audits on PRs and main.
+- Preserve vault shares when underlying conversion fails, with an unavailable value and explicit warning.
+- Bound test concurrency without relaxing test timeouts.
+- Completion check: full unit/regression suite, vault failure/recovery regression and release gates pass.
 
-- keep Avalanche as the primary docs, examples, and user path
-- expand canonical Avalanche app coverage
-- improve execution and verification for Avalanche-native protocols
+## Milestone 2: Dependency and provider verification — implemented in v1.13.0
 
-### 2. Holdings coverage
+- Remove unused direct dependencies, make dYdX optional and update vulnerable transitive packages.
+- Ship a reviewed consumer override recipe and validate plain and configured full/omit-optional installs.
+- Reject failed audit requests and newly introduced high/critical advisory IDs.
+- Run bounded public RPC, market and LI.FI quote checks daily and at release time; retain timestamped evidence.
+- Completion check: installed SDK serialization regression, audit-error regression, real HTTP timeout/schema tests, consumer audits and live read checks pass.
 
-- grow the universal in-repo holdings registry
-- expand protocol detectors and seeded sources
-- reduce false negatives across DeFi positions and venue holdings
+## Milestone 3: A2A interoperability — reviewed, blocked
 
-### 3. Interop and transport
+- Review PR #10 against its exact contribution commit and reproduce a local client/server exchange.
+- Authentication bypass and nonstandard transport were reproduced; see [review](docs/reviews/A2A_PR10_REVIEW.md).
+- Next implementation: select a supported A2A version, verify credentials, default to loopback, enforce capability authorization and bound task/request resources.
+- Completion check: unit/regression tests for malformed input, invalid credentials and cancellation plus successful exchange with an independent standard client. Do not merge or advertise native A2A execution until these pass.
 
-- extend agent identity and interoperability support
-- add stronger A2A-style task exchange patterns
-- improve async transport and trust artifacts where they add real execution value
+## Following milestones
 
-### 4. Security and dependency reduction
-
-- keep optional integrations isolated
-- reduce vulnerability reachability in heavy dependency trees
-- maintain clear release and smoke-check discipline
+- Add one canonical Avalanche detector at a time with positive, zero-balance, failure and wrong-chain fixtures. Completion requires a current read-only onchain comparison.
+- Replace remaining deprecated cryptographic dependency paths only with verified API compatibility. Completion requires signing/serialization regressions and consumer audit evidence.
+- Certify execution-facing venue changes using the [live smoke checklist](docs/live-smoke-checklist.md). Reads and quotes do not certify funded execution.
 
 ## Working Rules
 

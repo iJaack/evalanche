@@ -53,20 +53,32 @@ export async function checkPackageTarball({
     'skill/SKILL.md',
   ].filter(Boolean);
 
+  // Published consumers can opt into the same audited overrides as the repo.
+  try {
+    await fs.access(path.join(rootDir, 'security-overrides.json'));
+    requiredPaths.push('security-overrides.json');
+  } catch { /* Older release fixtures do not have a recipe. */ }
+
   const missingPaths = requiredPaths.filter((item) => !fileSet.has(item));
+  let securityRecipeMatches = true;
+  if (fileSet.has('security-overrides.json')) {
+    const recipe = await execFileAsync('tar', ['-xOf', tarballPath, 'package/security-overrides.json'], { cwd: rootDir });
+    securityRecipeMatches = JSON.stringify(JSON.parse(recipe.stdout)) === JSON.stringify(pkg.overrides ?? {});
+  }
 
   const { stdout } = await execFileAsync('tar', ['-xOf', tarballPath, 'package/README.md'], { cwd: rootDir });
   const workspaceReadme = await fs.readFile(path.join(rootDir, 'README.md'), 'utf8');
   const readmeMatches = stdout === workspaceReadme;
 
   const result = {
-    ok: missingPaths.length === 0 && readmeMatches && manifest.size <= maxBytes,
+    ok: missingPaths.length === 0 && readmeMatches && securityRecipeMatches && manifest.size <= maxBytes,
     filename: manifest.filename,
     size: manifest.size,
     unpackedSize: manifest.unpackedSize,
     entryCount: manifest.entryCount,
     maxBytes,
     readmeMatches,
+    securityRecipeMatches,
     missingPaths,
   };
 

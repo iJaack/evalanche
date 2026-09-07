@@ -17,6 +17,9 @@ export async function checkAuditRegressions({
   out,
 } = {}) {
   const auditData = await readJson(path.resolve(rootDir, auditFile));
+  if (auditData.error || !auditData.metadata?.vulnerabilities || !auditData.vulnerabilities) {
+    throw new Error('Invalid audit report: audit request failed or vulnerability metadata is missing');
+  }
   const baseline = await readJson(path.resolve(rootDir, baselineFile));
   const currentCounts = latestAuditSummary(auditData);
   const currentHighPackages = packagesBySeverity(auditData, 'high');
@@ -25,6 +28,13 @@ export async function checkAuditRegressions({
   const extraCritical = currentCriticalPackages.filter((pkg) => !(baseline.criticalPackages ?? []).includes(pkg));
   const extraHigh = currentHighPackages.filter((pkg) => !(baseline.highPackages ?? []).includes(pkg) && !(baseline.allowlistedHighPackages ?? []).includes(pkg));
   const issues = [];
+
+  const highCriticalAdvisories = [...new Set(Object.values(auditData.vulnerabilities)
+    .flatMap((details) => (details.via ?? []).filter((via) => typeof via === 'object' && ['high', 'critical'].includes(via.severity))
+      .map((via) => `${via.name}:${via.source}`)))].sort();
+  const extraAdvisories = baseline.highCriticalAdvisories
+    ? highCriticalAdvisories.filter((id) => !baseline.highCriticalAdvisories.includes(id)) : [];
+  if (extraAdvisories.length > 0) issues.push('new high or critical advisories');
 
   if (currentCounts.critical > (baseline.counts?.critical ?? 0) || extraCritical.length > 0) {
     issues.push('critical vulnerabilities regressed');
@@ -42,6 +52,8 @@ export async function checkAuditRegressions({
     currentCriticalPackages,
     extraHigh,
     extraCritical,
+    highCriticalAdvisories,
+    extraAdvisories,
     issues,
   };
 

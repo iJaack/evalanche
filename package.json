@@ -1,6 +1,6 @@
 {
   "name": "evalanche",
-  "version": "1.12.0",
+  "version": "1.13.0",
   "description": "Multi-EVM agent wallet SDK with unified holdings discovery, onchain identity (ERC-8004), x402 payments, cross-chain liquidity (Li.Fi + Gas.zip), prediction markets, DeFi, and perpetual futures",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
@@ -17,7 +17,8 @@
   },
   "files": [
     "dist",
-    "skill"
+    "skill",
+    "security-overrides.json"
   ],
   "scripts": {
     "build": "tsup",
@@ -25,7 +26,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "refresh:release-docs": "node scripts/refresh-release-docs.mjs",
-    "sync:defillama-registry": "node scripts/sync-defillama-registry.mjs"
+    "sync:defillama-registry": "node scripts/sync-defillama-registry.mjs",
+    "smoke:live": "node scripts/live-read-smoke.mjs"
   },
   "keywords": [
     "avalanche",
@@ -49,14 +51,10 @@
     "node": ">=18"
   },
   "dependencies": {
-    "@avalabs/avalanchejs": "^5.0.0",
-    "@avalabs/core-utils-sdk": "^3.0.2",
-    "@avalabs/core-wallets-sdk": "^3.0.2",
-    "@dydxprotocol/v4-client-js": "^3.6.0",
-    "@nktkas/hyperliquid": "^0.32.2",
-    "big.js": "^6.2.2",
+    "@nktkas/hyperliquid": "^0.33.3",
     "ethers": "^6.13.0",
-    "viem": "^2.47.6"
+    "viem": "^2.47.6",
+    "@avalabs/core-wallets-sdk": "^3.0.2"
   },
   "devDependencies": {
     "tsup": "^8.0.0",
@@ -66,15 +64,17 @@
   "overrides": {
     "@ledgerhq/cryptoassets": "9.13.0",
     "@hpke/core": "^1.9.0",
-    "axios": "1.13.6",
+    "axios": "1.20.0",
     "form-data": "4.0.6",
     "ws": "8.21.0",
     "@cosmjs/socket": {
       "ws": "7.5.11"
     },
-    "@osmonauts/lcd": {
-      "axios": "^1.13.6"
-    }
+    "@protobufjs/utf8": "1.1.2",
+    "follow-redirects": "1.16.0",
+    "protobufjs": "7.6.6",
+    "valibot": "1.4.2",
+    "tiny-secp256k1": "1.1.7"
   },
   "repository": {
     "type": "git",
@@ -83,5 +83,8 @@
   "publishConfig": {
     "provenance": true,
     "registry": "https://registry.npmjs.org/"
+  },
+  "optionalDependencies": {
+    "@dydxprotocol/v4-client-js": "^3.6.0"
   }
 }

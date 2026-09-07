@@ -1,0 +1,47 @@
+name: SDK checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sdk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5.0.1
+      - uses: actions/setup-node@v6.3.0
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run typecheck
+      - run: npm run build
+      - name: Validate docs, exports, package and smoke
+        run: |
+          mkdir -p .release-artifacts
+          VERSION=$(node -p "require('./package.json').version")
+          node scripts/export-mcp-tools.mjs --out .release-artifacts/mcp-tools.json
+          node scripts/check-docs-parity.mjs --version "$VERSION" --mcp-tools .release-artifacts/mcp-tools.json
+          npm pack --json --pack-destination .release-artifacts > .release-artifacts/npm-pack.json
+          node scripts/check-package-tarball.mjs --pack-json .release-artifacts/npm-pack.json
+          node scripts/check-consumer-install.mjs --pack-json .release-artifacts/npm-pack.json --out .release-artifacts/consumer-install.json
+          node scripts/release-smoke.mjs
+      - name: Audit regression gate
+        run: |
+          npm audit --omit=dev --json > .release-artifacts/audit.json || true
+          node scripts/check-audit-regressions.mjs --audit .release-artifacts/audit.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sdk-check-evidence
+          path: .release-artifacts/

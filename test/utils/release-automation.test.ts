@@ -191,6 +191,22 @@ describe('release automation scripts', () => {
     expect(result.currentHighPackages).toEqual(['pkg-high']);
   });
 
+  it('rejects failed audit requests and new advisories even when package counts stay constant', async () => {
+    const root = await makeTempDir();
+    await writeFixture(root, 'baseline.json', JSON.stringify({
+      version: '1.13.0', counts: { high: 1, critical: 0 }, highPackages: ['pkg'],
+      highCriticalAdvisories: ['pkg:1'],
+    }));
+    await writeFixture(root, 'audit.json', JSON.stringify({ error: { code: 'NETWORK_ERROR' } }));
+    const options = { rootDir: root, auditFile: 'audit.json', baselineFile: 'baseline.json' };
+    await expect(checkAuditRegressions(options)).rejects.toThrow('Invalid audit report');
+    await writeFixture(root, 'audit.json', JSON.stringify({
+      metadata: { vulnerabilities: { high: 1, critical: 0 } },
+      vulnerabilities: { pkg: { severity: 'high', via: [{ name: 'pkg', source: 2, severity: 'high' }] } },
+    }));
+    await expect(checkAuditRegressions(options)).rejects.toThrow('new high or critical advisories');
+  });
+
   it('builds a release manifest from workflow artifacts', async () => {
     const root = await makeTempDir();
     await writeFixture(root, 'package.json', `${JSON.stringify({ name: 'evalanche', version: '1.8.8', description: 'pkg' }, null, 2)}\n`);

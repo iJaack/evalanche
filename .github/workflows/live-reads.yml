@@ -1,0 +1,22 @@
+name: Live read compatibility
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 6 * * *'
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v5.0.1
+      - uses: actions/setup-node@v6.3.0
+        with:
+          node-version: '22'
+      - run: node scripts/live-read-smoke.mjs --out .release-artifacts/live-reads.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-read-evidence
+          path: .release-artifacts/live-reads.json
