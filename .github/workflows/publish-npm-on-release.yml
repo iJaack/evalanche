@@ -372,3 +372,4 @@ jobs:
         with:
           name: release-artifacts-v${{ steps.meta.outputs.version }}
           path: ${{ env.RELEASE_ARTIFACT_DIR }}
+          include-hidden-files: true

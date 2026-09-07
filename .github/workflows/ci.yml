@@ -45,3 +45,4 @@ jobs:
         with:
           name: sdk-check-evidence
           path: .release-artifacts/
+          include-hidden-files: true

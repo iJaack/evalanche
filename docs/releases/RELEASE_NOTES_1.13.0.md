@@ -29,6 +29,6 @@ The audit still reports low/moderate findings in upstream integrations. Zero hig
 
 ## Validation and limitations
 
-The release workflow runs the full unit/regression suite, typecheck, build, deterministic smoke, fresh consumer installs and live read checks before publication. Machine-readable results are attached to the GitHub release.
+The release workflow runs the full unit/regression suite, typecheck, build, deterministic smoke, fresh consumer installs and live read checks before publication. Machine-readable results are attached to the GitHub release. Workflow uploads retain hidden release artifacts directories so failure evidence is also available.
 
 Live checks perform public reads and quote construction only. No wallet-funded trade, bridge, signature or contract write is certified by this release. Native A2A task execution is not included; the review and replacement acceptance criteria are in `docs/reviews/A2A_PR10_REVIEW.md`.

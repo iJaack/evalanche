@@ -20,3 +20,4 @@ jobs:
         with:
           name: live-read-evidence
           path: .release-artifacts/live-reads.json
+          include-hidden-files: true
