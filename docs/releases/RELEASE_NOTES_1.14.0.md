@@ -1,5 +1,7 @@
 # Evalanche v1.14.0 — Avalanche SDK and L1 hardening
 
+This feature release strengthens Avalanche as Evalanche's default execution environment.
+
 ## Highlights
 
 - Make Avalanche the hardened default with the official `@avalanche-sdk/client`, removing the legacy Core wallet and vulnerable HPKE dependency trees from fresh consumer installs.
