@@ -189,7 +189,7 @@ describe('EvalancheMCPServer', () => {
     const result = res.result as { protocolVersion: string; serverInfo: { name: string; version: string } };
     expect(result.protocolVersion).toBe('2024-11-05');
     expect(result.serverInfo.name).toBe('evalanche');
-    expect(result.serverInfo.version).toBe('1.8.8');
+    expect(result.serverInfo.version).toBe('1.14.0');
   });
 
   it('creates providers with batching disabled', () => {
