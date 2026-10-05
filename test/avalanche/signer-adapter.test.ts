@@ -90,7 +90,7 @@ describe('Avalanche SDK signing adapter', () => {
       .resolves.toBe('sent:delegate');
     expect(sdk.client.pChain.prepareAddPermissionlessDelegatorTxn).toHaveBeenCalledWith({
       nodeId: 'NodeID-1',
-      stakeInAvax: 25n,
+      stakeInNanoAvax: 25n,
       end: 100n,
       rewardAddresses: ['P-avax-reward'],
       threshold: 1,
