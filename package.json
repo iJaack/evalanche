@@ -1,6 +1,6 @@
 {
   "name": "evalanche",
-  "version": "1.13.0",
+  "version": "1.14.0",
   "description": "Multi-EVM agent wallet SDK with unified holdings discovery, onchain identity (ERC-8004), x402 payments, cross-chain liquidity (Li.Fi + Gas.zip), prediction markets, DeFi, and perpetual futures",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
@@ -48,13 +48,14 @@
   ],
   "license": "MIT",
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "dependencies": {
+    "@avalanche-sdk/client": "0.1.3",
     "@nktkas/hyperliquid": "^0.33.3",
+    "@scure/bip32": "1.7.0",
     "ethers": "^6.13.0",
-    "viem": "^2.47.6",
-    "@avalabs/core-wallets-sdk": "^3.0.2"
+    "viem": "^2.47.6"
   },
   "devDependencies": {
     "tsup": "^8.0.0",
@@ -62,14 +63,9 @@
     "vitest": "^4.1.0"
   },
   "overrides": {
-    "@ledgerhq/cryptoassets": "9.13.0",
-    "@hpke/core": "^1.9.0",
     "axios": "1.20.0",
     "form-data": "4.0.6",
     "ws": "8.21.0",
-    "@cosmjs/socket": {
-      "ws": "7.5.11"
-    },
     "@protobufjs/utf8": "1.1.2",
     "follow-redirects": "1.16.0",
     "protobufjs": "7.6.6",
@@ -83,8 +79,5 @@
   "publishConfig": {
     "provenance": true,
     "registry": "https://registry.npmjs.org/"
-  },
-  "optionalDependencies": {
-    "@dydxprotocol/v4-client-js": "^3.6.0"
   }
 }

@@ -1,33 +1,93 @@
-import type { Avalanche as AvalancheTypes } from '@avalabs/core-wallets-sdk';
-import { loadAvalancheSdk } from './sdk';
+import { createAvalancheClient } from '@avalanche-sdk/client';
+import { avalanche, avalancheFuji } from 'viem/chains';
 import { EvalancheError, EvalancheErrorCode } from '../utils/errors';
 
-/** Avalanche provider wrapping core-wallets-sdk JsonRpcProvider */
-export type AvalancheProvider = InstanceType<typeof AvalancheTypes.JsonRpcProvider>;
+export type AvalancheNetwork = 'avalanche' | 'fuji';
 
-// Cache providers by network
-const providerCache = new Map<string, AvalancheProvider>();
+function networkConfig(network: AvalancheNetwork) {
+  return network === 'avalanche'
+    ? { chain: avalanche, chainId: 43114, hrp: 'avax' as const, networkID: 1 }
+    : { chain: avalancheFuji, chainId: 43113, hrp: 'fuji' as const, networkID: 5 };
+}
+
+export interface AvalancheValidatorRecord {
+  nodeID: string;
+  stakeAmount: string;
+  startTime: string;
+  endTime: string;
+  delegationFee?: string;
+  uptime?: string;
+  connected?: boolean;
+}
+
+export interface AvalancheProvider {
+  readonly network: AvalancheNetwork;
+  readonly chainId: number;
+  readonly hrp: 'avax' | 'fuji';
+  readonly networkID: number;
+  getXBalance(address: string): Promise<bigint>;
+  getPBalance(address: string): Promise<bigint>;
+  getPStake(address: string): Promise<bigint>;
+  getCurrentValidators(): Promise<AvalancheValidatorRecord[]>;
+  getMinStake(): Promise<{ minValidatorStake: bigint; minDelegatorStake: bigint }>;
+  getAtomicUTXOCount(destination: 'X' | 'P' | 'C', source: 'X' | 'P' | 'C', address: string): Promise<number>;
+}
+
+function buildProvider(network: AvalancheNetwork) {
+  const config = networkConfig(network);
+  const client = createAvalancheClient({
+    chain: config.chain,
+    transport: { type: 'http' },
+  });
+  return {
+    network,
+    chainId: config.chainId,
+    hrp: config.hrp,
+    networkID: config.networkID,
+    getXBalance: async (address: string) => (
+      await client.xChain.getBalance({ address, assetID: 'AVAX' })
+    ).balance,
+    getPBalance: async (address: string) => (
+      await client.pChain.getBalance({ addresses: [address] })
+    ).balance,
+    getPStake: async (address: string) => (
+      await client.pChain.getStake({ addresses: [address] })
+    ).staked,
+    getCurrentValidators: async () => (
+      await client.pChain.getCurrentValidators({})
+    ).validators,
+    getMinStake: async () => client.pChain.getMinStake({}),
+    getAtomicUTXOCount: async (
+      destination: 'X' | 'P' | 'C',
+      source: 'X' | 'P' | 'C',
+      address: string,
+    ) => {
+      const chainClient = destination === 'C'
+        ? client.cChain
+        : destination === 'P'
+          ? client.pChain
+          : client.xChain;
+      return (await chainClient.getUTXOs({
+        addresses: [address],
+        sourceChain: source,
+      })).utxos.length;
+    },
+  };
+}
+
+const providerCache = new Map<AvalancheNetwork, AvalancheProvider>();
 
 /**
- * Create or retrieve a cached Avalanche provider.
- * Uses core-wallets-sdk's JsonRpcProvider which exposes PVM, AVM, EVM APIs.
- * @param network - 'avalanche' for mainnet, 'fuji' for testnet
- * @returns Avalanche JSON-RPC provider
+ * Create or retrieve a cached Avalanche client for mainnet or Fuji.
  */
 export async function createAvalancheProvider(
-  network: 'avalanche' | 'fuji',
+  network: AvalancheNetwork,
 ): Promise<AvalancheProvider> {
   const cached = providerCache.get(network);
   if (cached) return cached;
 
   try {
-    const Avalanche = loadAvalancheSdk();
-    // These are async factory methods that fetch context from the network
-    const provider =
-      network === 'avalanche'
-        ? Avalanche.JsonRpcProvider.getDefaultMainnetProvider()
-        : Avalanche.JsonRpcProvider.getDefaultFujiProvider();
-
+    const provider: AvalancheProvider = buildProvider(network);
     providerCache.set(network, provider);
     return provider;
   } catch (error) {
@@ -40,16 +100,11 @@ export async function createAvalancheProvider(
 }
 
 /**
- * Get the Avalanche context (network IDs, chain IDs, asset IDs) for the given network.
- * @param network - 'avalanche' for mainnet, 'fuji' for testnet
+ * Return stable network metadata without making an RPC request.
  */
-export function getAvalancheContext(
-  network: 'avalanche' | 'fuji',
-): typeof AvalancheTypes.MainnetContext {
-  const Avalanche = loadAvalancheSdk();
-  return network === 'avalanche'
-    ? Avalanche.MainnetContext
-    : Avalanche.FujiContext;
+export function getAvalancheContext(network: AvalancheNetwork) {
+  const { chain: _chain, ...context } = networkConfig(network);
+  return context;
 }
 
 /**

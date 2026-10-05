@@ -126,23 +126,11 @@ describe('HoldingsClient', () => {
           },
         ]),
       }),
-      dydx: vi.fn().mockResolvedValue({
-        getPositions: vi.fn().mockResolvedValue([
-          {
-            venue: 'dydx',
-            market: 'ETH-USD',
-            side: 'SHORT',
-            size: '0.5',
-            entryPrice: '2500',
-            unrealizedPnl: '10',
-          },
-        ]),
-      }),
     });
 
     const client = new HoldingsClient(makeAgent('polygon') as any);
     const result = await client.scan({
-      chains: ['polygon', 'base', 'avalanche', 'arbitrum', 'hyperliquid', 'dydx'],
+      chains: ['polygon', 'base', 'avalanche', 'arbitrum', 'hyperliquid'],
     });
 
     expect(result.holdings.some((holding) => holding.holdingType === 'native' && holding.chain === 'polygon')).toBe(true);
@@ -152,7 +140,6 @@ describe('HoldingsClient', () => {
     expect(result.holdings.some((holding) => holding.holdingType === 'staking' && holding.protocolId === 'benqi')).toBe(true);
     expect(result.holdings.some((holding) => holding.holdingType === 'prediction' && holding.protocolId === 'polymarket')).toBe(true);
     expect(result.holdings.some((holding) => holding.holdingType === 'perp' && holding.protocolId === 'hyperliquid')).toBe(true);
-    expect(result.holdings.some((holding) => holding.holdingType === 'perp' && holding.protocolId === 'dydx')).toBe(true);
     expect(result.warnings).toEqual([]);
   });
 
@@ -167,7 +154,6 @@ describe('HoldingsClient', () => {
         return makeAgent(next);
       },
       hyperliquid: vi.fn(),
-      dydx: vi.fn(),
     });
 
     const client = new HoldingsClient(makeAgent('ethereum'));

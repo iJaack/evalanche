@@ -1,6 +1,7 @@
 import { EvalancheError, EvalancheErrorCode } from './errors';
 
 export interface SafeFetchOptions extends RequestInit {
+  /** Total deadline for receiving headers and consuming the response body. */
   timeoutMs?: number;
   maxBytes?: number;
   allowHttp?: boolean;
@@ -18,7 +19,17 @@ function createTooLargeError(actualBytes: number, maxBytes: number): EvalancheEr
   );
 }
 
-function wrapResponseWithBodyLimit(response: Response, maxBytes: number): Response {
+function networkError(error: unknown): EvalancheError {
+  if (error instanceof EvalancheError) return error;
+  const reason = error instanceof Error ? error.message : String(error);
+  return new EvalancheError(
+    `Network request failed: ${reason}`,
+    EvalancheErrorCode.NETWORK_ERROR,
+    error instanceof Error ? error : undefined,
+  );
+}
+
+function wrapResponseWithBodyLimit(response: Response, maxBytes: number, cleanup: () => void): Response {
   const originalArrayBuffer = typeof response.arrayBuffer === 'function'
     ? response.arrayBuffer.bind(response)
     : null;
@@ -34,50 +45,63 @@ function wrapResponseWithBodyLimit(response: Response, maxBytes: number): Respon
     if (bytesPromise) return bytesPromise;
 
     bytesPromise = (async () => {
-      if (!response.body) {
-        if (originalArrayBuffer) {
-          const bytes = new Uint8Array(await originalArrayBuffer());
-          if (bytes.byteLength > maxBytes) throw createTooLargeError(bytes.byteLength, maxBytes);
-          return bytes;
+      try {
+        if (!response.body) {
+          if (originalArrayBuffer) {
+            const bytes = new Uint8Array(await originalArrayBuffer());
+            if (bytes.byteLength > maxBytes) throw createTooLargeError(bytes.byteLength, maxBytes);
+            return bytes;
+          }
+
+          if (originalText) {
+            const text = await originalText();
+            const bytes = new TextEncoder().encode(text);
+            if (bytes.byteLength > maxBytes) throw createTooLargeError(bytes.byteLength, maxBytes);
+            return bytes;
+          }
+
+          if (originalJson) {
+            const jsonValue = await originalJson();
+            const bytes = new TextEncoder().encode(JSON.stringify(jsonValue));
+            if (bytes.byteLength > maxBytes) throw createTooLargeError(bytes.byteLength, maxBytes);
+            return bytes;
+          }
+
+          return new Uint8Array();
         }
 
-        if (originalText) {
-          const text = await originalText();
-          const bytes = new TextEncoder().encode(text);
-          if (bytes.byteLength > maxBytes) throw createTooLargeError(bytes.byteLength, maxBytes);
-          return bytes;
+        const reader = response.body.getReader();
+        const chunks: Uint8Array[] = [];
+        let total = 0;
+
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            const chunk = value instanceof Uint8Array ? value : new Uint8Array(value);
+            total += chunk.byteLength;
+            if (total > maxBytes) throw createTooLargeError(total, maxBytes);
+            chunks.push(chunk);
+          }
+        } catch (error) {
+          await reader.cancel().catch(() => undefined);
+          throw error;
+        } finally {
+          reader.releaseLock();
         }
 
-        if (originalJson) {
-          const jsonValue = await originalJson();
-          const bytes = new TextEncoder().encode(JSON.stringify(jsonValue));
-          if (bytes.byteLength > maxBytes) throw createTooLargeError(bytes.byteLength, maxBytes);
-          return bytes;
+        const combined = new Uint8Array(total);
+        let offset = 0;
+        for (const chunk of chunks) {
+          combined.set(chunk, offset);
+          offset += chunk.byteLength;
         }
-
-        return new Uint8Array();
+        return combined;
+      } catch (error) {
+        throw networkError(error);
+      } finally {
+        cleanup();
       }
-
-      const reader = response.body.getReader();
-      const chunks: Uint8Array[] = [];
-      let total = 0;
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        const chunk = value instanceof Uint8Array ? value : new Uint8Array(value);
-        total += chunk.byteLength;
-        if (total > maxBytes) throw createTooLargeError(total, maxBytes);
-        chunks.push(chunk);
-      }
-
-      const combined = new Uint8Array(total);
-      let offset = 0;
-      for (const chunk of chunks) {
-        combined.set(chunk, offset);
-        offset += chunk.byteLength;
-      }
-      return combined;
     })();
 
     return bytesPromise;
@@ -156,35 +180,43 @@ export function assertSafeUrl(url: string | URL, opts: Pick<SafeFetchOptions, 'a
 
 export async function safeFetch(url: string | URL, options: SafeFetchOptions = {}): Promise<Response> {
   const parsed = assertSafeUrl(url, options);
-  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const { timeoutMs = DEFAULT_TIMEOUT_MS, maxBytes = DEFAULT_MAX_BYTES,
+    allowHttp: _allowHttp, blockPrivateNetwork: _blockPrivateNetwork, signal, ...requestOptions } = options;
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 2_147_483_647 ||
+      !Number.isSafeInteger(maxBytes) || maxBytes < 1) {
+    throw new EvalancheError('timeoutMs and maxBytes must be positive integers within supported limits', EvalancheErrorCode.INVALID_PARAMS);
+  }
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const timeout = setTimeout(() => { controller.abort(); cleanup(); }, timeoutMs);
+  // An unread response must not keep a Node process alive just for its deadline.
+  timeout.unref?.();
+  const onAbort = () => { controller.abort(signal?.reason); cleanup(); };
+  const cleanup = () => {
+    clearTimeout(timeout);
+    signal?.removeEventListener('abort', onAbort);
+  };
+  signal?.addEventListener('abort', onAbort, { once: true });
+  if (signal?.aborted) onAbort();
 
   try {
     const response = await fetch(parsed.toString(), {
-      ...options,
-      redirect: options.redirect ?? 'error',
+      ...requestOptions,
+      redirect: requestOptions.redirect ?? 'error',
       signal: controller.signal,
     });
 
     const contentLength = typeof response.headers?.get === 'function'
       ? response.headers.get('content-length')
       : null;
-    const maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES;
     if (contentLength && Number(contentLength) > maxBytes) {
+      await response.body?.cancel().catch(() => undefined);
       throw createTooLargeError(Number(contentLength), maxBytes);
     }
 
-    return wrapResponseWithBodyLimit(response, maxBytes);
+    if (!response.body) cleanup();
+    return wrapResponseWithBodyLimit(response, maxBytes, cleanup);
   } catch (error) {
-    if (error instanceof EvalancheError) throw error;
-    const reason = error instanceof Error ? error.message : String(error);
-    throw new EvalancheError(
-      `Network request failed: ${reason}`,
-      EvalancheErrorCode.NETWORK_ERROR,
-      error instanceof Error ? error : undefined,
-    );
-  } finally {
-    clearTimeout(timeout);
+    cleanup();
+    throw networkError(error);
   }
 }

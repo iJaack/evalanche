@@ -1,12 +1,12 @@
 {
-  "version": "1.13.0",
+  "version": "1.14.0",
   "counts": {
     "info": 0,
-    "low": 23,
-    "moderate": 5,
+    "low": 0,
+    "moderate": 0,
     "high": 0,
     "critical": 0,
-    "total": 28
+    "total": 0
   },
   "highPackages": [],
   "criticalPackages": [],

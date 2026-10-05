@@ -2,8 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const execFileAsync = vi.fn();
 
-vi.mock('child_process', () => ({ execFile: (...args: any[]) => execFileAsync(...args) }));
-vi.mock('util', () => ({ promisify: () => execFileAsync }));
+vi.mock('node:child_process', () => ({ execFile: (...args: any[]) => execFileAsync(...args) }));
+vi.mock('node:util', () => ({ promisify: () => execFileAsync }));
 
 describe('resolveAgentSecrets', () => {
   beforeEach(() => {

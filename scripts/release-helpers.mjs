@@ -125,15 +125,20 @@ export function supportLine(version) {
 }
 
 export function latestAuditSummary(auditData) {
-  const vulnCounts = auditData?.metadata?.vulnerabilities ?? {};
-  return {
-    critical: Number(vulnCounts.critical ?? 0),
-    high: Number(vulnCounts.high ?? 0),
-    moderate: Number(vulnCounts.moderate ?? 0),
-    low: Number(vulnCounts.low ?? 0),
-    info: Number(vulnCounts.info ?? 0),
-    total: Number(vulnCounts.total ?? 0),
-  };
+  const vulnCounts = auditData?.metadata?.vulnerabilities;
+  const entries = auditData?.vulnerabilities;
+  const severities = ['info', 'low', 'moderate', 'high', 'critical'];
+  if (auditData?.error || !vulnCounts || !entries || typeof entries !== 'object' || Array.isArray(entries) ||
+      [...severities, 'total'].some((key) => !Number.isSafeInteger(vulnCounts[key]) || vulnCounts[key] < 0) ||
+      severities.reduce((sum, key) => sum + vulnCounts[key], 0) !== vulnCounts.total ||
+      Object.values(entries).some((entry) => !entry || !severities.includes(entry.severity) ||
+        (entry.via !== undefined && (!Array.isArray(entry.via) || entry.via.some((via) =>
+          typeof via !== 'string' && (!via || !severities.includes(via.severity) ||
+            typeof via.name !== 'string' || !via.name || !Number.isSafeInteger(via.source)))))) ||
+      severities.some((severity) => Object.values(entries).filter((entry) => entry.severity === severity).length !== vulnCounts[severity])) {
+    throw new Error('Invalid audit report: audit request failed or vulnerability data is incomplete or malformed');
+  }
+  return Object.fromEntries([...severities, 'total'].map((key) => [key, vulnCounts[key]]));
 }
 
 export function packagesBySeverity(auditData, severity) {

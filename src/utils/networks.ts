@@ -16,10 +16,10 @@ export type ChainName =
   | 'scroll' | 'blast' | 'mantle' | 'celo' | 'moonbeam' | 'cronos'
   | 'berachain' | 'robinhood' | 'sepolia' | 'base-sepolia';
 
-/** Network specifier: named chain, custom config, or chain ID */
+/** Network specifier: named chain or custom EVM configuration. */
 export type NetworkOption =
   | ChainName
-  | { rpcUrl: string; chainId: number; name?: string; explorer?: string };
+  | { rpcUrl: string; chainId: number; name?: string; explorer?: string; nativeCurrency?: ChainConfig['currency']; isTestnet?: boolean };
 
 /** Pre-configured networks (legacy compat — use CHAINS from chains.ts for full registry) */
 export const NETWORKS: Record<string, NetworkConfig> = {};
@@ -65,5 +65,11 @@ export function getChainConfigForNetwork(network: NetworkOption): ChainConfig | 
   if (typeof network === 'string') {
     return getChainByAlias(network);
   }
-  return getChainById(network.chainId);
+  const registered = getChainById(network.chainId);
+  if (!network.nativeCurrency) return registered;
+  return {
+    id: network.chainId, name: network.name ?? `Custom (${network.chainId})`,
+    shortName: String(network.chainId), currency: network.nativeCurrency,
+    rpc: [network.rpcUrl], explorer: network.explorer ?? '', isTestnet: network.isTestnet,
+  };
 }

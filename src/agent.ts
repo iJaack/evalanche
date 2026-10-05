@@ -24,9 +24,9 @@ import type { SimulationResult } from './economy/simulation';
 import { BridgeClient } from './bridge';
 import type { BridgeQuoteParams, BridgeQuote, TransferStatusParams, TransferStatus, LiFiToken, LiFiChain, LiFiTools, LiFiGasPrices, LiFiGasSuggestion, LiFiConnection, LiFiExecutionResult } from './bridge/lifi';
 import type { GasZipParams } from './bridge/gaszip';
-import type { DydxClient, HyperliquidClient, PerpMarket } from './perps';
+import type { HyperliquidClient, PerpMarket } from './perps';
 // Avalanche multi-VM types only (actual imports are lazy to avoid loading
-// @avalabs/core-wallets-sdk at construction time — it has heavy native deps)
+// @avalanche-sdk/client at construction time)
 import type { ChainAlias, TransferResult, MultiChainBalance, StakeInfo, ValidatorInfo, MinStakeAmounts } from './avalanche/types';
 import type { PlatformCLI as PlatformCLIType } from './avalanche/platform-cli';
 import type { InteropIdentityResolver as InteropResolverType } from './interop/identity';
@@ -76,7 +76,6 @@ export class Evalanche {
   private x402Client: X402Client;
   private transactionBuilder: TransactionBuilder;
   private _bridgeClient?: BridgeClient;
-  private _dydxClient?: DydxClient;
   private _hyperliquidClient?: HyperliquidClient;
   private _policyEngine?: PolicyEngine;
   private readonly _chainId: number;
@@ -209,7 +208,7 @@ export class Evalanche {
     const rpcUrl = config.rpcOverride ?? networkConfig.rpcUrl;
     // Public RPCs such as Base can behave unpredictably with batched eth_call requests.
     // Disable batching so execution/quote paths stay deterministic across providers.
-    this.provider = new JsonRpcProvider(rpcUrl, undefined, { batchMaxCount: 1 });
+    this.provider = new JsonRpcProvider(rpcUrl, networkConfig.chainId, { batchMaxCount: 1 });
     this._chainId = networkConfig.chainId;
 
     if (config.privateKey) {
@@ -245,7 +244,7 @@ export class Evalanche {
 
   /**
    * Lazily initialize multi-VM (Avalanche X/P-Chain) support.
-   * Uses dynamic imports to avoid loading @avalabs/core-wallets-sdk at construction time.
+   * Uses dynamic imports to avoid loading the Avalanche SDK at construction time.
    */
   private async initMultiVM(): Promise<void> {
     if (this._multiVMInitialized) return;
@@ -257,17 +256,14 @@ export class Evalanche {
       );
     }
 
-    // Multi-VM only works on Avalanche networks
-    const networkName = typeof this._networkOption === 'string'
-      ? (this._networkOption === 'fuji' ? 'fuji' : 'avalanche')
-      : 'avalanche';
-
-    if (typeof this._networkOption === 'string' && this._networkOption !== 'avalanche' && this._networkOption !== 'fuji') {
+    // L1 EVM wallets must not silently sign on the Primary Network.
+    if (this._chainId !== 43114 && this._chainId !== 43113) {
       throw new EvalancheError(
-        `Multi-VM (X/P-Chain) is only supported on Avalanche networks, not '${this._networkOption}'`,
+        'Multi-VM (X/P-Chain) requires Avalanche C-Chain or Fuji; L1s use their EVM wallet.',
         EvalancheErrorCode.INVALID_CONFIG,
       );
     }
+    const networkName = this._chainId === 43113 ? 'fuji' : 'avalanche';
 
     // Dynamic imports to avoid loading heavy native deps at construction time
     const { createAvalancheProvider } = await import('./avalanche/provider');
@@ -646,28 +642,6 @@ export class Evalanche {
   }
 
   /**
-   * Get or create the dYdX perpetuals client (lazy-initialized).
-   *
-   * Requires mnemonic because dYdX derives Cosmos keys from BIP-39.
-   */
-  async dydx(): Promise<DydxClient> {
-    if (!this._mnemonic) {
-      throw new EvalancheError(
-        'dYdX requires a mnemonic (not just a private key). Pass mnemonic in EvalancheConfig.',
-        EvalancheErrorCode.INVALID_CONFIG,
-      );
-    }
-
-    if (!this._dydxClient) {
-      const { DydxClient } = await import('./perps/dydx/client');
-      this._dydxClient = new DydxClient(this._mnemonic);
-      await this._dydxClient.connect();
-    }
-
-    return this._dydxClient;
-  }
-
-  /**
    * Get or create the Hyperliquid client (lazy-initialized).
    * Uses the agent wallet for account reads and signed trading actions.
    */
@@ -751,10 +725,6 @@ export class Evalanche {
       async () => this.hyperliquid(),
     ];
 
-    if (this._mnemonic) {
-      venues.unshift(async () => this.dydx());
-    }
-
     const errors: Error[] = [];
 
     for (const loadVenue of venues) {
@@ -803,11 +773,14 @@ export class Evalanche {
    * @returns New Evalanche instance connected to the target network
    */
   switchNetwork(network: NetworkOption): Evalanche {
-    return new Evalanche({
+    const next = new Evalanche({
       ...(this._mnemonic ? { mnemonic: this._mnemonic } : { privateKey: this.wallet.privateKey }),
       network,
       multiVM: this._multiVM,
     });
+    // A network change must not reset wallet spending limits or recorded budgets.
+    next._policyEngine = this._policyEngine;
+    return next;
   }
 
   // ── Multi-VM Methods (v0.2.0) ─────────────────────────────

@@ -16,12 +16,12 @@ jobs:
       RELEASE_ARTIFACT_DIR: .release-artifacts
     steps:
       - name: Checkout
-        uses: actions/checkout@v5.0.1
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           fetch-depth: 0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6.3.0
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           registry-url: https://registry.npmjs.org
@@ -35,6 +35,10 @@ jobs:
         shell: bash
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release tag must be vX.Y.Z"
+            exit 1
+          fi
           RELEASE_NOTES_FILE="docs/releases/RELEASE_NOTES_${VERSION}.md"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "release_notes_file=${RELEASE_NOTES_FILE}" >> "$GITHUB_OUTPUT"
@@ -102,6 +106,15 @@ jobs:
             --current-ref "$GITHUB_SHA" \
             --release-notes "${{ steps.meta.outputs.release_notes_file }}" \
             --out "$RELEASE_ARTIFACT_DIR/release-notes-coverage-v${VERSION}.json"
+
+      - name: Verify release commit belongs to main
+        shell: bash
+        run: |
+          git fetch origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "Release tag commit is not contained in origin/main"
+            exit 1
+          fi
 
       - name: Install dependencies
         run: npm ci
@@ -241,7 +254,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          TAG="${{ github.ref_name }}"
+          TAG="$GITHUB_REF_NAME"
           TITLE="Evalanche v${{ steps.meta.outputs.version }}"
           NOTES_FILE="${{ steps.meta.outputs.release_notes_file }}"
 
@@ -264,7 +277,7 @@ jobs:
           VERSION="${{ steps.meta.outputs.version }}"
           node scripts/build-release-manifest.mjs \
             --version "$VERSION" \
-            --tag "${{ github.ref_name }}" \
+            --tag "$GITHUB_REF_NAME" \
             --sha "$GITHUB_SHA" \
             --release-notes "${{ steps.meta.outputs.release_notes_file }}" \
             --mcp-tools "$RELEASE_ARTIFACT_DIR/mcp-tools-v${VERSION}.json" \
@@ -281,7 +294,7 @@ jobs:
         shell: bash
         run: |
           VERSION="${{ steps.meta.outputs.version }}"
-          gh release upload "${{ github.ref_name }}" \
+          gh release upload "$GITHUB_REF_NAME" \
             "$RELEASE_ARTIFACT_DIR/release-integrity-v${VERSION}.json" \
             "$RELEASE_ARTIFACT_DIR/release-notes-coverage-v${VERSION}.json" \
             "$RELEASE_ARTIFACT_DIR/mcp-tools-v${VERSION}.json" \
@@ -321,8 +334,13 @@ jobs:
 
           exit "$PUBLISH_EXIT"
 
+      - name: Setup Node.js for ClawHub
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: '22'
+
       - name: Install ClawHub CLI
-        run: npm install -g clawhub@latest
+        run: npm install -g clawhub@0.23.3
 
       - name: Authenticate ClawHub CLI
         env:
@@ -368,7 +386,7 @@ jobs:
 
       - name: Upload workflow artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-artifacts-v${{ steps.meta.outputs.version }}
           path: ${{ env.RELEASE_ARTIFACT_DIR }}

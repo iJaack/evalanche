@@ -3,7 +3,7 @@ name: evalanche
 description: >
   Multi-EVM agent wallet SDK with onchain identity (ERC-8004), payment rails (x402),
   cross-chain liquidity (Li.Fi bridging + DEX aggregation + DeFi Composer), destination gas funding (Gas.zip),
-  perpetual futures trading (dYdX v4), market intelligence (CoinGecko), prediction markets (Polymarket CLOB), and DeFi operations (liquid staking + EIP-4626 vaults).
+  perpetual futures trading (Hyperliquid), market intelligence (CoinGecko), prediction markets (Polymarket CLOB), and DeFi operations (liquid staking + EIP-4626 vaults).
   Supports 22+ EVM chains: Ethereum, Base, Arbitrum, Optimism, Polygon, BSC, Avalanche, and more.
   Agents generate and manage their own keys — no human input required.
   Use when: booting an autonomous agent wallet on any EVM chain, sending tokens, calling contracts,
@@ -15,13 +15,13 @@ description: >
   funding gas on destination chains (Gas.zip),
   cross-chain transfers (Avalanche C↔X↔P), delegating stake, querying validators, signing messages,
   creating subnets, managing L1 validators, adding validators with BLS keys, querying node info,
-  trading perpetual futures on dYdX v4 (100+ markets), searching for perp markets across venues,
+  trading perpetual futures on Hyperliquid, searching for perp markets across venues,
   querying CoinGecko market data, searching Polymarket markets and order books,
   buying or selling Polymarket outcome shares on Polygon,
   staking/unstaking sAVAX via Benqi, depositing/withdrawing from EIP-4626 vaults (yoUSD, Morpho, Aave, etc),
   and resolving known Avalanche/Base DeFi contracts with canonical chain routing or interoperable-address inputs.
   Don't use when: managing ENS (use moltbook scripts).
-  Network: yes (EVM RPCs via Routescan + public fallbacks, dYdX Cosmos chain). Cost: gas fees per transaction.
+  Network: yes (EVM RPCs via Routescan + public fallbacks). Cost: gas fees per transaction.
 metadata:
   {
     "openclaw":
@@ -92,7 +92,7 @@ metadata:
 
 # Evalanche — Multi-EVM Agent Wallet
 
-Headless wallet SDK with ERC-8004 identity, x402 payments, Li.Fi cross-chain liquidity (bridging + DEX aggregation + DeFi Composer), Gas.zip gas funding, dYdX v4 perpetuals, CoinGecko market intelligence, Polymarket market discovery and execution, contract interaction helpers (approve-and-call + UUPS upgrade), and DeFi operations (liquid staking + EIP-4626 vaults). Works on 22+ EVM chains. Works as CLI or MCP server.
+Headless wallet SDK with ERC-8004 identity, x402 payments, Li.Fi cross-chain liquidity (bridging + DEX aggregation + DeFi Composer), Gas.zip gas funding, Hyperliquid perpetuals, CoinGecko market intelligence, Polymarket market discovery and execution, contract interaction helpers (approve-and-call + UUPS upgrade), and DeFi operations (liquid staking + EIP-4626 vaults). Works on 22+ EVM chains. Works as CLI or MCP server.
 
 **Source:** https://github.com/iJaack/evalanche
 **License:** MIT
@@ -269,18 +269,9 @@ AVALANCHE_NETWORK=base evalanche-mcp
 | `node_info` | Get NodeID + BLS keys from running node |
 | `pchain_send` | Send AVAX on P-Chain (P→P) |
 
-### dYdX v4 Perpetuals (v0.7.0 — requires mnemonic)
+### Hyperliquid Perpetuals
 | Tool | Description |
 |------|-------------|
-| `dydx_get_markets` | List all dYdX perpetual markets with prices/leverage |
-| `dydx_has_market` | Check if a specific perp market exists (e.g. AKT-USD) |
-| `dydx_get_balance` | Get USDC equity on dYdX subaccount |
-| `dydx_get_positions` | Get all open perpetual positions |
-| `dydx_place_market_order` | Place a market order (BUY/SELL) |
-| `dydx_place_limit_order` | Place a limit order |
-| `dydx_cancel_order` | Cancel an open order |
-| `dydx_close_position` | Close position with reduce-only market order |
-| `dydx_get_orders` | List orders (optionally filter by status) |
 | `hyperliquid_get_markets` | List Hyperliquid perpetual markets |
 | `hyperliquid_get_account_state` | Get Hyperliquid account summary |
 | `hyperliquid_get_positions` | Get Hyperliquid open positions |
@@ -449,6 +440,15 @@ Use [docs/live-smoke-checklist.md](/Users/jaack/Desktop/Github/evalanche/docs/li
 ## v1.13.0 execution reliability
 
 - A vault position can have verified shares but no `underlyingValue` when conversion fails. Honor the scan warning and medium confidence; never substitute shares for assets.
-- The dYdX SDK is optional. An installation made with `--omit=optional` must add `@dydxprotocol/v4-client-js` before using dYdX.
-- Zero high/critical audit counts require the shipped security-overrides.json recipe at the consumer root. Plain installs still inherit upstream advisories; audit the resolved tree.
+- Historical v1.13.0 note: dYdX was optional before v1.14.0. Current installs must not add `@dydxprotocol/v4-client-js`; use Hyperliquid for perpetuals.
+- Historical v1.13.0 note: zero high/critical audit counts required the shipped security-overrides.json recipe at the consumer root. Current v1.14.0 consumer installs must pass the packaged clean-install audit and dependency-absence gates.
 - A2A task execution is not shipped. Existing agent-card identity support does not authorize or expose remote wallet actions.
+
+## v1.14.0 Avalanche expansion
+
+Avalanche is the default. Native X/P/C operations use `@avalanche-sdk/client`, and the legacy Core/HPKE tree is absent. dYdX APIs and MCP tools have been removed; use Hyperliquid for perpetuals. v1.14.0 requires Node.js 20 or newer. Fresh consumer installs must pass the packaged audit and dependency-absence gates.
+
+- `avalanche_list_l1s`: discover current public mainnet/Fuji EVM L1 metadata.
+- `avalanche_get_l1_network`: verify an L1 RPC chain ID and return its custom network configuration, including its actual native token. Does not switch the active MCP wallet.
+- SDK helpers: `listAvalancheL1s`, `getAvalancheL1Network`; pass the returned configuration to Evalanche or switchNetwork.
+- Discovery covers the official public catalog. Non-EVM chains, non-18-decimal native tokens and unavailable/private RPCs are not supported by this path. Bridge/DeFi/identity availability is separate from wallet connectivity.

@@ -66,15 +66,5 @@
     "role": "perp_venue",
     "priority": 100,
     "source": "local"
-  },
-  {
-    "sourceId": "venue-dydx",
-    "protocolId": "dydx",
-    "chain": "dydx",
-    "sourceKind": "perp_venue",
-    "detectorId": "dydx_detector",
-    "role": "perp_venue",
-    "priority": 100,
-    "source": "local"
   }
 ]

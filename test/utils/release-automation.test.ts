@@ -13,9 +13,11 @@ import { checkAuditRegressions } from '../../scripts/check-audit-regressions.mjs
 import { buildReleaseManifest } from '../../scripts/build-release-manifest.mjs';
 import { runReleaseSmoke } from '../../scripts/release-smoke.mjs';
 import { buildReleaseSummary } from '../../scripts/build-release-summary.mjs';
+import { latestAuditSummary } from '../../scripts/release-helpers.mjs';
 
 const execFileAsync = promisify(execFile);
 const tempDirs: string[] = [];
+const zeroAuditCounts = { info: 0, low: 0, moderate: 0, high: 0, critical: 0, total: 0 };
 
 async function makeTempDir() {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'evalanche-release-automation-'));
@@ -34,6 +36,41 @@ afterEach(async () => {
 });
 
 describe('release automation scripts', () => {
+  it.each([
+    {},
+    { high: 0, critical: 0 },
+    { ...zeroAuditCounts, high: '0' },
+    { ...zeroAuditCounts, high: -1 },
+    { ...zeroAuditCounts, high: 0.5 },
+    { ...zeroAuditCounts, high: null },
+    { ...zeroAuditCounts, high: Number.NaN },
+    { ...zeroAuditCounts, total: 1 },
+  ])('rejects incomplete or invalid audit counts: %j', async (counts) => {
+    const root = await makeTempDir();
+    const audit = { metadata: { vulnerabilities: counts }, vulnerabilities: {} };
+    await writeFixture(root, 'audit.json', JSON.stringify(audit));
+    await writeFixture(root, 'baseline.json', JSON.stringify({ counts: zeroAuditCounts }));
+    await expect(checkAuditRegressions({ rootDir: root, auditFile: 'audit.json', baselineFile: 'baseline.json' }))
+      .rejects.toThrow('Invalid audit report');
+    expect(() => latestAuditSummary(audit)).toThrow('Invalid audit report');
+  });
+
+  it.each([
+    null, [], { pkg: null }, { pkg: { severity: 'unknown' } },
+    { pkg: { severity: 'high' } },
+    { pkg: { severity: 'low', via: {} } },
+    { pkg: { severity: 'low', via: [null] } },
+    { pkg: { severity: 'low', via: [{ severity: 'high' }] } },
+  ])('rejects malformed or inconsistent advisory data: %j', (vulnerabilities) => {
+    expect(() => latestAuditSummary({ metadata: { vulnerabilities: zeroAuditCounts }, vulnerabilities }))
+      .toThrow('Invalid audit report');
+  });
+
+  it('accepts a complete clean audit report', () => {
+    expect(latestAuditSummary({ metadata: { vulnerabilities: zeroAuditCounts }, vulnerabilities: {} }))
+      .toEqual(zeroAuditCounts);
+  });
+
   it('validates release integrity', async () => {
     const root = await makeTempDir();
     await writeFixture(root, 'package.json', `${JSON.stringify({ name: 'evalanche', version: '1.8.8' }, null, 2)}\n`);
@@ -178,6 +215,7 @@ describe('release automation scripts', () => {
       metadata: { vulnerabilities: { critical: 0, high: 1, moderate: 0, low: 1, info: 0, total: 2 } },
       vulnerabilities: {
         'pkg-high': { severity: 'high' },
+        'pkg-low': { severity: 'low' },
       },
     }, null, 2)}\n`);
 
@@ -201,7 +239,7 @@ describe('release automation scripts', () => {
     const options = { rootDir: root, auditFile: 'audit.json', baselineFile: 'baseline.json' };
     await expect(checkAuditRegressions(options)).rejects.toThrow('Invalid audit report');
     await writeFixture(root, 'audit.json', JSON.stringify({
-      metadata: { vulnerabilities: { high: 1, critical: 0 } },
+      metadata: { vulnerabilities: { ...zeroAuditCounts, high: 1, total: 1 } },
       vulnerabilities: { pkg: { severity: 'high', via: [{ name: 'pkg', source: 2, severity: 'high' }] } },
     }));
     await expect(checkAuditRegressions(options)).rejects.toThrow('new high or critical advisories');

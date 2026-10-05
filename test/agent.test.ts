@@ -308,24 +308,15 @@ describe('Evalanche', () => {
     });
   });
 
-  describe('perpetuals (dYdX)', () => {
-    it('should require mnemonic for dydx()', async () => {
-      const agent = new Evalanche({
-        privateKey: TEST_PRIVATE_KEY,
-        network: 'fuji',
-      });
-
-      await expect(agent.dydx()).rejects.toThrow('dYdX requires a mnemonic');
-    });
-
+  describe('perpetuals (Hyperliquid)', () => {
     it('should find market across perp venues', async () => {
       const agent = new Evalanche({
         mnemonic: TEST_MNEMONIC,
         network: 'fuji',
       });
 
-      (agent as unknown as { dydx: ReturnType<typeof vi.fn> }).dydx = vi.fn().mockResolvedValue({
-        name: 'dydx',
+      (agent as unknown as { hyperliquid: ReturnType<typeof vi.fn> }).hyperliquid = vi.fn().mockResolvedValue({
+        name: 'hyperliquid',
         getMarkets: vi.fn().mockResolvedValue([
           { ticker: 'AKT-USD', oraclePrice: '1.2' },
           { ticker: 'ETH-USD', oraclePrice: '3000' },
@@ -333,7 +324,7 @@ describe('Evalanche', () => {
       });
 
       const found = await agent.findPerpMarket('AKT-USD');
-      expect(found?.venue).toBe('dydx');
+      expect(found?.venue).toBe('hyperliquid');
       expect(found?.market.ticker).toBe('AKT-USD');
     });
   });

@@ -48,14 +48,12 @@ export type {
 export { ArenaSwapClient } from './swap/arena';
 export { YieldYakClient } from './swap/yak';
 
-export { DydxClient, HyperliquidClient, PerpClient, DYDX_MARKETS, market } from './perps';
+export { HyperliquidClient, PerpClient } from './perps';
 export type {
-  DydxMarketRef,
   MarketOrderParams,
   LimitOrderParams,
   PerpPosition,
   PerpMarket,
-  DydxSubaccount,
   HyperliquidAccountState,
   HyperliquidExecutionResult,
   HyperliquidMarket,
@@ -115,3 +113,6 @@ export type {
 export * from './economy';
 export * from './interop';
 export { EvalancheMCPServer } from './mcp/server';
+
+export { listAvalancheL1s, getAvalancheL1Network } from './avalanche/l1';
+export type { AvalancheL1, AvalancheL1Options } from './avalanche/l1';

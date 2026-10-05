@@ -92,4 +92,15 @@ describe('safe-fetch', () => {
     mockFetch.mockRejectedValueOnce(new Error('socket hang up'));
     await expect(safeFetch('https://example.com')).rejects.toMatchObject({ code: EvalancheErrorCode.NETWORK_ERROR });
   });
+
+  it.each([
+    { timeoutMs: 0 }, { timeoutMs: -1 }, { timeoutMs: Number.NaN },
+    { timeoutMs: 2_147_483_648 }, { maxBytes: 0 }, { maxBytes: 0.5 },
+    { maxBytes: Number.POSITIVE_INFINITY },
+  ])('rejects invalid resource limits before making a request: %j', async (options) => {
+    await expect(safeFetch('https://example.com', options)).rejects.toMatchObject({
+      code: EvalancheErrorCode.INVALID_PARAMS,
+    });
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
 });

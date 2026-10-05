@@ -1,4 +1,4 @@
-export type PerpVenueName = 'dydx' | 'hyperliquid';
+export type PerpVenueName = 'hyperliquid';
 
 export type PerpMarketClass = 'validator' | 'hip3';
 

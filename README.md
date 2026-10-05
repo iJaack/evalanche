@@ -5,13 +5,13 @@ Avalanche-first agent wallet and execution SDK for AI agents, with multi-EVM sup
 <!-- GENERATED:release-summary:start -->
 ## Current Release
 
-- Latest release: [v1.13.0](docs/releases/RELEASE_NOTES_1.13.0.md)
-- Published package: `evalanche@1.13.0`
+- Latest release: [v1.14.0](docs/releases/RELEASE_NOTES_1.14.0.md)
+- Published package: `evalanche@1.14.0`
 - Current package surface:
-  - Fix vault holdings conversion failures: preserve verified shares, omit unavailable underlying assets, emit a warning and lower confidence until conversion recovers.
-  - Run SDK tests, type checking, builds, docs parity, package validation and audit gates on pull requests and main pushes. Bound test workers to reduce CPU contention without increasing assertion timeouts.
-  - Add bounded live read compatibility checks for Avalanche, Robinhood Chain, Hyperliquid, Polymarket and LI.FI quotes, with timestamped commit-linked evidence and a daily workflow.
-  - Update axios, protobufjs, tiny-secp256k1, Hyperliquid, valibot, Vite, follow-redirects and @protobufjs/utf8; remove unused direct dependencies and make dYdX optional. The production audit baseline is now zero critical and zero high findings.
+  - Make Avalanche the hardened default with the official `@avalanche-sdk/client`, removing the legacy Core wallet and vulnerable HPKE dependency trees from fresh consumer installs.
+  - Expand Avalanche L1 support with live mainnet and Fuji catalog discovery, RPC chain ID verification, native-token preservation, and public SDK/MCP helpers.
+  - Remove the dYdX SDK, exports, MCP tools, holdings detector, and transitive Cosmos dependencies; Hyperliquid remains the supported perpetuals integration.
+  - Harden X/P/C address routing, offline signing, atomic import/export polling, network switching, HTTP cancellation, response limits, audit parsing, and release automation.
 - Docs:
   - [Release notes](docs/releases/README.md)
   - [Roadmap](ROADMAP.md)
@@ -23,20 +23,25 @@ Avalanche-first agent wallet and execution SDK for AI agents, with multi-EVM sup
 
 ```bash
 npm install evalanche
-# Skip the optional dYdX SDK if you do not use it:
-npm install evalanche --omit=optional
 ```
 
-**Dependency security:** npm ignores overrides inside installed dependencies. To use Evalanche's audited resolutions, merge the shipped `security-overrides.json` into your application's root `package.json` overrides and reinstall. Review any conflicts with your existing overrides. A plain install still inherits upstream advisories; zero high/critical counts apply to the configured tree.
+Avalanche remains the default network. Native X/P/C operations use `@avalanche-sdk/client`; the legacy Core wallet tree and dYdX support, exports and tools are removed. Hyperliquid perpetuals remain. v1.14.0 requires Node.js 20 or newer; review its migration notes before upgrading.
 
-For a new consumer project without existing overrides:
+Fresh consumer installs require zero high/critical findings without consumer overrides. `@scure/bip32@1.7.0` is declared directly because `@avalanche-sdk/client@0.1.3` imports it at runtime without declaring it in its own package manifest.
 
-```bash
-npm install evalanche
-node -e 'const fs=require("fs"); const p=JSON.parse(fs.readFileSync("package.json","utf8")); if(p.overrides) throw new Error("Merge existing overrides manually"); p.overrides=JSON.parse(fs.readFileSync("node_modules/evalanche/security-overrides.json","utf8")); fs.writeFileSync("package.json",JSON.stringify(p,null,2)+"\n")'
-npm install
-npm audit --omit=dev
+### Avalanche L1s
+
+Discover the current public mainnet or Fuji EVM L1 catalog, then verify a selected RPC before creating a wallet on it:
+
+```typescript
+import { Evalanche, listAvalancheL1s, getAvalancheL1Network } from 'evalanche';
+const l1s = await listAvalancheL1s(); // { network: 'fuji', apiKey?: '...' } also supported
+const network = await getAvalancheL1Network(4337); // Beam; checks eth_chainId
+const agent = new Evalanche({ privateKey: process.env.AGENT_PRIVATE_KEY!, network });
+console.log(agent.getChainInfo()); // BEAM native token, not AVAX
 ```
+
+The [official live catalog](https://build.avax.network/docs/api-reference/data-api/evm-chains/supportedChains) supplies native token, blockchain ID, subnet ID and RPC metadata. These helpers support public EVM L1s with 18-decimal native tokens; custom EVM networks can still be supplied directly. They do not imply bridge, staking, identity registry or non-EVM support on every L1. X/P-chain signing remains scoped to C-Chain/Fuji. `switchNetwork` preserves spending limits and recorded wallet budgets.
 
 Polymarket authenticated actions use the official `polymarket` CLI. Install it on production agents and keep it on a pinned path, or set `EVALANCHE_POLYMARKET_CLI_BIN=/absolute/path/to/polymarket`. Evalanche passes signer material through `POLYMARKET_PRIVATE_KEY` in the child process environment and never through CLI argv.
 
@@ -80,7 +85,7 @@ EVALANCHE_MCP_HTTP_TOKEN="$(openssl rand -hex 32)" npx evalanche-mcp --http --po
 - Cross-chain bridge, swap, and gas-funding flows
 - Avalanche and multi-EVM DeFi actions
 - Polymarket market reads plus official-CLI-backed execution
-- Perpetual trading support for Hyperliquid and dYdX
+- Perpetual trading support for Hyperliquid
 
 ## Also Works Across EVM
 

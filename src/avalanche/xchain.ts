@@ -26,16 +26,7 @@ export class XChainOperations {
    */
   async getBalance(): Promise<bigint> {
     try {
-      const utxoSet = await this.signer.getUTXOs('X');
-      const context = this.provider.getContext();
-      const avaxAssetId = context.avaxAssetID;
-      let total = BigInt(0);
-      for (const utxo of utxoSet.getUTXOs()) {
-        if (utxo.getAssetId() === avaxAssetId && 'amount' in utxo.output) {
-          total += (utxo.output as { amount: () => bigint }).amount();
-        }
-      }
-      return total;
+      return await this.provider.getXBalance(this.getAddress());
     } catch (error) {
       throw new EvalancheError(
         'Failed to get X-Chain balance',
@@ -53,13 +44,7 @@ export class XChainOperations {
    */
   async exportTo(amount: bigint, destination: 'P' | 'C'): Promise<string> {
     try {
-      const utxoSet = await this.signer.getUTXOs('X');
-      const unsignedTx = this.signer.exportX(amount, utxoSet, destination);
-      const signedUnsignedTx = await this.signer.signTx({ tx: unsignedTx });
-      const signedTx = signedUnsignedTx.getSignedTx();
-      const api = this.provider.getApiX();
-      const response = await api.issueSignedTx(signedTx);
-      return response.txID;
+      return await this.signer.exportX(amount, destination);
     } catch (error) {
       throw new EvalancheError(
         `Failed to export from X-Chain to ${destination}`,
@@ -76,16 +61,7 @@ export class XChainOperations {
    */
   async importFrom(sourceChain: 'P' | 'C'): Promise<string> {
     try {
-      const atomicUtxos = await this.signer.getAtomicUTXOs('X', sourceChain);
-      if (atomicUtxos.getUTXOs().length === 0) {
-        throw new Error('No atomic UTXOs available for import');
-      }
-      const unsignedTx = this.signer.importX(atomicUtxos, sourceChain);
-      const signedUnsignedTx = await this.signer.signTx({ tx: unsignedTx });
-      const signedTx = signedUnsignedTx.getSignedTx();
-      const api = this.provider.getApiX();
-      const response = await api.issueSignedTx(signedTx);
-      return response.txID;
+      return await this.signer.importX(sourceChain);
     } catch (error) {
       throw new EvalancheError(
         `Failed to import to X-Chain from ${sourceChain}`,

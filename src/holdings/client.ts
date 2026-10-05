@@ -2,7 +2,6 @@ import { Contract, formatEther, formatUnits } from 'ethers';
 import { safeFetch } from '../utils/safe-fetch';
 import { NETWORKS } from '../utils/networks';
 import type { ChainName } from '../utils/networks';
-import type { DydxClient } from '../perps/dydx/client';
 import type { HyperliquidClient } from '../perps/hyperliquid/client';
 import type { PerpPosition } from '../perps/types';
 import type {
@@ -37,11 +36,10 @@ interface HoldingsAgentLike {
   getChainInfo(): { id: number; name: string; currency?: { symbol: string } };
   switchNetwork(network: ChainName): HoldingsAgentLike;
   hyperliquid(): Promise<HyperliquidClient>;
-  dydx(): Promise<DydxClient>;
 }
 
 function isChainName(chain: HoldingsNetwork): chain is ChainName {
-  return chain !== 'hyperliquid' && chain !== 'dydx';
+  return chain !== 'hyperliquid';
 }
 
 function buildSummary(holdings: HoldingRecord[]) {
@@ -237,8 +235,6 @@ export class HoldingsClient {
         return this.scanPolymarketPositions(source, walletAddress);
       case 'hyperliquid_detector':
         return this.scanPerpVenue(source, 'hyperliquid');
-      case 'dydx_detector':
-        return this.scanPerpVenue(source, 'dydx');
       case 'erc20_balance_detector': {
         if (!source.address || !isChainName(source.chain)) return [];
         const holding = await this.scanTokenAsset({
@@ -375,13 +371,8 @@ export class HoldingsClient {
       }));
   }
 
-  private async scanPerpVenue(source: PositionSourceRecord, venue: 'hyperliquid' | 'dydx'): Promise<HoldingRecord[]> {
-    let positions: PerpPosition[] = [];
-    if (venue === 'hyperliquid') {
-      positions = await (await this.agent.hyperliquid()).getPositions();
-    } else {
-      positions = await (await this.agent.dydx()).getPositions();
-    }
+  private async scanPerpVenue(source: PositionSourceRecord, venue: 'hyperliquid'): Promise<HoldingRecord[]> {
+    const positions: PerpPosition[] = await (await this.agent.hyperliquid()).getPositions();
 
     const protocol = this.getProtocol(source.protocolId);
     return positions
