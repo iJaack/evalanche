@@ -241,16 +241,10 @@ describe('EvalancheMCPServer', () => {
     expect(names).toContain('node_info');
     expect(names).toContain('pchain_send');
 
-    // New v0.7.0 dYdX perps tools
-    expect(names).toContain('dydx_get_markets');
-    expect(names).toContain('dydx_has_market');
-    expect(names).toContain('dydx_get_balance');
-    expect(names).toContain('dydx_get_positions');
-    expect(names).toContain('dydx_place_market_order');
-    expect(names).toContain('dydx_place_limit_order');
-    expect(names).toContain('dydx_cancel_order');
-    expect(names).toContain('dydx_close_position');
-    expect(names).toContain('dydx_get_orders');
+    // L1 discovery and supported perpetual tools
+    expect(names).toContain('avalanche_list_l1s');
+    expect(names).toContain('avalanche_get_l1_network');
+    expect(names.some((name: string) => name.startsWith('dydx_'))).toBe(false);
     expect(names).toContain('hyperliquid_get_markets');
     expect(names).toContain('hyperliquid_get_account_state');
     expect(names).toContain('hyperliquid_get_positions');
@@ -264,50 +258,10 @@ describe('EvalancheMCPServer', () => {
     expect(names).toContain('find_perp_market');
   });
 
-  it('handles dydx_get_markets', async () => {
-    const mockDydx = {
-      getMarkets: vi.fn().mockResolvedValue([{ ticker: 'ETH-USD', oraclePrice: '3000' }]),
-    };
-    const agent = (server as unknown as { agent: { dydx: ReturnType<typeof vi.fn> } }).agent;
-    agent.dydx = vi.fn().mockResolvedValue(mockDydx);
-
-    const res = await server.handleRequest({
-      jsonrpc: '2.0',
-      id: 20,
-      method: 'tools/call',
-      params: { name: 'dydx_get_markets', arguments: {} },
-    });
-    const result = res.result as { content: Array<{ text: string }> };
-    const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.count).toBe(1);
-    expect(parsed.markets[0].ticker).toBe('ETH-USD');
-  });
-
-  it('handles dydx_place_market_order', async () => {
-    const mockDydx = {
-      placeMarketOrder: vi.fn().mockResolvedValue('ETH-USD:123:32'),
-    };
-    const agent = (server as unknown as { agent: { dydx: ReturnType<typeof vi.fn> } }).agent;
-    agent.dydx = vi.fn().mockResolvedValue(mockDydx);
-
-    const res = await server.handleRequest({
-      jsonrpc: '2.0',
-      id: 21,
-      method: 'tools/call',
-      params: {
-        name: 'dydx_place_market_order',
-        arguments: { market: 'ETH-USD', side: 'BUY', size: '0.1' },
-      },
-    });
-    const result = res.result as { content: Array<{ text: string }> };
-    const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.orderId).toBe('ETH-USD:123:32');
-  });
-
   it('handles find_perp_market', async () => {
     const agent = (server as unknown as { agent: { findPerpMarket: ReturnType<typeof vi.fn> } }).agent;
     agent.findPerpMarket = vi.fn().mockResolvedValue({
-      venue: 'dydx',
+      venue: 'hyperliquid',
       market: { ticker: 'ETH-USD' },
     });
 
@@ -319,7 +273,7 @@ describe('EvalancheMCPServer', () => {
     });
     const result = res.result as { content: Array<{ text: string }> };
     const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.venue).toBe('dydx');
+    expect(parsed.venue).toBe('hyperliquid');
     expect(parsed.market.ticker).toBe('ETH-USD');
   });
 

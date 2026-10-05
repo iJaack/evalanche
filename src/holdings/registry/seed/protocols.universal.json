@@ -78,15 +78,5 @@
     "website": "https://hyperliquid.xyz",
     "aliases": ["hyperliquid", "hl"],
     "source": "defillama"
-  },
-  {
-    "protocolId": "dydx",
-    "name": "dYdX",
-    "slug": "dydx",
-    "category": "perp",
-    "chains": ["dydx"],
-    "website": "https://dydx.trade",
-    "aliases": ["dydx", "dydx-v4"],
-    "source": "defillama"
   }
 ]

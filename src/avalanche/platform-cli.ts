@@ -83,7 +83,7 @@ export interface CrossChainTransferParams {
  *
  * Wraps the `platform-cli` Go binary (ava-labs/platform-cli) as an optional
  * subprocess. Provides subnet management, L1 validator ops, and enhanced
- * staking features that go beyond what @avalabs/core-wallets-sdk supports.
+ * staking and L1 lifecycle features exposed by Avalanche CLI.
  *
  * Falls back gracefully if the binary is not installed.
  */

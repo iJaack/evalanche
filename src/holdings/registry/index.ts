@@ -66,7 +66,7 @@ function avapilotProtocolId(name: string): string {
 }
 
 function isEvmChain(chain: HoldingsNetwork): chain is ChainName {
-  return !['hyperliquid', 'dydx'].includes(chain);
+  return !['hyperliquid'].includes(chain);
 }
 
 function mapRegistrySource(source: SeedPositionSourceRecord['source'] | SeedProtocolRecord['source']): UniversalDappResolutionSource {

@@ -5,8 +5,8 @@ Evalanche uses a tag-driven GitHub Actions release workflow.
 <!-- GENERATED:release-process:start -->
 ## Current Release Automation
 
-- Current release line: `v1.13.0`
-- Release notes path: `docs/releases/RELEASE_NOTES_1.13.0.md`
+- Current release line: `v1.14.0`
+- Release notes path: `docs/releases/RELEASE_NOTES_1.14.0.md`
 - Required workflow checks:
   - release integrity and notes coverage
   - `npm test`
@@ -71,8 +71,14 @@ git push origin vX.Y.Z
 
 ## Consumer and live-read gates
 
-The release installs the packed tarball in three clean temporary npm projects: plain, configured full, and configured `--omit=optional`. All must load ESM/CJS exports and construct an Avalanche agent. The configured full install must round-trip a dYdX order identifier. The two configured production audits must have zero high/critical findings; the plain audit is reported explicitly because upstream overrides do not propagate to consumers.
+The release installs the packed tarball in three clean temporary npm projects: plain, configured with the shipped root overrides, and configured with `--omit=optional`. Every mode must load ESM/CJS exports, boot on Avalanche by default, derive the expected wallet, sign an offline P-chain buffer, and prove the legacy Core, HPKE, and dYdX trees are absent. Every mode requires zero high/critical audit findings. Release notes must call out removed APIs and runtime-floor changes explicitly.
 
-The shipped `security-overrides.json` must match the reviewed root overrides. The consumer gate uses that recipe at the application root. Keep the plain/configured distinction in release notes and audit claims. Apply the recipe as native npm root overrides; verify the installed tarball independently.
+The shipped `security-overrides.json` must match the reviewed root overrides. The consumer gate applies that recipe at the application root in configured modes and verifies the installed tarball independently.
+
+Both repository and consumer audit gates require complete numeric vulnerability counts, matching package severities and valid advisory records. Failed requests, missing fields or inconsistent reports block the gate; missing counts are never treated as zero.
 
 Run the public read gate with `npm run smoke:live`. Release assets include `consumer-install-vX.Y.Z.json` and `live-reads-vX.Y.Z.json`. A failing provider check blocks publication; inspect the current HTTP result before retrying.
+
+## Release dependency pins
+
+GitHub Actions are pinned to verified full commit SHAs. ClawHub is pinned to `0.23.3` and uses a separate Node 22 setup; SDK validation and npm publication retain the Node 20 release runtime. Review and validate each pin update. Every release tag must be contained in `origin/main` before dependency installation or publication, even when generated docs do not change.

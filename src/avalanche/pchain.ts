@@ -28,16 +28,7 @@ export class PChainOperations {
    */
   async getBalance(): Promise<bigint> {
     try {
-      const utxoSet = await this.signer.getUTXOs('P');
-      const context = this.provider.getContext();
-      const avaxAssetId = context.avaxAssetID;
-      let total = BigInt(0);
-      for (const utxo of utxoSet.getUTXOs()) {
-        if (utxo.getAssetId() === avaxAssetId && 'amount' in utxo.output) {
-          total += (utxo.output as { amount: () => bigint }).amount();
-        }
-      }
-      return total;
+      return await this.provider.getPBalance(this.getAddress());
     } catch (error) {
       throw new EvalancheError(
         'Failed to get P-Chain balance',
@@ -55,13 +46,7 @@ export class PChainOperations {
    */
   async exportTo(amount: bigint, destination: 'X' | 'C'): Promise<string> {
     try {
-      const utxoSet = await this.signer.getUTXOs('P');
-      const unsignedTx = this.signer.exportP(amount, utxoSet, destination);
-      const signedUnsignedTx = await this.signer.signTx({ tx: unsignedTx });
-      const signedTx = signedUnsignedTx.getSignedTx();
-      const api = this.provider.getApiP();
-      const response = await api.issueSignedTx(signedTx);
-      return response.txID;
+      return await this.signer.exportP(amount, destination);
     } catch (error) {
       throw new EvalancheError(
         `Failed to export from P-Chain to ${destination}`,
@@ -78,16 +63,7 @@ export class PChainOperations {
    */
   async importFrom(sourceChain: 'X' | 'C'): Promise<string> {
     try {
-      const atomicUtxos = await this.signer.getAtomicUTXOs('P', sourceChain);
-      if (atomicUtxos.getUTXOs().length === 0) {
-        throw new Error('No atomic UTXOs available for import');
-      }
-      const unsignedTx = this.signer.importP(atomicUtxos, sourceChain);
-      const signedUnsignedTx = await this.signer.signTx({ tx: unsignedTx });
-      const signedTx = signedUnsignedTx.getSignedTx();
-      const api = this.provider.getApiP();
-      const response = await api.issueSignedTx(signedTx);
-      return response.txID;
+      return await this.signer.importP(sourceChain);
     } catch (error) {
       throw new EvalancheError(
         `Failed to import to P-Chain from ${sourceChain}`,
@@ -101,7 +77,7 @@ export class PChainOperations {
    * Delegate AVAX to a validator on the Primary Network.
    * @param nodeId - Validator node ID (e.g. 'NodeID-...')
    * @param stakeAmount - Amount in nAVAX to delegate
-   * @param startDate - Unix timestamp (seconds) for delegation start
+   * @param startDate - Retained for API compatibility; current Avalanche transactions begin when accepted
    * @param endDate - Unix timestamp (seconds) for delegation end
    * @param rewardAddress - Optional reward address
    * @returns Transaction ID
@@ -114,21 +90,13 @@ export class PChainOperations {
     rewardAddress?: string,
   ): Promise<string> {
     try {
-      const utxoSet = await this.signer.getUTXOs('P');
-      const config = rewardAddress ? { rewardAddress } : undefined;
-      const unsignedTx = this.signer.addDelegator(
-        utxoSet,
+      void startDate;
+      return await this.signer.addDelegator(
         nodeId,
         stakeAmount,
-        startDate,
         endDate,
-        config,
+        rewardAddress ?? this.getAddress(),
       );
-      const signedUnsignedTx = await this.signer.signTx({ tx: unsignedTx });
-      const signedTx = signedUnsignedTx.getSignedTx();
-      const api = this.provider.getApiP();
-      const response = await api.issueSignedTx(signedTx);
-      return response.txID;
     } catch (error) {
       throw new EvalancheError(
         `Failed to delegate to ${nodeId}`,
@@ -144,8 +112,7 @@ export class PChainOperations {
    */
   async getStake(): Promise<StakeInfo[]> {
     try {
-      const stakeResponse = await this.signer.getStake();
-      const staked = stakeResponse.staked.toString();
+      const staked = (await this.provider.getPStake(this.getAddress())).toString();
       return [{ staked }];
     } catch (error) {
       throw new EvalancheError(
@@ -162,15 +129,12 @@ export class PChainOperations {
    */
   async getCurrentValidators(limit?: number): Promise<ValidatorInfo[]> {
     try {
-      const api = this.provider.getApiP();
-      const response = await api.getCurrentValidators();
-      const validators = (response.validators as Array<Record<string, unknown>>)
-        .slice(0, limit ?? 100);
+      const validators = (await this.provider.getCurrentValidators()).slice(0, limit ?? 100);
       return validators.map((v) => ({
-        nodeId: String(v.nodeID ?? ''),
-        stakeAmount: String(v.stakeAmount ?? '0'),
-        startTime: Number(v.startTime ?? 0),
-        endTime: Number(v.endTime ?? 0),
+        nodeId: v.nodeID,
+        stakeAmount: v.stakeAmount,
+        startTime: Number(v.startTime),
+        endTime: Number(v.endTime),
         delegationFee: Number(v.delegationFee ?? 0),
         uptime: Number(v.uptime ?? 0),
         connected: Boolean(v.connected),
@@ -189,8 +153,7 @@ export class PChainOperations {
    */
   async getMinStake(): Promise<MinStakeAmounts> {
     try {
-      const api = this.provider.getApiP();
-      const response = await api.getMinStake();
+      const response = await this.provider.getMinStake();
       return {
         minValidatorStake: response.minValidatorStake.toString(),
         minDelegatorStake: response.minDelegatorStake.toString(),

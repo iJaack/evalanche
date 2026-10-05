@@ -53,7 +53,6 @@ export async function runReleaseSmoke({
       getChainInfo: () => ({ id: 43114, name: 'Avalanche', currency: { symbol: 'AVAX' } }),
       switchNetwork() { return this; },
       async hyperliquid() { return { getAccountState: async () => ({ positions: [] }) }; },
-      async dydx() { return { getPositions: async () => [] }; },
     });
     const holdings = await holdingsClient.scan({ include: [] });
     checks.push({ name: 'holdings_boot', ok: Array.isArray(holdings.holdings) && holdings.summary.totalHoldings === 0 });

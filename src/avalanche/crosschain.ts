@@ -106,31 +106,12 @@ export class CrossChainTransfer {
     amount: bigint,
     destination: 'X' | 'P',
   ): Promise<string> {
-    const nonce = BigInt(await this.signer.getNonce());
-    const feeData = await this.provider.evmRpc.getFeeData();
-    const baseFee = feeData.gasPrice ?? BigInt(25_000_000_000);
-    const unsignedTx = this.signer.exportC(amount, destination, nonce, baseFee);
-    const signedUnsignedTx = await this.signer.signTx({ tx: unsignedTx });
-    const signedTx = signedUnsignedTx.getSignedTx();
-    const api = this.provider.getApiC();
-    const response = await api.issueSignedTx(signedTx);
-    return response.txID;
+    return this.signer.exportC(amount, destination);
   }
 
   /** Import AVAX to C-Chain from another chain */
   private async importToC(sourceChain: 'X' | 'P'): Promise<string> {
-    const atomicUtxos = await this.signer.getAtomicUTXOs('C', sourceChain);
-    if (atomicUtxos.getUTXOs().length === 0) {
-      throw new Error('No atomic UTXOs available for C-Chain import');
-    }
-    const feeData = await this.provider.evmRpc.getFeeData();
-    const baseFee = feeData.gasPrice ?? BigInt(25_000_000_000);
-    const unsignedTx = this.signer.importC(atomicUtxos, sourceChain, baseFee);
-    const signedUnsignedTx = await this.signer.signTx({ tx: unsignedTx });
-    const signedTx = signedUnsignedTx.getSignedTx();
-    const api = this.provider.getApiC();
-    const response = await api.issueSignedTx(signedTx);
-    return response.txID;
+    return this.signer.importC(sourceChain);
   }
 
   /** Poll until the exported atomic UTXOs are visible on the destination chain. */
@@ -141,8 +122,10 @@ export class CrossChainTransfer {
     const deadline = Date.now() + CrossChainTransfer.IMPORT_POLL_TIMEOUT_MS;
 
     while (Date.now() < deadline) {
-      const atomicUtxos = await this.signer.getAtomicUTXOs(destination, source);
-      if (atomicUtxos.getUTXOs().length > 0) return;
+      const address = destination === 'C'
+        ? this.signer.getCurrentAddress('C')
+        : this.signer.getCurrentAddress(destination);
+      if (await this.provider.getAtomicUTXOCount(destination, source, address) > 0) return;
       await new Promise((resolve) => setTimeout(resolve, CrossChainTransfer.IMPORT_POLL_INTERVAL_MS));
     }
 

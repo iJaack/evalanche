@@ -9,7 +9,7 @@ import type {
 
 describe('shared perp types', () => {
   it('supports the expected perp venues', () => {
-    expectTypeOf<PerpVenueName>().toEqualTypeOf<'dydx' | 'hyperliquid'>();
+    expectTypeOf<PerpVenueName>().toEqualTypeOf<'hyperliquid'>();
   });
 
   it('keeps shared order params venue-neutral', () => {
@@ -30,14 +30,14 @@ describe('shared perp types', () => {
 
   it('adds venue and market classification to shared market types', () => {
     expectTypeOf<PerpMarket>().toMatchTypeOf<{
-      venue: 'dydx' | 'hyperliquid';
+      venue: 'hyperliquid';
       ticker: string;
       marketId: string;
       marketClass: 'validator' | 'hip3';
     }>();
 
     expectTypeOf<PerpPosition>().toMatchTypeOf<{
-      venue: 'dydx' | 'hyperliquid';
+      venue: 'hyperliquid';
       market: string;
       side: 'LONG' | 'SHORT';
     }>();

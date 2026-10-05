@@ -23,3 +23,6 @@ export { CrossChainTransfer } from './crosschain';
 
 // Platform CLI
 export { PlatformCLI, type PlatformCLIResult, type SubnetCreateResult, type L1RegisterResult, type NodeInfoResult, type AddValidatorParams, type DelegateParams, type ConvertToL1Params, type PChainTransferParams, type CrossChainTransferParams } from './platform-cli';
+
+export { listAvalancheL1s, getAvalancheL1Network } from './l1';
+export type { AvalancheL1, AvalancheL1Options } from './l1';

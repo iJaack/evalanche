@@ -2,7 +2,7 @@ import type { ChainName } from '../utils/networks';
 
 export type HoldingsRegistrySource = 'local' | 'defillama' | 'avapilot';
 
-export type HoldingsNetwork = ChainName | 'hyperliquid' | 'dydx';
+export type HoldingsNetwork = ChainName | 'hyperliquid';
 
 export type AssetType = 'erc20';
 
