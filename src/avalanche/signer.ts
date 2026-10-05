@@ -37,6 +37,9 @@ export function createAvalancheSigner(
     const getCurrentAddress = (chain: 'X' | 'P' | 'C') => (
       account.getXPAddress(chain, provider.hrp)
     );
+    const getImportAddress = (chain: 'X' | 'P' | 'C') => (
+      chain === 'C' ? account.getEVMAddress() : getCurrentAddress(chain)
+    );
     const send = async (prepared: Parameters<typeof client.sendXPTransaction>[0]) => (
       await client.sendXPTransaction(prepared)
     ).txHash;
@@ -49,7 +52,7 @@ export function createAvalancheSigner(
       exportX: async (amount, destination) => send(
         await client.xChain.prepareExportTxn({
           destinationChain: destination,
-          exportedOutputs: [{ addresses: [getCurrentAddress(destination)], amount }],
+          exportedOutputs: [{ addresses: [getImportAddress(destination)], amount }],
         }),
       ),
       importX: async (source) => send(
@@ -61,7 +64,7 @@ export function createAvalancheSigner(
       exportP: async (amount, destination) => send(
         await client.pChain.prepareExportTxn({
           destinationChain: destination,
-          exportedOutputs: [{ addresses: [getCurrentAddress(destination)], amount }],
+          exportedOutputs: [{ addresses: [getImportAddress(destination)], amount }],
         }),
       ),
       importP: async (source) => send(
@@ -73,7 +76,7 @@ export function createAvalancheSigner(
       addDelegator: async (nodeId, stakeAmount, end, rewardAddress) => send(
         await client.pChain.prepareAddPermissionlessDelegatorTxn({
           nodeId,
-          stakeInNanoAvax: stakeAmount,
+          stakeInAvax: stakeAmount,
           end,
           rewardAddresses: [rewardAddress],
           threshold: 1,

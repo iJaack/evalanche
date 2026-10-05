@@ -47,6 +47,11 @@ describe('Avalanche SDK signing adapter', () => {
       destinationChain: 'P',
       exportedOutputs: [{ addresses: ['P-fuji-address'], amount: 10n }],
     });
+    await expect(signer.exportX(11n, 'C')).resolves.toBe('sent:x-export');
+    expect(sdk.client.xChain.prepareExportTxn).toHaveBeenCalledWith({
+      destinationChain: 'C',
+      exportedOutputs: [{ addresses: ['0x0000000000000000000000000000000000000001'], amount: 11n }],
+    });
     await expect(signer.importX('C')).resolves.toBe('sent:x-import');
     expect(sdk.client.xChain.prepareImportTxn).toHaveBeenCalledWith({
       sourceChain: 'C', importedOutput: { addresses: ['X-fuji-address'] },
@@ -55,7 +60,7 @@ describe('Avalanche SDK signing adapter', () => {
     await expect(signer.exportP(20n, 'C')).resolves.toBe('sent:p-export');
     expect(sdk.client.pChain.prepareExportTxn).toHaveBeenCalledWith({
       destinationChain: 'C',
-      exportedOutputs: [{ addresses: ['C-fuji-address'], amount: 20n }],
+      exportedOutputs: [{ addresses: ['0x0000000000000000000000000000000000000001'], amount: 20n }],
     });
     await expect(signer.importP('X')).resolves.toBe('sent:p-import');
     expect(sdk.client.pChain.prepareImportTxn).toHaveBeenCalledWith({
@@ -85,7 +90,7 @@ describe('Avalanche SDK signing adapter', () => {
       .resolves.toBe('sent:delegate');
     expect(sdk.client.pChain.prepareAddPermissionlessDelegatorTxn).toHaveBeenCalledWith({
       nodeId: 'NodeID-1',
-      stakeInNanoAvax: 25n,
+      stakeInAvax: 25n,
       end: 100n,
       rewardAddresses: ['P-avax-reward'],
       threshold: 1,

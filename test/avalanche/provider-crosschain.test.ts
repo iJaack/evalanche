@@ -72,4 +72,25 @@ describe('Avalanche provider + chain ops', () => {
     expect(await transfer.transfer('C', 'P', 1n)).toEqual({ exportTxId: 'exp-c', importTxId: 'imp-p' });
     await expect(transfer.transfer('C', 'C', 1n)).rejects.toThrow(/must be different/);
   });
+
+  it('polls C-chain import availability at the EVM import address', async () => {
+    const { CrossChainTransfer } = await import('../../src/avalanche/crosschain');
+    const signer = {
+      getCurrentAddress: vi.fn((chain: string) => `${chain}-addr`),
+      getAddressEVM: vi.fn(() => '0x0000000000000000000000000000000000000001'),
+    } as any;
+    const provider = {
+      getAtomicUTXOCount: vi.fn(async () => 1),
+    } as any;
+
+    const transfer = new CrossChainTransfer(signer, provider) as any;
+    await transfer.waitForImportAvailability('C', 'X');
+
+    expect(provider.getAtomicUTXOCount).toHaveBeenCalledWith(
+      'C',
+      'X',
+      '0x0000000000000000000000000000000000000001',
+    );
+    expect(signer.getCurrentAddress).not.toHaveBeenCalledWith('C');
+  });
 });

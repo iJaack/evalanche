@@ -440,8 +440,8 @@ Use [docs/live-smoke-checklist.md](/Users/jaack/Desktop/Github/evalanche/docs/li
 ## v1.13.0 execution reliability
 
 - A vault position can have verified shares but no `underlyingValue` when conversion fails. Honor the scan warning and medium confidence; never substitute shares for assets.
-- The dYdX SDK is optional. An installation made with `--omit=optional` must add `@dydxprotocol/v4-client-js` before using dYdX.
-- Zero high/critical audit counts require the shipped security-overrides.json recipe at the consumer root. Plain installs still inherit upstream advisories; audit the resolved tree.
+- Historical v1.13.0 note: dYdX was optional before v1.14.0. Current installs must not add `@dydxprotocol/v4-client-js`; use Hyperliquid for perpetuals.
+- Historical v1.13.0 note: zero high/critical audit counts required the shipped security-overrides.json recipe at the consumer root. Current v1.14.0 consumer installs must pass the packaged clean-install audit and dependency-absence gates.
 - A2A task execution is not shipped. Existing agent-card identity support does not authorize or expose remote wallet actions.
 
 ## v1.14.0 Avalanche expansion

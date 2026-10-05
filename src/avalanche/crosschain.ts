@@ -123,7 +123,7 @@ export class CrossChainTransfer {
 
     while (Date.now() < deadline) {
       const address = destination === 'C'
-        ? this.signer.getCurrentAddress('C')
+        ? this.signer.getAddressEVM()
         : this.signer.getCurrentAddress(destination);
       if (await this.provider.getAtomicUTXOCount(destination, source, address) > 0) return;
       await new Promise((resolve) => setTimeout(resolve, CrossChainTransfer.IMPORT_POLL_INTERVAL_MS));
