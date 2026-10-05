@@ -33,8 +33,7 @@ Repository and clean consumer production audits report zero vulnerabilities at e
 
 ## Validation and limitations
 
-- 588 tests across 50 files, type checking, ESM/CJS/DTS builds, package validation, and documentation parity passed locally.
+- 589 tests across 50 files, type checking, ESM/CJS/DTS builds, package validation, and documentation parity passed locally.
 - The packed tarball passed plain, configured, and `--omit=optional` clean installs, ESM/CJS loading, deterministic X/P derivation, offline signing, and dependency-absence checks.
 - Live read-only checks passed for Avalanche, Fuji, Robinhood Chain, Hyperliquid, Polymarket, and LI.FI quote construction.
 - No funded X/P/C transaction or other value-bearing action was broadcast. Transaction construction, routing, and signing were verified offline or with mocked RPC; live checks were read-only.
-
