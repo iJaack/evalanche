@@ -76,7 +76,7 @@ export function createAvalancheSigner(
       addDelegator: async (nodeId, stakeAmount, end, rewardAddress) => send(
         await client.pChain.prepareAddPermissionlessDelegatorTxn({
           nodeId,
-          stakeInNanoAvax: stakeAmount,
+          stakeInAvax: stakeAmount,
           end,
           rewardAddresses: [rewardAddress],
           threshold: 1,
