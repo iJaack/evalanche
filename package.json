@@ -19,7 +19,8 @@
   "files": [
     "dist",
     "skill",
-    "security-overrides.json"
+    "security-overrides.json",
+    "scripts/grok-bot-signer.sh"
   ],
   "scripts": {
     "build": "tsup",
