@@ -2,20 +2,38 @@
 # Start, stop, and health-check evalanche-signer on the Grok Bot box.
 # No systemd unit. The wallet key stays in the environment and is never written here.
 # start is dry-run unless --live is passed. The bearer token is read from a file.
+# As root, EVALANCHE_BOX_* overrides are ignored and the production paths are used.
 set -eu
 
-PREFIX=${EVALANCHE_BOX_PREFIX:-/opt/evalanche-signer}
-CONFIG=${EVALANCHE_BOX_CONFIG:-/etc/evalanche-signer/config.json}
-STATE=${EVALANCHE_BOX_STATE:-/var/lib/evalanche-signer/state}
-LOG_DIR=${EVALANCHE_BOX_LOG_DIR:-/var/lib/evalanche-signer/log}
-SOCKET_DIR=${EVALANCHE_BOX_SOCKET_DIR:-/var/lib/evalanche-signer/run}
-SOCKET=${EVALANCHE_BOX_SOCKET:-$SOCKET_DIR/signer.sock}
-PIDFILE=${EVALANCHE_BOX_PIDFILE:-$STATE/signer.pid}
-LOG=${EVALANCHE_BOX_LOG:-$LOG_DIR/signer.log}
-SIGNER_USER=${EVALANCHE_BOX_USER:-evalanche-signer}
-BIN=${EVALANCHE_BOX_BIN:-$PREFIX/node_modules/.bin/evalanche-signer}
-TOKEN_FILE=${EVALANCHE_BOX_TOKEN_FILE:-/etc/evalanche-signer/token}
-SKIP_ROOT=${EVALANCHE_BOX_SKIP_ROOT:-0}
+if [ "$(id -u)" -eq 0 ]; then
+  PREFIX=/opt/evalanche-signer
+  CONFIG=/etc/evalanche-signer/config.json
+  STATE=/var/lib/evalanche-signer/state
+  LOG_DIR=/var/lib/evalanche-signer/log
+  SOCKET_DIR=/var/lib/evalanche-signer/run
+  SOCKET=$SOCKET_DIR/signer.sock
+  PIDFILE=$STATE/signer.pid
+  LOG=$LOG_DIR/signer.log
+  SIGNER_USER=evalanche-signer
+  BIN=$PREFIX/node_modules/.bin/evalanche-signer
+  TOKEN_FILE=/etc/evalanche-signer/token
+  LOCK=$STATE/start.lock
+  SKIP_ROOT=0
+else
+  PREFIX=${EVALANCHE_BOX_PREFIX:-/opt/evalanche-signer}
+  CONFIG=${EVALANCHE_BOX_CONFIG:-/etc/evalanche-signer/config.json}
+  STATE=${EVALANCHE_BOX_STATE:-/var/lib/evalanche-signer/state}
+  LOG_DIR=${EVALANCHE_BOX_LOG_DIR:-/var/lib/evalanche-signer/log}
+  SOCKET_DIR=${EVALANCHE_BOX_SOCKET_DIR:-/var/lib/evalanche-signer/run}
+  SOCKET=${EVALANCHE_BOX_SOCKET:-$SOCKET_DIR/signer.sock}
+  PIDFILE=${EVALANCHE_BOX_PIDFILE:-$STATE/signer.pid}
+  LOG=${EVALANCHE_BOX_LOG:-$LOG_DIR/signer.log}
+  SIGNER_USER=${EVALANCHE_BOX_USER:-evalanche-signer}
+  BIN=${EVALANCHE_BOX_BIN:-$PREFIX/node_modules/.bin/evalanche-signer}
+  TOKEN_FILE=${EVALANCHE_BOX_TOKEN_FILE:-/etc/evalanche-signer/token}
+  LOCK=${EVALANCHE_BOX_LOCK:-$STATE/start.lock}
+  SKIP_ROOT=${EVALANCHE_BOX_SKIP_ROOT:-0}
+fi
 
 usage() {
   echo "usage: grok-bot-signer.sh start [--live] | init [--live] | stop | health" >&2
@@ -54,15 +72,19 @@ require_layout() {
     echo "setsid is required" >&2
     exit 1
   fi
+  if ! command -v flock >/dev/null 2>&1; then
+    echo "flock is required" >&2
+    exit 1
+  fi
 }
 
+# Set once in this shell. Callers must not read it through a nested subshell.
 SIGNER_UID=""
-
-signer_uid() {
-  if [ -z "$SIGNER_UID" ]; then
-    SIGNER_UID=$(id -u "$SIGNER_USER")
+ensure_signer_uid() {
+  if [ -n "$SIGNER_UID" ]; then
+    return 0
   fi
-  printf '%s\n' "$SIGNER_UID"
+  SIGNER_UID=$(id -u "$SIGNER_USER")
 }
 
 # A zombie still answers kill -0. In a container, pid 1 may not reap it.
@@ -79,9 +101,10 @@ pid_is_live() {
 # configured binary or signer/cli.mjs. Wrappers (sh, sudo, setsid) do not count.
 is_signer_pid() {
   pid=$1
+  [ -n "$SIGNER_UID" ] || return 1
   [ -r "/proc/$pid/cmdline" ] || return 1
-  uid=$(stat -c %u "/proc/$pid" 2>/dev/null) || return 1
-  [ "$uid" = "$(signer_uid)" ] || return 1
+  uid=$(awk '/^Uid:/ { print $2; exit }' "/proc/$pid/status" 2>/dev/null) || return 1
+  [ "$uid" = "$SIGNER_UID" ] || return 1
   cmdline=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null) || return 1
   [ -n "$cmdline" ] || return 1
   argv0=${cmdline%% *}
@@ -94,15 +117,39 @@ is_signer_pid() {
   return 1
 }
 
+# Live signer pids only. A zombie is not running.
 list_signer_pids() {
+  ensure_signer_uid
   for dir in /proc/[0-9]*; do
     [ -d "$dir" ] || continue
     pid=${dir#/proc/}
+    pid_is_live "$pid" || continue
     if is_signer_pid "$pid"; then
       printf '%s\n' "$pid"
     fi
   done
   return 0
+}
+
+# The mark is in the child environment, not in its argv.
+pid_has_mark() {
+  pid=$1
+  [ -r "/proc/$pid/environ" ] || return 1
+  tr '\0' '\n' < "/proc/$pid/environ" 2>/dev/null | grep -F -x -q "EVALANCHE_SIGNER_START_MARK=$START_MARK"
+}
+
+find_marked_pid() {
+  for dir in /proc/[0-9]*; do
+    [ -d "$dir" ] || continue
+    pid=${dir#/proc/}
+    pid_is_live "$pid" || continue
+    is_signer_pid "$pid" || continue
+    if pid_has_mark "$pid"; then
+      printf '%s\n' "$pid"
+      return 0
+    fi
+  done
+  return 1
 }
 
 socket_held_by() {
@@ -159,20 +206,35 @@ probe_health() {
   ' "$SOCKET"
 }
 
+# Blocking exclusive lock for the whole start. The second start waits, then
+# sees the signer and fails. The lockfile is root-owned when this script is root.
+hold_start_lock() {
+  if [ "$(id -u)" -eq 0 ]; then
+    touch "$LOCK"
+    chown root:root "$LOCK"
+    chmod 0600 "$LOCK"
+  fi
+  exec 9>"$LOCK"
+  flock 9
+}
+
 launch_signer() {
   flags=$1
-  # The pidfile is not written here. setsid makes the signer a session leader.
+  # Prefix assignment puts the mark in the environment. It is not an argument.
   if [ "$SKIP_ROOT" = 1 ]; then
     # shellcheck disable=SC2086
-    sh -c 'umask 077; exec setsid "$1" --config "$2" --socket "$3" $4 >>"$5" 2>&1 </dev/null' \
+    EVALANCHE_SIGNER_START_MARK=$START_MARK \
+      sh -c 'umask 077; exec 9>&-; exec setsid "$1" --config "$2" --socket "$3" $4 >>"$5" 2>&1 </dev/null' \
       sh "$BIN" "$CONFIG" "$SOCKET" "$flags" "$LOG" &
   else
     # shellcheck disable=SC2086
-    sudo -n --preserve-env=EVALANCHE_SIGNER_PRIVATE_KEY,EVALANCHE_SIGNER_TOKEN \
+    EVALANCHE_SIGNER_START_MARK=$START_MARK \
+      sudo -n --preserve-env=EVALANCHE_SIGNER_PRIVATE_KEY,EVALANCHE_SIGNER_TOKEN,EVALANCHE_SIGNER_START_MARK \
       -u "$SIGNER_USER" -- \
-      sh -c 'umask 077; exec setsid "$1" --config "$2" --socket "$3" $4 >>"$5" 2>&1 </dev/null' \
+      sh -c 'umask 077; exec 9>&-; exec setsid "$1" --config "$2" --socket "$3" $4 >>"$5" 2>&1 </dev/null' \
       sh "$BIN" "$CONFIG" "$SOCKET" "$flags" "$LOG" &
   fi
+  launcher=$!
 }
 
 run_start() {
@@ -190,11 +252,13 @@ run_start() {
   fi
   require_root
   require_layout
+  hold_start_lock
   if [ -z "${EVALANCHE_SIGNER_PRIVATE_KEY:-}" ]; then
     echo "EVALANCHE_SIGNER_PRIVATE_KEY is required" >&2
     exit 1
   fi
   read_token
+  ensure_signer_uid
   running=$(list_signer_pids)
   if [ -n "$running" ]; then
     echo "signer already running" >&2
@@ -217,16 +281,24 @@ run_start() {
       flags="--dry-run"
     fi
   fi
+  START_MARK=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
   launch_signer "$flags"
   newpid=""
   i=0
   while [ "$i" -lt 100 ]; do
-    i=$((i + 1))
-    found=$(list_signer_pids)
-    if [ -n "$found" ]; then
-      newpid=$(printf '%s\n' "$found" | awk 'NF { print; exit }')
+    newpid=$(find_marked_pid || true)
+    if [ -n "$newpid" ]; then
       break
     fi
+    # The launcher is gone and this start has no marked child. setsid may
+    # have forked, so look once more, then stop instead of scanning the
+    # rest of the wait.
+    if ! pid_is_live "$launcher"; then
+      sleep 0.1
+      newpid=$(find_marked_pid || true)
+      break
+    fi
+    i=$((i + 1))
     sleep 0.1
   done
   if [ -z "$newpid" ]; then
@@ -236,7 +308,6 @@ run_start() {
   ready=0
   i=0
   while [ "$i" -lt 100 ]; do
-    i=$((i + 1))
     if is_signer_pid "$newpid" && socket_held_by "$newpid" && probe_health >/dev/null 2>&1; then
       ready=1
       break
@@ -245,6 +316,7 @@ run_start() {
       echo "signer process $newpid exited; see $LOG" >&2
       exit 1
     fi
+    i=$((i + 1))
     sleep 0.1
   done
   if [ "$ready" -ne 1 ]; then
@@ -254,7 +326,7 @@ run_start() {
     fi
     exit 1
   fi
-  if ! is_signer_pid "$newpid" || ! socket_held_by "$newpid"; then
+  if ! is_signer_pid "$newpid" || ! pid_has_mark "$newpid" || ! socket_held_by "$newpid"; then
     echo "signer pid $newpid is not the process listening on $SOCKET" >&2
     exit 1
   fi
@@ -263,30 +335,9 @@ run_start() {
   echo "signer started"
 }
 
-stop_signer() {
-  require_root
-  if [ ! -f "$PIDFILE" ]; then
-    echo "signer is not running"
-    exit 0
-  fi
-  pid=$(tr -d ' \n\r' < "$PIDFILE" 2>/dev/null || true)
-  if [ -z "$pid" ]; then
-    echo "pidfile is empty" >&2
-    exit 1
-  fi
-  if ! pid_is_live "$pid"; then
-    rm -f "$PIDFILE"
-    echo "signer is not running"
-    exit 0
-  fi
-  if ! id "$SIGNER_USER" >/dev/null 2>&1; then
-    echo "missing user $SIGNER_USER" >&2
-    exit 1
-  fi
-  if ! is_signer_pid "$pid"; then
-    echo "refusing to stop unverified pid $pid" >&2
-    exit 1
-  fi
+# Signal one verified pid and return 0 when it is gone (including a zombie).
+signal_and_wait() {
+  pid=$1
   kill -TERM "$pid" 2>/dev/null || true
   i=0
   while pid_is_live "$pid" && [ "$i" -lt 50 ]; do
@@ -295,6 +346,60 @@ stop_signer() {
   done
   if pid_is_live "$pid"; then
     echo "signer pid $pid is still alive" >&2
+    return 1
+  fi
+  return 0
+}
+
+stop_signer() {
+  require_root
+  if ! id "$SIGNER_USER" >/dev/null 2>&1; then
+    echo "missing user $SIGNER_USER" >&2
+    exit 1
+  fi
+  ensure_signer_uid
+  pid=""
+  if [ -f "$PIDFILE" ]; then
+    pid=$(tr -d ' \n\r' < "$PIDFILE" 2>/dev/null || true)
+  fi
+  # A live pid in the pidfile is stopped only when it is this signer.
+  # An unverified live pid is left alone. Missing, empty, stale, or zombie
+  # pidfiles fall through to a scan of verified signer processes.
+  if [ -n "$pid" ] && pid_is_live "$pid"; then
+    if ! is_signer_pid "$pid"; then
+      echo "refusing to stop unverified pid $pid" >&2
+      exit 1
+    fi
+    if ! signal_and_wait "$pid"; then
+      exit 1
+    fi
+    rm -f "$PIDFILE"
+    echo "signer stopped"
+    return 0
+  fi
+  running=$(list_signer_pids)
+  if [ -z "$running" ]; then
+    rm -f "$PIDFILE"
+    echo "signer is not running"
+    exit 0
+  fi
+  for candidate in $running; do
+    if is_signer_pid "$candidate"; then
+      kill -TERM "$candidate" 2>/dev/null || true
+    fi
+  done
+  i=0
+  while [ "$i" -lt 50 ]; do
+    left=$(list_signer_pids)
+    if [ -z "$left" ]; then
+      break
+    fi
+    i=$((i + 1))
+    sleep 0.1
+  done
+  left=$(list_signer_pids)
+  if [ -n "$left" ]; then
+    echo "signer pid still alive: $left" >&2
     exit 1
   fi
   rm -f "$PIDFILE"

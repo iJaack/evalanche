@@ -3,7 +3,7 @@
  * A stale socket is removed, a second start fails while a signer is live,
  * and stop refuses a pid that is not the signer.
  */
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn, spawnSync, type SpawnOptions, type SpawnSyncOptions } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { chmod, mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { userInfo, platform, tmpdir } from 'node:os';
@@ -34,6 +34,27 @@ function sessionId(pid: number): number {
   const stat = readFileSync(`/proc/${pid}/stat`, 'utf8');
   const after = stat.slice(stat.lastIndexOf(')') + 2).split(' ');
   return Number(after[3]);
+}
+
+function pidState(pid: number): string | undefined {
+  try {
+    const stat = readFileSync(`/proc/${pid}/stat`, 'utf8');
+    return stat.slice(stat.lastIndexOf(')') + 2).split(' ')[0];
+  } catch {
+    return undefined;
+  }
+}
+
+function dropIdentity(): { uid: number; gid: number; name: string } | undefined {
+  if (typeof process.getuid !== 'function' || process.getuid() !== 0) return undefined;
+  const users = readFileSync('/etc/passwd', 'utf8').split('\n').map((line) => {
+    const [name, , uid, gid, , , shell] = line.split(':');
+    return { name: name ?? '', uid: Number(uid), gid: Number(gid), shell: shell ?? '' };
+  }).filter((user) => user.name.length > 0 && user.uid > 0);
+  const chosen = users.find((user) => user.name === 'node')
+    ?? users.find((user) => user.shell.length > 0 && !/nologin|false/.test(user.shell));
+  if (!chosen) throw new Error('root tests need a non-root user such as node');
+  return { uid: chosen.uid, gid: chosen.gid, name: chosen.name };
 }
 
 async function layout() {
@@ -80,9 +101,15 @@ if (process.env.FAKE_IGNORE_TERM === '1') {
   await chmod(bin, 0o755);
   await writeFile(join(root, 'config.json'), '{}\n');
   await writeFile(join(root, 'token'), 'box-token-value\n', { mode: 0o640 });
+  const drop = dropIdentity();
+  if (drop) {
+    const chowned = spawnSync('chown', ['-R', `${drop.uid}:${drop.gid}`, root]);
+    if (chowned.status !== 0) throw new Error(chowned.stderr?.toString() || 'chown failed');
+  }
   return {
     root,
     bin,
+    drop,
     env: {
       ...process.env,
       EVALANCHE_BOX_SKIP_ROOT: '1',
@@ -94,9 +121,10 @@ if (process.env.FAKE_IGNORE_TERM === '1') {
       EVALANCHE_BOX_SOCKET: join(root, 'run/signer.sock'),
       EVALANCHE_BOX_PIDFILE: join(root, 'state/signer.pid'),
       EVALANCHE_BOX_LOG: join(root, 'log/signer.log'),
-      EVALANCHE_BOX_USER: userInfo().username,
+      EVALANCHE_BOX_USER: drop?.name ?? userInfo().username,
       EVALANCHE_BOX_BIN: bin,
       EVALANCHE_BOX_TOKEN_FILE: join(root, 'token'),
+      EVALANCHE_BOX_LOCK: join(root, 'state/start.lock'),
       EVALANCHE_SIGNER_PRIVATE_KEY: 'test-key-do-not-print',
       FAKE_ARGV: join(root, 'argv.json'),
       FAKE_IGNORE_TERM: '',
@@ -107,9 +135,29 @@ if (process.env.FAKE_IGNORE_TERM === '1') {
   };
 }
 
-function run(args: string[], env: NodeJS.ProcessEnv) {
-  const result = spawnSync(script, args, { env, encoding: 'utf8', timeout: 20_000 });
+type Box = Awaited<ReturnType<typeof layout>>;
+
+function creds(box: Box): { uid?: number; gid?: number } {
+  return box.drop ? { uid: box.drop.uid, gid: box.drop.gid } : {};
+}
+
+function run(args: string[], box: Box) {
+  const options: SpawnSyncOptions = { env: box.env, encoding: 'utf8', timeout: 20_000, ...creds(box) };
+  const result = spawnSync(script, args, options);
   return { status: result.status, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
+}
+
+function collect(child: ReturnType<typeof spawn>): Promise<{ status: number | null; stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    let stdout = '';
+    let stderr = '';
+    child.stdout?.setEncoding('utf8');
+    child.stderr?.setEncoding('utf8');
+    child.stdout?.on('data', (chunk: string) => { stdout += chunk; });
+    child.stderr?.on('data', (chunk: string) => { stderr += chunk; });
+    child.on('error', reject);
+    child.on('close', (status) => resolve({ status, stdout, stderr }));
+  });
 }
 
 async function leaveStaleSocket(socketPath: string): Promise<number> {
@@ -155,7 +203,7 @@ describe.skipIf(!linux)('grok-bot signer start and stop', () => {
     try { process.kill(dead, 0); expect.fail('dead signer still alive'); } catch (error) {
       expect((error as NodeJS.ErrnoException).code).toBe('ESRCH');
     }
-    const started = run(['start'], box.env);
+    const started = run(['start'], box);
     expect(started.status, started.stderr + started.stdout).toBe(0);
     expect(started.stdout).not.toContain('test-key-do-not-print');
     expect(started.stderr).not.toContain('test-key-do-not-print');
@@ -169,18 +217,18 @@ describe.skipIf(!linux)('grok-bot signer start and stop', () => {
     expect(recorded.args).not.toContain('--init-nonces');
     expect(recorded.args).not.toContain('--live');
     expect(recorded.token).toBe('box-token-value');
-    const health = run(['health'], box.env);
+    const health = run(['health'], box);
     expect(health.status).toBe(0);
     expect(JSON.parse(health.stdout)).toEqual({ ok: true, mode: 'dry-run' });
   }, 20_000);
 
   it('refuses a second start when the pidfile is missing', async () => {
     const box = await layout();
-    const started = run(['start'], box.env);
+    const started = run(['start'], box);
     expect(started.status, started.stderr).toBe(0);
     const pid = Number(readFileSync(box.pidfile, 'utf8').trim());
     await rm(box.pidfile);
-    const again = run(['start'], box.env);
+    const again = run(['start'], box);
     expect(again.status).not.toBe(0);
     expect(again.stderr).toMatch(/already running/);
     expect(signerPids(box.bin)).toEqual([pid]);
@@ -194,7 +242,7 @@ describe.skipIf(!linux)('grok-bot signer start and stop', () => {
     extraPids.push(pid);
     const box = await layout();
     await writeFile(box.pidfile, `${pid}\n`);
-    const stopped = run(['stop'], box.env);
+    const stopped = run(['stop'], box);
     expect(stopped.status).not.toBe(0);
     expect(stopped.stderr).toMatch(/unverified/);
     expect(() => process.kill(pid, 0)).not.toThrow();
@@ -204,10 +252,10 @@ describe.skipIf(!linux)('grok-bot signer start and stop', () => {
   it('exits non-zero when the signer ignores SIGTERM', async () => {
     const box = await layout();
     box.env.FAKE_IGNORE_TERM = '1';
-    const started = run(['start'], box.env);
+    const started = run(['start'], box);
     expect(started.status, started.stderr).toBe(0);
     const pid = Number(readFileSync(box.pidfile, 'utf8').trim());
-    const stopped = run(['stop'], box.env);
+    const stopped = run(['stop'], box);
     expect(stopped.status).not.toBe(0);
     expect(stopped.stderr).toMatch(/still alive/);
     expect(() => process.kill(pid, 0)).not.toThrow();
@@ -215,19 +263,60 @@ describe.skipIf(!linux)('grok-bot signer start and stop', () => {
 
   it('starts live only with --live and creates nonces only from init', async () => {
     const box = await layout();
-    const live = run(['start', '--live'], box.env);
+    const live = run(['start', '--live'], box);
     expect(live.status, live.stderr).toBe(0);
     const recorded = JSON.parse(readFileSync(box.argv, 'utf8')) as { args: string[] };
     expect(recorded.args).not.toContain('--dry-run');
     expect(recorded.args).not.toContain('--init-nonces');
-    const health = run(['health'], box.env);
+    const health = run(['health'], box);
     expect(JSON.parse(health.stdout)).toEqual({ ok: true, mode: 'live' });
-    const stopped = run(['stop'], box.env);
+    const stopped = run(['stop'], box);
     expect(stopped.status, stopped.stderr).toBe(0);
-    const init = run(['init'], box.env);
+    const init = run(['init'], box);
     expect(init.status, init.stderr).toBe(0);
     const again = JSON.parse(readFileSync(box.argv, 'utf8')) as { args: string[] };
     expect(again.args).toContain('--init-nonces');
     expect(again.args).toContain('--dry-run');
   }, 20_000);
+
+  it('stops a running signer when the pidfile is missing', async () => {
+    const box = await layout();
+    const started = run(['start'], box);
+    expect(started.status, started.stderr + started.stdout).toBe(0);
+    const pid = Number(readFileSync(box.pidfile, 'utf8').trim());
+    await rm(box.pidfile);
+    const stopped = run(['stop'], box);
+    expect(stopped.status, stopped.stderr + stopped.stdout).toBe(0);
+    expect(stopped.stdout).toMatch(/signer stopped/);
+    const state = pidState(pid);
+    expect(state === undefined || state === 'Z').toBe(true);
+  }, 20_000);
+
+  it('serializes concurrent starts and records only its own pid', async () => {
+    const box = await layout();
+    const options: SpawnOptions = { env: box.env, timeout: 20_000, ...creds(box) };
+    const first = spawn(script, ['start'], { ...options, stdio: ['ignore', 'pipe', 'pipe'] });
+    const second = spawn(script, ['start'], { ...options, stdio: ['ignore', 'pipe', 'pipe'] });
+    const [left, right] = await Promise.all([collect(first), collect(second)]);
+    const ok = [left, right].filter((result) => result.status === 0);
+    const denied = [left, right].filter((result) => result.status !== 0);
+    expect(ok, `${left.stderr}\n${right.stderr}`).toHaveLength(1);
+    expect(denied).toHaveLength(1);
+    expect(denied[0]?.stderr).toMatch(/already running/);
+    const pid = Number(readFileSync(box.pidfile, 'utf8').trim());
+    expect(signerPids(box.bin).filter((candidate) => pidState(candidate) !== 'Z')).toEqual([pid]);
+    const environ = readFileSync(`/proc/${pid}/environ`).toString('utf8');
+    expect(environ).toContain('EVALANCHE_SIGNER_START_MARK=');
+  }, 20_000);
+});
+
+describe.skipIf(!linux || (process.getuid?.() ?? 0) !== 0)('grok-bot signer root overrides', () => {
+  it('ignores EVALANCHE_BOX overrides when running as root', async () => {
+    if (existsSync('/opt/evalanche-signer/node_modules/.bin/evalanche-signer')) return;
+    const box = await layout();
+    const result = spawnSync(script, ['start'], { env: box.env, encoding: 'utf8', timeout: 15_000 });
+    expect(result.status).not.toBe(0);
+    expect(existsSync(box.argv)).toBe(false);
+    expect(`${result.stderr ?? ''}${result.stdout ?? ''}`).toMatch(/missing user evalanche-signer|missing \/opt\/evalanche-signer/);
+  });
 });
