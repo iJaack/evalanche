@@ -16,11 +16,15 @@ jobs:
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['20.19.2', '22']
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
       - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
-          node-version: '22'
+          node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci
       - run: npm test
@@ -43,15 +47,19 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
-          name: sdk-check-evidence
+          name: sdk-check-evidence-node-${{ matrix.node }}
           path: .release-artifacts/
           include-hidden-files: true
 
   # No compiler and no Python. The signer lock must come from the pinned helper.
   signer-linux-clean:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ['node:20.19.2-bookworm-slim', 'node:22-bookworm-slim']
     container:
-      image: node:22-bookworm-slim
+      image: ${{ matrix.image }}
     timeout-minutes: 20
     steps:
       - name: Install git without build tools
@@ -93,8 +101,12 @@ jobs:
   # Root-owned config and a dedicated signer user. The container entrypoint is root.
   signer-root-layout:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ['node:20.19.2-bookworm-slim', 'node:22-bookworm-slim']
     container:
-      image: node:22-bookworm-slim
+      image: ${{ matrix.image }}
     timeout-minutes: 20
     steps:
       - name: Install git and useradd without build tools
