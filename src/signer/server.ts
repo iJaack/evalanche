@@ -85,8 +85,9 @@ export interface AllowEntry {
   underlying?: string;
   /**
    * What this address may be. `dex` is callTo, `spender` is approveTo / approve,
-   * `recipient` receives an ERC-20 transfer, `token` is an asset, `vault` is a
-   * deposit or redeem target. A token is never accepted as callTo.
+   * `recipient` receives an ERC-20 transfer, a native send, or a Li.Fi V3 swap,
+   * `token` is an asset, and `vault` is a deposit or redeem target. A token is
+   * never accepted as callTo.
    */
   roles?: AllowRole[];
 }

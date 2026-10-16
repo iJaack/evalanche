@@ -13,6 +13,16 @@ export const REDEEM_INSTANT_SELECTOR = '0xfbc3b807';
 export const NATIVE_ADDRESS = '0x0000000000000000000000000000000000000000';
 /** Li.Fi's native-asset sentinel. Treated as the zero address for value and caps. */
 export const LIFI_NATIVE_SENTINEL = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE';
+/**
+ * Li.Fi diamond. The same address is deployed on Avalanche C-Chain.
+ * `facets()` there does not register `swapTokensGeneric` (`0x4630a0d8`).
+ */
+export const LIFI_DIAMOND = '0x1231DEB6f5749EF6cE6943a275A1D3E7486F4EaE';
+/**
+ * GenericSwapFacetV3, from Avalanche `facets()` on {@link LIFI_DIAMOND}.
+ * It serves the ERC-20 V3 selectors. Native V3 selectors stay undecoded.
+ */
+export const LIFI_GENERIC_SWAP_FACET_V3 = '0x31a9b1835864706Af10103b31Ea2b79bdb995F5F';
 
 /** Polymarket protocol contracts. Config cannot put these back on the allowlist. */
 export const POLYMARKET_DENY_CONTRACTS = [
@@ -42,8 +52,12 @@ const SAVAX = new Interface([
   'function redeemInstant(uint256 shareAmount, uint256 minAvaxOut)',
 ]);
 
+const SWAP_LEG = 'tuple(address callTo, address approveTo, address sendingAssetId, address receivingAssetId, uint256 fromAmount, bytes callData, bool requiresDeposit)';
+
 const LIFI = new Interface([
-  'function swapTokensGeneric(bytes32 transactionId, string integrator, string referrer, address receiver, uint256 minAmount, tuple(address callTo, address approveTo, address sendingAssetId, address receivingAssetId, uint256 fromAmount, bytes callData, bool requiresDeposit)[] swapData)',
+  `function swapTokensGeneric(bytes32 transactionId, string integrator, string referrer, address receiver, uint256 minAmount, ${SWAP_LEG}[] swapData)`,
+  `function swapTokensSingleV3ERC20ToERC20(bytes32 transactionId, string integrator, string referrer, address receiver, uint256 minAmountOut, ${SWAP_LEG} swapData)`,
+  `function swapTokensMultipleV3ERC20ToERC20(bytes32 transactionId, string integrator, string referrer, address receiver, uint256 minAmountOut, ${SWAP_LEG}[] swapData)`,
   'function multicall(bytes[] data)',
 ]);
 
@@ -63,6 +77,10 @@ export const SELECTOR = {
   requestRedeem: '0xaa2f892d',
   redeemInstant: REDEEM_INSTANT_SELECTOR,
   swapTokensGeneric: '0x4630a0d8',
+  /** GenericSwapFacetV3 `swapTokensSingleV3ERC20ToERC20`. One SwapData struct, not an array. */
+  swapTokensSingleV3ERC20ToERC20: '0x4666fc80',
+  /** GenericSwapFacetV3 `swapTokensMultipleV3ERC20ToERC20`. */
+  swapTokensMultipleV3ERC20ToERC20: '0x5fd9ae2e',
   multicall: '0xac9650d8',
   native: '0x',
 } as const;
@@ -86,7 +104,7 @@ export interface DecodedCall {
   /** Raw token or share amount taken from calldata, or native value for submit. */
   amount?: bigint;
   minOut?: bigint;
-  /** Protocol receiver that must equal the signer wallet. Absent for ERC-20 transfer. */
+  /** Protocol receiver that must equal the signer wallet. A Li.Fi V3 receiver must also carry the recipient role. Absent for ERC-20 transfer. */
   receiver?: string;
   owner?: string;
   spender?: string;
@@ -302,7 +320,9 @@ function decodeOne(to: string, data: string, selector: string, options: DecodeOp
         const decoded = SAVAX.decodeFunctionData('requestRedeem', data);
         return { kind: 'savax-request-redeem', selector, amount: BigInt(decoded[0]), receiver: options.wallet, asset: SAVAX_ADDRESS };
       }
-      case SELECTOR.swapTokensGeneric: {
+      case SELECTOR.swapTokensGeneric:
+      case SELECTOR.swapTokensSingleV3ERC20ToERC20:
+      case SELECTOR.swapTokensMultipleV3ERC20ToERC20: {
         return decodeSwap(to, data, selector, options);
       }
       default:
@@ -323,12 +343,27 @@ interface SwapLeg {
   requiresDeposit: boolean;
 }
 
+function lifiSwapFunction(selector: string): string {
+  switch (selector) {
+    case SELECTOR.swapTokensGeneric:
+      return 'swapTokensGeneric';
+    case SELECTOR.swapTokensSingleV3ERC20ToERC20:
+      return 'swapTokensSingleV3ERC20ToERC20';
+    case SELECTOR.swapTokensMultipleV3ERC20ToERC20:
+      return 'swapTokensMultipleV3ERC20ToERC20';
+    default:
+      fail(`Unknown selector ${selector} cannot be decoded and is denied`);
+  }
+}
+
 function decodeSwap(to: string, data: string, selector: string, options: DecodeOptions): DecodedCall {
   void to;
-  const decoded = LIFI.decodeFunctionData('swapTokensGeneric', data);
+  const decoded = LIFI.decodeFunctionData(lifiSwapFunction(selector), data);
   const receiver = getAddress(String(decoded[3]));
   const minOut = BigInt(decoded[4]);
-  const swaps = decoded[5] as Array<{
+  // A single SwapData struct is array-like (one slot per field). Branch on the
+  // selector; do not use Array.isArray to tell a struct from a leg array.
+  const swaps = (selector === SELECTOR.swapTokensSingleV3ERC20ToERC20 ? [decoded[5]] : decoded[5]) as Array<{
     callTo: string;
     approveTo: string;
     sendingAssetId: string;
@@ -336,7 +371,10 @@ function decodeSwap(to: string, data: string, selector: string, options: DecodeO
     fromAmount: bigint;
     requiresDeposit: boolean;
   }>;
-  if (!swaps || swaps.length === 0) fail('Li.Fi swapTokensGeneric has no swap legs');
+  if (!swaps || swaps.length === 0) fail('Li.Fi swap has no swap legs');
+  if (selector !== SELECTOR.swapTokensGeneric) {
+    requireRole(options, receiver, 'recipient', 'Li.Fi receiver');
+  }
   const legs: SwapLeg[] = swaps.map((swap) => ({
     callTo: getAddress(String(swap.callTo)),
     approveTo: getAddress(String(swap.approveTo)),
