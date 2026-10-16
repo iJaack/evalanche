@@ -279,6 +279,29 @@ const result = await client.signTransaction({
 
 `intent` and `approval` are the objects the verifier produced. `signTransaction` posts them to `POST /v1/sign` on the socket with `Authorization: Bearer $EVALANCHE_SIGNER_TOKEN`. A live signer returns `signedTransaction`. An `Evalanche` agent can use the same socket with `signer: { socketPath, address, tokenEnv: 'EVALANCHE_SIGNER_TOKEN' }` and `setSigningContext({ intent, structuredIntent, approval })` before `send`. `send` takes a human-readable AVAX value and broadcasts the signed transaction.
 
+## Li.Fi quotes
+
+The proposer asks Li.Fi for a route before it builds an intent. Every quote and advanced-routes request sends `integrator=evalanche` and `fee=0`. Li.Fi can apply a fee configured for that integrator when `fee` is left off the request. A non-zero integrator fee inserts a FeeForwarder as the first swap step. The signer denies that step: the FeeForwarder address is not an allowlisted dex. `fee=0` keeps that step out of the route. There is no proposer option to turn the fee back on.
+
+`EvalancheConfig.allowExchanges` is the default exchange allowlist. A quote or tool call can pass its own `allowExchanges` and that list replaces the config for that request. On this box the production signer allowlist only includes KyberSwap, so the proposer sets the same limit:
+
+```js
+import { Evalanche } from 'evalanche';
+
+const wallet = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266';
+const agent = new Evalanche({
+  address: wallet,
+  signer: {
+    socketPath: '/var/lib/evalanche-signer/run/signer.sock',
+    address: wallet,
+    tokenEnv: 'EVALANCHE_SIGNER_TOKEN',
+  },
+  allowExchanges: ['kyberswap'],
+});
+```
+
+Same-chain and bridge quotes then send `allowExchanges=kyberswap`. Advanced routes send `options.exchanges.allow` of `['kyberswap']`. A route through another DEX is not returned, so it never reaches the signer. The MCP tools `get_bridge_quote`, `get_bridge_routes`, `bridge_tokens`, `lifi_swap_quote`, `lifi_swap`, and `lifi_compose` accept `allowExchanges`. When that argument is omitted, the config list is used.
+
 ### Dry-run week
 
 `grok-bot-signer.sh start` is dry-run. The verifier signs `mode: 'dry-run'`. The signer answers `{"requestId":"...","dryRun":true,"decision":"allow"}` and does not return a signed transaction. The SDK client treats a missing signature as a rejection, so the dry-run check is a direct socket call:

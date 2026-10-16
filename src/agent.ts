@@ -63,6 +63,11 @@ export interface EvalancheConfig {
    * alongside a signer; it must match that signer's address.
    */
   address?: string;
+  /**
+   * Default Li.Fi exchange allowlist. A quote can override it with
+   * `allowExchanges`. Quotes always send integrator `evalanche` and `fee` 0.
+   */
+  allowExchanges?: string[];
 }
 
 export interface TransactionAuthorizationIntent {
@@ -117,6 +122,7 @@ export class Evalanche {
   private _holdingsClient?: HoldingsClient;
   private readonly _mnemonic?: string;
   private readonly _switchConfig: Pick<EvalancheConfig, 'privateKey' | 'mnemonic' | 'signer' | 'address'>;
+  private readonly _allowExchanges?: readonly string[];
   private readonly _multiVM: boolean;
   private _multiVMInitialized = false;
 
@@ -261,6 +267,7 @@ export class Evalanche {
         EvalancheErrorCode.INVALID_CONFIG,
       );
     }
+    this._allowExchanges = config.allowExchanges;
 
     if (config.address && getAddress(config.address) !== getAddress(this.wallet.address)) {
       throw new EvalancheError(
@@ -582,7 +589,7 @@ export class Evalanche {
   /** Get or create the bridge client (lazy-initialized) */
   private getBridgeClient(): BridgeClient {
     if (!this._bridgeClient) {
-      this._bridgeClient = new BridgeClient(this.wallet);
+      this._bridgeClient = new BridgeClient(this.wallet, { allowExchanges: this._allowExchanges });
     }
     return this._bridgeClient;
   }

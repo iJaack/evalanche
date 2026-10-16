@@ -4,6 +4,7 @@
 
 export { LiFiClient, NATIVE_TOKEN } from './lifi';
 export type {
+  LiFiClientOptions,
   BridgeQuoteParams,
   BridgeQuote,
   TransferStatus,
@@ -24,7 +25,7 @@ export { GasZipClient } from './gaszip';
 export type { GasZipAuthorizationRequest, GasZipParams, GasZipQuote } from './gaszip';
 
 import type { AgentSigner } from '../wallet/signer';
-import { LiFiClient } from './lifi';
+import { LiFiClient, type LiFiClientOptions } from './lifi';
 import type {
   BridgeQuoteParams,
   BridgeQuote,
@@ -48,8 +49,8 @@ export class BridgeClient {
   private lifi: LiFiClient;
   private gaszip: GasZipClient;
 
-  constructor(signer: AgentSigner) {
-    this.lifi = new LiFiClient(signer);
+  constructor(signer: AgentSigner, options: LiFiClientOptions = {}) {
+    this.lifi = new LiFiClient(signer, options);
     this.gaszip = new GasZipClient();
   }
 

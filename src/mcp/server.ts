@@ -254,6 +254,7 @@ const TOOLS: MCPTool[] = [
         toToken: { type: 'string', description: 'Destination token address (use "native" for native gas token)' },
         fromAmount: { type: 'string', description: 'Amount to send (human-readable, e.g. "0.1")' },
         slippage: { type: 'number', description: 'Slippage tolerance as decimal (default: 0.03 = 3%)' },
+        allowExchanges: { type: 'array', items: { type: 'string' }, description: 'Li.Fi exchange keys allowed for this quote. Defaults to EvalancheConfig.allowExchanges. Use ["kyberswap"] to match a KyberSwap-only signer allowlist.' },
       },
       required: ['fromChainId', 'toChainId', 'fromToken', 'toToken', 'fromAmount'],
     },
@@ -270,6 +271,7 @@ const TOOLS: MCPTool[] = [
         toToken: { type: 'string', description: 'Destination token address (use "native" for native gas token)' },
         fromAmount: { type: 'string', description: 'Amount to send (human-readable, e.g. "0.1")' },
         slippage: { type: 'number', description: 'Slippage tolerance as decimal (default: 0.03 = 3%)' },
+        allowExchanges: { type: 'array', items: { type: 'string' }, description: 'Li.Fi exchange keys allowed for this quote. Defaults to EvalancheConfig.allowExchanges. Use ["kyberswap"] to match a KyberSwap-only signer allowlist.' },
       },
       required: ['fromChainId', 'toChainId', 'fromToken', 'toToken', 'fromAmount'],
     },
@@ -287,6 +289,7 @@ const TOOLS: MCPTool[] = [
         fromAmount: { type: 'string', description: 'Amount to send (human-readable, e.g. "0.1")' },
         toAddress: { type: 'string', description: 'Receiver address (defaults to agent address)' },
         slippage: { type: 'number', description: 'Slippage tolerance as decimal (default: 0.03 = 3%)' },
+        allowExchanges: { type: 'array', items: { type: 'string' }, description: 'Li.Fi exchange keys allowed for this quote. Defaults to EvalancheConfig.allowExchanges. Use ["kyberswap"] to match a KyberSwap-only signer allowlist.' },
       },
       required: ['fromChainId', 'toChainId', 'fromToken', 'toToken', 'fromAmount'],
     },
@@ -542,6 +545,7 @@ const TOOLS: MCPTool[] = [
         preset: { type: 'string', description: 'Optional Li.Fi preset such as stablecoin' },
         maxPriceImpact: { type: 'number', description: 'Optional max price impact filter passed to Li.Fi' },
         skipSimulation: { type: 'boolean', description: 'Skip Li.Fi simulation to reduce quote latency' },
+        allowExchanges: { type: 'array', items: { type: 'string' }, description: 'Li.Fi exchange keys allowed for this quote. Defaults to EvalancheConfig.allowExchanges. Use ["kyberswap"] to match a KyberSwap-only signer allowlist.' },
       },
       required: ['chainId', 'fromToken', 'toToken', 'fromAmount'],
     },
@@ -562,6 +566,7 @@ const TOOLS: MCPTool[] = [
         preset: { type: 'string', description: 'Optional Li.Fi preset such as stablecoin' },
         maxPriceImpact: { type: 'number', description: 'Optional max price impact filter passed to Li.Fi' },
         skipSimulation: { type: 'boolean', description: 'Skip Li.Fi simulation to reduce quote latency' },
+        allowExchanges: { type: 'array', items: { type: 'string' }, description: 'Li.Fi exchange keys allowed for this quote. Defaults to EvalancheConfig.allowExchanges. Use ["kyberswap"] to match a KyberSwap-only signer allowlist.' },
       },
       required: ['chainId', 'fromToken', 'toToken', 'fromAmount'],
     },
@@ -651,6 +656,7 @@ const TOOLS: MCPTool[] = [
         preset: { type: 'string', description: 'Optional Li.Fi preset such as stablecoin' },
         maxPriceImpact: { type: 'number', description: 'Optional max price impact filter passed to Li.Fi' },
         skipSimulation: { type: 'boolean', description: 'Skip Li.Fi simulation to reduce quote latency' },
+        allowExchanges: { type: 'array', items: { type: 'string' }, description: 'Li.Fi exchange keys allowed for this quote. Defaults to EvalancheConfig.allowExchanges. Use ["kyberswap"] to match a KyberSwap-only signer allowlist.' },
       },
       required: ['fromChainId', 'toChainId', 'fromToken', 'toVaultToken', 'fromAmount'],
     },
@@ -2738,6 +2744,12 @@ export class EvalancheMCPServer {
     return token.toLowerCase() === 'native' ? NATIVE_TOKEN : token;
   }
 
+  private allowExchangesFromArgs(args: Record<string, unknown>): string[] | undefined {
+    if (!Object.prototype.hasOwnProperty.call(args, 'allowExchanges')) return undefined;
+    if (!Array.isArray(args.allowExchanges)) return undefined;
+    return args.allowExchanges.map((entry) => String(entry));
+  }
+
   /** Handle a tools/call request */
   private async handleToolCall(
     id: string | number,
@@ -2895,6 +2907,7 @@ export class EvalancheMCPServer {
             fromAmount: args.fromAmount as string,
             fromAddress: this.agent.address,
             slippage: args.slippage as number | undefined,
+            allowExchanges: this.allowExchangesFromArgs(args),
           });
           result = {
             id: quote.id,
@@ -2918,6 +2931,7 @@ export class EvalancheMCPServer {
             fromAmount: args.fromAmount as string,
             fromAddress: this.agent.address,
             slippage: args.slippage as number | undefined,
+            allowExchanges: this.allowExchangesFromArgs(args),
           });
           result = {
             count: routes.length,
@@ -2943,6 +2957,7 @@ export class EvalancheMCPServer {
             fromAddress: this.agent.address,
             toAddress: args.toAddress as string | undefined,
             slippage: args.slippage as number | undefined,
+            allowExchanges: this.allowExchangesFromArgs(args),
           });
           result = txResult;
           break;
@@ -3241,6 +3256,7 @@ export class EvalancheMCPServer {
             preset: args.preset as string | undefined,
             maxPriceImpact: args.maxPriceImpact as number | undefined,
             skipSimulation: args.skipSimulation as boolean | undefined,
+            allowExchanges: this.allowExchangesFromArgs(args),
           });
           result = {
             id: quote.id,
@@ -3270,6 +3286,7 @@ export class EvalancheMCPServer {
             preset: args.preset as string | undefined,
             maxPriceImpact: args.maxPriceImpact as number | undefined,
             skipSimulation: args.skipSimulation as boolean | undefined,
+            allowExchanges: this.allowExchangesFromArgs(args),
           };
           const submission = await this.agent.swapDetailed(request);
           result = {
@@ -3349,6 +3366,7 @@ export class EvalancheMCPServer {
             preset: args.preset as string | undefined,
             maxPriceImpact: args.maxPriceImpact as number | undefined,
             skipSimulation: args.skipSimulation as boolean | undefined,
+            allowExchanges: this.allowExchangesFromArgs(args),
           };
           const submission = await this.agent.bridgeTokensDetailed(request);
           result = {
