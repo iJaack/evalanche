@@ -5,13 +5,13 @@ Avalanche-first agent wallet and execution SDK for AI agents, with multi-EVM sup
 <!-- GENERATED:release-summary:start -->
 ## Current Release
 
-- Latest release: [v1.14.0](docs/releases/RELEASE_NOTES_1.14.0.md)
-- Published package: `evalanche@1.14.0`
+- Latest release: [v1.15.0](docs/releases/RELEASE_NOTES_1.15.0.md)
+- Published package: `evalanche@1.15.0`
 - Current package surface:
-  - Make Avalanche the hardened default with the official `@avalanche-sdk/client`, removing the legacy Core wallet and vulnerable HPKE dependency trees from fresh consumer installs.
-  - Expand Avalanche L1 support with live mainnet and Fuji catalog discovery, RPC chain ID verification, native-token preservation, and public SDK/MCP helpers.
-  - Remove the dYdX SDK, exports, MCP tools, holdings detector, and transitive Cosmos dependencies; Hyperliquid remains the supported perpetuals integration.
-  - Harden X/P/C address routing, offline signing, atomic import/export polling, network switching, HTTP cancellation, response limits, audit parsing, and release automation.
+  - Add a pluggable signer so an agent can sign without a local private key in the Evalanche process.
+  - Add an HTTP(S) and unix-socket remote signer client with bearer auth, request ids, timeouts, and a check that the returned signed transaction decodes to the requested fields.
+  - Add `evalanche-signer`, a reference server that verifies the pinned verifier key, recomputes the intent hash from the transaction, and enforces nonce, expiry, the deny list, SpendingPolicy, token caps, and simulation.
+  - Fail closed, with a typed `EvalancheError`, on paths that still need raw key material: the Polymarket CLI (`POLYMARKET_PRIVATE_KEY`) and Avalanche X/P-chain / `platform-cli` signing. Read-only tools work from an address alone.
 - Docs:
   - [Release notes](docs/releases/README.md)
   - [Roadmap](ROADMAP.md)
@@ -25,7 +25,7 @@ Avalanche-first agent wallet and execution SDK for AI agents, with multi-EVM sup
 npm install evalanche
 ```
 
-Avalanche remains the default network. Native X/P/C operations use `@avalanche-sdk/client`; the legacy Core wallet tree and dYdX support, exports and tools are removed. Hyperliquid perpetuals remain. v1.14.0 requires Node.js 20 or newer; review its migration notes before upgrading.
+Avalanche remains the default network. Native X/P/C operations use `@avalanche-sdk/client`; the legacy Core wallet tree and dYdX support, exports and tools are removed. Hyperliquid perpetuals remain. v1.15.0 can run the agent with no private key in-process; v1.14.0 requires Node.js 20 or newer. Review both release notes before upgrading.
 
 Fresh consumer installs require zero high/critical findings without consumer overrides. `@scure/bip32@1.7.0` is declared directly because `@avalanche-sdk/client@0.1.3` imports it at runtime without declaring it in its own package manifest.
 
@@ -77,6 +77,49 @@ The default MCP transport is stdio. HTTP mode is available for local automation,
 ```bash
 EVALANCHE_MCP_HTTP_TOKEN="$(openssl rand -hex 32)" npx evalanche-mcp --http --port 3402
 ```
+
+## Remote signer
+
+Use this when the agent shares a machine with other processes that can read its environment. Evalanche sends a canonical signing request. A separate `evalanche-signer` process holds the key and signs only after an Ed25519 approval from a pinned verifier.
+
+```typescript
+import { Evalanche, canonicalIntentJson, computeIntentHash, computeRouteHash } from 'evalanche';
+
+const agent = new Evalanche({
+  network: 'avalanche',
+  signer: {
+    url: process.env.EVALANCHE_SIGNER_URL!, // http://127.0.0.1:7410
+    address: process.env.EVALANCHE_SIGNER_ADDRESS!,
+    tokenEnv: 'EVALANCHE_SIGNER_TOKEN',
+  },
+});
+
+// Read-only, no signer and no key:
+const watcher = new Evalanche({ address: agent.address, network: 'avalanche' });
+```
+
+`privateKey`, `mnemonic`, and `signer` are mutually exclusive. Build the intent with sorted keys via `canonicalIntentJson`, hash it with `computeIntentHash`, and have the verifier sign that 32-byte hash. `routeHash` is `computeRouteHash` of the transaction data. Swap and bridge intents must set `minAmountOut`. Attach the approval with `agent.setSigningContext({ intent, structuredIntent, approval })` before `send`, `signMessage`, or a venue call.
+
+```bash
+export EVALANCHE_SIGNER_TOKEN="$(openssl rand -hex 32)"
+export EVALANCHE_SIGNER_PRIVATE_KEY="0x..."
+npx evalanche-signer --config signer.json
+# dry-run verifies policy and approval, then returns without a signature
+npx evalanche-signer --config signer.json --dry-run
+```
+
+The signer listens on `127.0.0.1` or `--socket`. It rejects a non-loopback bind unless configured otherwise. Before it signs it checks the pinned verifier key, recomputes the intent hash from the transaction, enforces a monotonic single-use nonce and expiry, applies the deny list (Hyperliquid order tools and unlimited ERC-20 approvals by default; an `approve` amount must equal `amountIn`), runs `SpendingPolicy` plus token or USD caps, simulates, and appends the decision to a JSONL audit log.
+
+`evalanche-mcp` can start keyless:
+
+```bash
+EVALANCHE_SIGNER_URL=http://127.0.0.1:7410 \
+EVALANCHE_SIGNER_ADDRESS=0x... \
+EVALANCHE_SIGNER_TOKEN=... \
+npx evalanche-mcp --signer-url "$EVALANCHE_SIGNER_URL" --signer-address "$EVALANCHE_SIGNER_ADDRESS"
+```
+
+Polymarket's official CLI and Avalanche X/P-chain or `platform-cli` signing still need a raw key. With a remote signer those calls throw `REMOTE_SIGNER_UNSUPPORTED` instead of reading `POLYMARKET_PRIVATE_KEY` or a mnemonic from the environment. Address-only mode serves reads such as chain info and balance queries.
 
 ## What It Does
 

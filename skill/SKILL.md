@@ -452,3 +452,9 @@ Avalanche is the default. Native X/P/C operations use `@avalanche-sdk/client`, a
 - `avalanche_get_l1_network`: verify an L1 RPC chain ID and return its custom network configuration, including its actual native token. Does not switch the active MCP wallet.
 - SDK helpers: `listAvalancheL1s`, `getAvalancheL1Network`; pass the returned configuration to Evalanche or switchNetwork.
 - Discovery covers the official public catalog. Non-EVM chains, non-18-decimal native tokens and unavailable/private RPCs are not supported by this path. Bridge/DeFi/identity availability is separate from wallet connectivity.
+
+## v1.15.0 remote signer
+
+Run the agent with no private key in the process. Pass `signer: { url, address, tokenEnv: 'EVALANCHE_SIGNER_TOKEN' }` instead of `privateKey` or `mnemonic`. Start `evalanche-signer` on `127.0.0.1` or a unix socket; it holds the key, checks an Ed25519 verifier approval, and writes a JSONL audit log. MCP: `--signer-url` and `--signer-address`, or `EVALANCHE_SIGNER_URL` and `EVALANCHE_SIGNER_ADDRESS`.
+
+Polymarket CLI and Avalanche X/P-chain signing throw `REMOTE_SIGNER_UNSUPPORTED` in this mode. They do not fall back to `POLYMARKET_PRIVATE_KEY`. Address-only mode is `new Evalanche({ address })` and is read-only.

@@ -38,4 +38,15 @@ export default defineConfig([
       'ledger-bitcoin',
     ],
   },
+  {
+    entry: ['src/signer/cli.ts'],
+    format: ['esm'],
+    dts: false,
+    splitting: false,
+    sourcemap: false,
+    clean: false,
+    target: 'node20',
+    banner: { js: '#!/usr/bin/env node' },
+    outDir: 'dist/signer',
+  },
 ]);

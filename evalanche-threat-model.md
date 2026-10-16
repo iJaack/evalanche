@@ -2,7 +2,7 @@
 
 ## Executive summary
 
-Evalanche is a TypeScript SDK and MCP server that can hold wallet credentials and execute high-impact on-chain actions across EVM, Avalanche P/X-chain, Polymarket, Hyperliquid, bridge, swap, and x402 flows. This hardening pass addressed the highest-risk preconditions: HTTP MCP now requires bearer-token authentication, binds to loopback by default, and enforces request body limits; high-risk helper execution paths now run through the policy hook; policy removal requires explicit confirmation; x402 service endpoints require a settlement verifier unless deliberately configured for signed-intent mode; and authenticated Polymarket trading now routes through an official CLI subprocess wrapper with JSON-only parsing, private-key redaction, and minimal environment inheritance. Residual risk remains around trusted local MCP callers, external quote/API integrity, dependency reachability, CLI provenance/installation, and policy coverage for venue-specific off-chain order semantics.
+Evalanche is a TypeScript SDK and MCP server that can hold wallet credentials and execute high-impact on-chain actions across EVM, Avalanche P/X-chain, Polymarket, Hyperliquid, bridge, swap, and x402 flows. This hardening pass addressed the highest-risk preconditions: HTTP MCP now requires bearer-token authentication, binds to loopback by default, and enforces request body limits; high-risk helper execution paths now run through the policy hook; policy removal requires explicit confirmation; x402 service endpoints require a settlement verifier unless deliberately configured for signed-intent mode; and authenticated Polymarket trading now routes through an official CLI subprocess wrapper with JSON-only parsing, private-key redaction, and minimal environment inheritance. v1.15.0 adds a remote signer so the agent process can run with no private key. The signer process holds the key, requires an Ed25519 approval from a pinned verifier, and writes an append-only audit log. Residual risk remains around trusted local MCP callers, a compromised signer or verifier, external quote/API integrity, dependency reachability, CLI provenance/installation, and policy coverage for venue-specific off-chain order semantics.
 
 ## Scope and assumptions
 
@@ -30,7 +30,7 @@ Open questions that would materially change risk ranking:
 
 - Public SDK API: `Evalanche` exports wallet boot/generation, identity, transactions, x402, bridge, swap, DeFi, prediction market, and perp clients from `src/index.ts`.
 - Credential resolution: `resolveAgentSecrets` checks OpenClaw secret refs, raw env vars, macOS Keychain, then keystore fallback in `src/secrets.ts`.
-- Wallet execution core: `Evalanche.send`, `Evalanche.call`, bridge/swap/perp/DeFi helpers sign transactions through an ethers wallet in `src/agent.ts`.
+- Wallet execution core: `Evalanche.send`, `Evalanche.call`, bridge/swap/perp/DeFi helpers sign through the configured signer in `src/agent.ts`. A local private key or mnemonic still signs in-process. A `RemoteSignerConfig` or `SigningProvider` forwards the canonical request and never exposes key material. Address-only mode does not sign.
 - MCP server: `EvalancheMCPServer` exposes wallet, bridge, swap, Polymarket, perp, policy, service, memory, and platform-cli tools over stdio or HTTP in `src/mcp/server.ts`.
 - External integrations: Li.Fi, Gas.zip through Li.Fi, Avalanche Data API L1 catalog, Polymarket CLOB/bridge/Gamma APIs, the official `polymarket` CLI, Hyperliquid, CoinGecko, RPC providers, IPFS, and `platform-cli`.
 
@@ -38,7 +38,9 @@ Open questions that would materially change risk ranking:
 
 - Operator/environment -> credential resolver: private keys, mnemonics, secret refs, keychain entries, keystore files. Channel is process env, subprocess, Keychain CLI, and filesystem. There is no user auth boundary inside the package; process access is assumed trusted.
 - MCP client -> MCP server: JSON-RPC messages over stdio or HTTP. Stdio inherits the parent process trust boundary. HTTP now requires a bearer token, defaults to loopback, rejects oversized bodies, and uses POST JSON parsing.
-- MCP server -> wallet signer: tool arguments become signatures, native transfers, contract calls, token approvals, bridge/swap execution, Polymarket orders, and perp orders. Native send/call, generic approval/proxy helpers, Li.Fi bridge/swap, and Gas.zip execution now run through the active policy hook.
+- MCP server -> wallet signer: tool arguments become signatures, native transfers, contract calls, token approvals, bridge/swap execution, Polymarket orders, and perp orders. Native send/call, generic approval/proxy helpers, Li.Fi bridge/swap, and Gas.zip execution now run through the active policy hook. With a remote signer, the MCP process does not hold the key; it posts the request to `evalanche-signer`.
+- Agent -> remote signer: HTTP on `127.0.0.1` or a unix socket, bearer token, request id, and a verifier approval. The signer recomputes `intentHash` from the transaction (`routeHash` is keccak256 of the tx data, and swap/bridge intents carry `minAmountOut`), then applies nonce, expiry, the deny list, SpendingPolicy, token caps, and simulation.
+- Verifier -> signer: an Ed25519 signature over the intent hash from a public key pinned in the signer config. The agent cannot change the approved transaction without breaking the hash.
 - SDK -> external APIs/RPCs: quote, route, orderbook, market, Avalanche L1 catalog, and registration metadata over HTTPS or JSON-RPC. `safeFetch` enforces HTTPS, a deadline through response body consumption, caller cancellation, redirect blocking, and response byte caps, with private-network blocking only when callers opt in.
 - MCP server -> official `polymarket` CLI: authenticated Polymarket reads, orders, cancellations, balances, approvals, bridge status/deposits, and CTF redemption become subprocess arguments via `execFile`, with `-o json` forced on every invocation. Wallet private keys are never passed in argv; the wrapper passes only a minimal environment including `PATH`, `HOME`, proxy/cert settings, signature type, and `POLYMARKET_PRIVATE_KEY` when signing is required. Non-JSON output fails closed and subprocess errors are redacted.
 - MCP server -> `platform-cli`: selected tool arguments become subprocess arguments via `execFile`, not shell interpolation. The subprocess inherits most environment variables and may receive wallet private key via env when configured.
@@ -54,7 +56,10 @@ flowchart LR
   F["HTTP caller"] --> E
   E --> C
   E --> G["Policy engine"]
-  C --> H["EVM and Avalanche RPC"]
+  V["Verifier Ops"] --> S["evalanche-signer"]
+  C --> S
+  S --> H["EVM and Avalanche RPC"]
+  C --> H
   E --> I["LiFi and market APIs"]
   E --> J["platform-cli"]
   E --> M["polymarket CLI"]
@@ -62,11 +67,19 @@ flowchart LR
   C --> K
 ```
 
+### Remote signer boundary
+
+When `signer` is set, the agent process is outside the key boundary. It can build a transaction and attach an approval, but it cannot produce a signature by itself. The signer process is inside the boundary: it holds the key, checks the verifier, and is the only component that should be treated as able to move funds. The verifier is a third party. Compromise of the agent alone is not compromise of the key. Compromise of the signer host, the bearer token plus a valid approval, or the verifier key still is.
+
+Polymarket CLI and Avalanche X/P-chain signing cannot cross this boundary. They throw `REMOTE_SIGNER_UNSUPPORTED` rather than reading a private key from the environment.
+
 ## Assets and security objectives
 
 | Asset | Why it matters | Security objective (C/I/A) |
 | --- | --- | --- |
-| Private key / mnemonic / keystore entropy | Direct control of wallet funds and agent identity | C/I |
+| Private key / mnemonic / keystore entropy | Direct control of wallet funds and agent identity. In remote-signer mode this lives only in the signer process. | C/I |
+| Verifier key and approval nonce | An attacker who can mint approvals can move funds up to policy. A replayed or expired approval must not sign. | I |
+| Signer audit log | Evidence of every allow, deny, and dry-run decision. | I |
 | Wallet balances and approvals | Loss of funds or persistent token-spender risk | I |
 | Polymarket CLI binary and subprocess environment | Authenticated trading now depends on a local external executable and signer env isolation | C/I/A |
 | Agent identity and reputation actions | On-chain identity, trust score, and service reputation can be manipulated | I |
@@ -130,7 +143,8 @@ flowchart LR
 | TM-004 | Malicious or compromised external route/order API | Agent uses quote/order/catalog data from external APIs and signs returned transaction requests or configures a wallet from returned network metadata. | Return transaction request, market data, or L1 metadata that routes value/approvals unexpectedly, misprices execution, or points at the wrong chain. | Fund loss through malicious calldata, excess slippage, wrong recipient, bad approvals, or wrong-chain wallet configuration. | Wallet balances, approvals, trade integrity, network configuration. | HTTPS, redirect blocking, caller cancellation, full-body deadlines, byte caps (`src/utils/safe-fetch.ts`); Li.Fi/Gas.zip transaction requests pass through policy authorization; Avalanche L1 helper verifies `eth_chainId` before returning a network config. | Policy authorization does not yet validate semantic quote invariants like token deltas, final recipient, or known router/spender sets. | Validate quote invariants locally before signing; require chain/provider match; maintain known router/spender allowlists; simulate transaction when possible. | Log route ID, tool, tx target, token deltas; alert on unknown spender/router or destination mismatch. | Low to Medium | High | Medium |
 | TM-005 | Remote network attacker | HTTP MCP is reachable and attacker has or can send requests to the token-protected endpoint. | Stream oversized bodies or many requests. | Process memory/CPU exhaustion and agent unavailability. | MCP availability, wallet automation reliability. | POST-only, bearer auth, 10s request timeout, and max body bytes now exist (`src/mcp/server.ts` `startHTTP`). | No per-IP rate limit or concurrency cap yet. | Add rate limiting and concurrency limits for HTTP mode. | Track body sizes, parse failures, request duration, event loop delay, and per-IP rates. | Low | Medium | Low |
 | TM-006 | Supply-chain or dependency attacker | Users install package with vulnerable transitive dependencies. | Exploit reachable dependency vulnerability or compromise install/runtime package path. | Wallet compromise, code execution, or data exfiltration depending on reachability. | Wallet secrets, package integrity. | `VULN_NOTES.md` tracks the zero-finding production audit snapshot, package provenance is enabled in `package.json`, and clean consumer gates assert Core/HPKE/dYdX dependency absence. | Future Avalanche SDK and direct compatibility-pin changes can reintroduce drift; audit output must remain complete and internally consistent. | Run reachability triage for runtime imports, keep overrides pinned, and gate release on complete repository and consumer audit reports. | CI audit with allowlist expiry; alert on dependency graph changes in wallet/runtime paths. | Medium | Medium to High | Medium |
-| TM-007 | Local supply-chain or deployment attacker | Attacker can influence the installed `polymarket` binary, `PATH`, or `EVALANCHE_POLYMARKET_CLI_BIN` in the agent runtime. | Substitute a malicious CLI that receives signed trading intents and `POLYMARKET_PRIVATE_KEY` for authenticated commands. | Private-key theft, unauthorized market orders, false balances/orders, or suppressed cancellation errors. | Polymarket wallet credentials, balances, order integrity, agent availability. | Wrapper uses `execFile` with argv arrays, never puts private keys in argv, forces `-o json`, caps subprocess output/time, redacts private keys from errors, and fails closed on non-JSON (`src/polymarket/cli.ts`). Hidden raw/diagnostic MCP write paths now throw removal errors (`src/mcp/server.ts`). | The repo cannot prove the installed external CLI is official or current at runtime; no version allowlist or binary checksum enforcement exists yet. | Pin the CLI in deployment images, add a startup `polymarket --version`/checksum check, document `EVALANCHE_POLYMARKET_CLI_BIN`, and keep production wallet runs on locked images. | Log CLI binary path/version at startup without secrets; alert on binary path changes, non-JSON CLI output, repeated CLI failures, and signing commands from unexpected MCP clients. | Low to Medium | High | Medium |
+| TM-007 | Local supply-chain or deployment attacker | Attacker can influence the installed `polymarket` binary, `PATH`, or `EVALANCHE_POLYMARKET_CLI_BIN` in the agent runtime. | Substitute a malicious CLI that receives signed trading intents and `POLYMARKET_PRIVATE_KEY` for authenticated commands. | Private-key theft, unauthorized market orders, false balances/orders, or suppressed cancellation errors. | Polymarket wallet credentials, balances, order integrity, agent availability. | Wrapper uses `execFile` with argv arrays, never puts private keys in argv, forces `-o json`, caps subprocess output/time, redacts private keys from errors, and fails closed on non-JSON (`src/polymarket/cli.ts`). Hidden raw/diagnostic MCP write paths now throw removal errors (`src/mcp/server.ts`). With a remote signer, Polymarket CLI and X/P-chain paths throw `REMOTE_SIGNER_UNSUPPORTED` and do not read `POLYMARKET_PRIVATE_KEY`. | The repo cannot prove the installed external CLI is official or current at runtime; no version allowlist or binary checksum enforcement exists yet. Local-key mode still passes the key to the CLI. | Pin the CLI in deployment images, add a startup `polymarket --version`/checksum check, document `EVALANCHE_POLYMARKET_CLI_BIN`, and keep production wallet runs on locked images. Prefer the remote signer for shared hosts. | Log CLI binary path/version at startup without secrets; alert on binary path changes, non-JSON CLI output, repeated CLI failures, and signing commands from unexpected MCP clients. | Low to Medium | High | Medium |
+| TM-008 | Another local user, or a compromised agent, on a shared host | The agent process is readable by other users, or the agent can be induced to send signing requests. The signer is reachable on loopback or a unix socket and the bearer token is known. | Submit a signing request with a forged, replayed, expired, or mismatched approval, or with calldata that differs from the approved intent. | Unauthorized transfer, unlimited token approval, or a Hyperliquid order if the signer policy is loose. | Wallet balances, approvals, audit integrity. | The agent holds no key. The signer pins the verifier Ed25519 key, recomputes `intentHash` (`routeHash` = keccak256 of tx data, plus the `minAmountOut` bound), rejects nonce replay and expiry, denies Hyperliquid order tools and unlimited ERC-20 approvals by default, enforces SpendingPolicy and token/USD caps, simulates, and appends every decision. Default bind is `127.0.0.1` or a unix socket. The client rejects a signed transaction whose decoded fields differ. | A stolen verifier key, a permissive deny list, or a signer exposed beyond loopback still authorizes spends inside policy. The audit log is only as trustworthy as the signer host. | Keep the verifier key offline from the agent, bind the socket to a dedicated user, and alert on deny decisions and dry-run bypass attempts. | Tail the JSONL audit log for `deny`, repeated nonces, and signing from unexpected request ids. | Medium | High | High |
 
 ## Criticality calibration
 
@@ -145,7 +159,8 @@ flowchart LR
 | --- | --- | --- |
 | `src/mcp/server.ts` | Central JSON-RPC dispatcher, HTTP transport, wallet-capable tool surface, and policy mutations. | TM-001, TM-002, TM-005 |
 | `src/mcp/cli.ts` | Defines HTTP mode and credential-loading CLI behavior. | TM-001 |
-| `src/agent.ts` | Policy enforcement and wallet execution orchestration live here. | TM-002, TM-004 |
+| `src/agent.ts` | Policy enforcement and wallet execution orchestration live here. Remote and address-only modes are selected here. | TM-002, TM-004, TM-008 |
+| `src/signer/` | Remote client, intent hash, and the reference signer. This is the trust boundary between the agent and the key. | TM-008 |
 | `src/economy/policies.ts` | Budget/allowlist semantics and gaps for token approvals/off-chain orders. | TM-002 |
 | `src/utils/contract-helpers.ts` | Generic approval and proxy upgrade helpers with arbitrary targets. | TM-001, TM-002 |
 | `src/bridge/lifi.ts` | Signs external quote-provided transaction requests. | TM-004 |
@@ -166,7 +181,7 @@ flowchart LR
 ## Quality check
 
 - Covered discovered runtime entry points: SDK API, MCP stdio, MCP HTTP, x402, external API fetches, platform-cli subprocesses, official Polymarket CLI subprocesses, and credential resolution.
-- Covered trust boundaries in threats: network-to-MCP, MCP-to-signer, MCP-to-policy, SDK-to-external APIs, MCP-to-CLI subprocesses, x402 peer-to-service, and package-to-dependency tree.
+- Covered trust boundaries in threats: network-to-MCP, MCP-to-signer, agent-to-remote-signer, verifier-to-signer, MCP-to-policy, SDK-to-external APIs, MCP-to-CLI subprocesses, x402 peer-to-service, and package-to-dependency tree.
 - Separated runtime from CI/dev: release scripts, website, and tests are out of scope except where they document posture.
 - User clarifications: none provided yet; token handling, caller trust, and production x402 verifier choice remain explicit assumptions.
 - Graph orientation: local code-review graph built successfully for 142 files / 1,698 nodes / 13,883 edges on branch `main`.

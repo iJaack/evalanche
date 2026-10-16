@@ -1510,7 +1510,20 @@ export class EvalancheMCPServer {
     this.memory = new AgentMemory(); // in-memory by default; can be swapped for file-backed
     this.interopResolver = new InteropIdentityResolver(this.agent.provider);
     this.coingecko = new CoinGeckoClient();
-    this.polymarketCli = new PolymarketCli({ privateKey: this.agent.wallet.privateKey });
+    this.polymarketCli = this.buildPolymarketProcess();
+  }
+
+  private requireWalletPrivateKey(capability: string): string {
+    return this.agent.requireLocalPrivateKey(capability);
+  }
+
+  private buildPolymarketProcess(): PolymarketCli {
+    const mode = this.agent.signerMode;
+    return new PolymarketCli({
+      privateKey: mode === 'local' ? this.agent.getLocalPrivateKey() : undefined,
+      allowEnvPrivateKey: mode === 'local',
+      keylessReason: mode === 'remote' ? 'remote-signer' : mode === 'readonly' ? 'readonly' : undefined,
+    });
   }
 
   private rebindAgentState(): void {
@@ -1518,7 +1531,7 @@ export class EvalancheMCPServer {
     this.settlement = new SettlementClient(this.agent.wallet, this.negotiation);
     this.interopResolver = new InteropIdentityResolver(this.agent.provider);
     this.polymarket = null;
-    this.polymarketCli = new PolymarketCli({ privateKey: this.agent.wallet.privateKey });
+    this.polymarketCli = this.buildPolymarketProcess();
     this.authedClobClient = null;
   }
 
@@ -1786,8 +1799,7 @@ export class EvalancheMCPServer {
     const USDC_CONTRACT = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174';
     const USDC_DECIMALS = 6;
 
-    let pk = this.agent.wallet.privateKey;
-    if (!pk) throw new Error('Agent wallet has no privateKey');
+    let pk = this.requireWalletPrivateKey('Polymarket USDC approval');
     if (!pk.startsWith('0x')) pk = `0x${pk}`;
 
     const account = privateKeyToAccount(pk as `0x${string}`);
@@ -2072,8 +2084,7 @@ export class EvalancheMCPServer {
     const { polygon } = await import('viem/chains');
     const { privateKeyToAccount } = await import('viem/accounts');
 
-    let pk = this.agent.wallet.privateKey;
-    if (!pk) throw new Error('Agent wallet has no privateKey');
+    let pk = this.requireWalletPrivateKey('Polymarket pUSD approval');
     if (!pk.startsWith('0x')) pk = `0x${pk}`;
 
     const account = privateKeyToAccount(pk as `0x${string}`);
@@ -2666,8 +2677,7 @@ export class EvalancheMCPServer {
     const { polygon } = await import('viem/chains');
     const { privateKeyToAccount } = await import('viem/accounts');
 
-    let pk = this.agent.wallet.privateKey;
-    if (!pk) throw new Error('Agent wallet has no privateKey — cannot create authenticated Polymarket client');
+    let pk = this.requireWalletPrivateKey('authenticated Polymarket client');
     if (!pk.startsWith('0x')) pk = `0x${pk}`;
 
     const account = privateKeyToAccount(pk as `0x${string}`);
@@ -2700,7 +2710,7 @@ export class EvalancheMCPServer {
             capabilities: { tools: {} },
             serverInfo: {
               name: 'evalanche',
-              version: '1.14.0',
+              version: '1.15.0',
             },
           });
 
@@ -4080,8 +4090,7 @@ export class EvalancheMCPServer {
           const { privateKeyToAccount } = await import('viem/accounts');
           const { Evalanche } = await import('../index.js');
 
-          let pk = this.agent.wallet.privateKey;
-          if (!pk) throw new Error('Agent wallet has no privateKey');
+          let pk = this.requireWalletPrivateKey('Polymarket deposit');
           if (!pk.startsWith('0x')) pk = `0x${pk}`;
 
           const account = privateKeyToAccount(pk as `0x${string}`);

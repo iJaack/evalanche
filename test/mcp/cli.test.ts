@@ -62,4 +62,24 @@ describe('Evalanche MCP CLI configuration', () => {
     });
     expect(cliState.startStdio).toHaveBeenCalledOnce();
   });
+
+  it('starts keyless when --signer-url and --signer-address are set', async () => {
+    cliState.resolveAgentSecrets.mockResolvedValue({ source: 'keystore' });
+    process.argv = ['node', 'evalanche-mcp', '--signer-url', 'http://127.0.0.1:7410', '--signer-address', '0x0000000000000000000000000000000000000001'];
+    vi.stubEnv('AGENT_PRIVATE_KEY', '');
+    vi.stubEnv('AGENT_MNEMONIC', '');
+
+    await import('../../src/mcp/cli');
+
+    await vi.waitFor(() => expect(cliState.configs).toHaveLength(1));
+    expect(cliState.configs[0]).toMatchObject({
+      signer: {
+        url: 'http://127.0.0.1:7410',
+        address: '0x0000000000000000000000000000000000000001',
+        tokenEnv: 'EVALANCHE_SIGNER_TOKEN',
+      },
+      network: 'avalanche',
+    });
+    expect(cliState.configs[0]).not.toHaveProperty('privateKey');
+  });
 });

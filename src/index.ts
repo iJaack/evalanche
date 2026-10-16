@@ -5,6 +5,34 @@
 export { Evalanche } from './agent';
 export type { EvalancheConfig } from './agent';
 
+export {
+  RemoteSignerClient,
+  EvalancheSignerServer,
+  startSignerServer,
+  canonicalIntentJson,
+  canonicalJson,
+  computeIntentHash,
+  computeRequestRouteHash,
+  computeRouteHash,
+  generateEd25519KeyPair,
+  signVerifierApproval,
+  verifyIntentHash,
+  isRemoteSignerConfig,
+  isSigningProvider,
+  DEFAULT_VENUE_ACTIONS,
+} from './signer';
+export type {
+  CanonicalSigningRequest,
+  RemoteSignerConfig,
+  SigningContext,
+  SigningIntent,
+  SigningProvider,
+  SigningResult,
+  TokenRef,
+  VerifierApproval,
+  SignerServerOptions,
+} from './signer';
+
 export { EvalancheError, EvalancheErrorCode } from './utils/errors';
 
 export {

@@ -1,8 +1,12 @@
-import { Wallet, HDNodeWallet, JsonRpcProvider, Mnemonic } from 'ethers';
+import { Wallet, HDNodeWallet, JsonRpcProvider } from 'ethers';
+import type { DelegatedEthersSigner } from '../signer/ethers-adapter';
 import { EvalancheError, EvalancheErrorCode } from '../utils/errors';
 
-/** A signer that can be either a Wallet or HDNodeWallet */
-export type AgentSigner = Wallet | HDNodeWallet;
+/**
+ * Local ethers wallet, or a delegated signer that forwards signatures to a
+ * pluggable SigningProvider (including the remote HTTP signer).
+ */
+export type AgentSigner = Wallet | HDNodeWallet | DelegatedEthersSigner;
 
 /** Result from wallet generation */
 export interface GeneratedWallet {
