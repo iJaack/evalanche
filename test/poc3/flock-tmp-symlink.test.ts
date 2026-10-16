@@ -64,7 +64,7 @@ describe('flock helper: no writes or loads through a pre-created TMPDIR', () => 
 
     let store: { close(): Promise<void> } | null = null;
     try {
-      store = await NonceStore.open(join(state, 'nonces.json'), true);
+      store = await NonceStore.open(join(state, 'nonces.json'), true, { allowInsecureFilePermissions: true });
     } catch {
       // Lock success is not what this test asserts; the side effects are.
     } finally {

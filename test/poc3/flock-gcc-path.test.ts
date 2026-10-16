@@ -108,7 +108,7 @@ describe('flock helper: no compiler or interpreter from PATH', () => {
     let store: { close(): Promise<void> } | null = null;
     let lockError: unknown = null;
     try {
-      store = await NonceStore.open(join(state, 'nonces.json'), true);
+      store = await NonceStore.open(join(state, 'nonces.json'), true, { allowInsecureFilePermissions: true });
     } catch (error) {
       lockError = error;
     } finally {

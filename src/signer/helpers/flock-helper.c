@@ -2,8 +2,10 @@
  * Linux exclusive-lock helper.
  *
  * The signer does not compile this file. The executable shipped beside it,
- * flock-linux-x64, is sha256-pinned and started by absolute path. Rebuilds
- * must replace that binary and the digest in src/signer/flock.ts.
+ * flock-linux-x64, is sha256-pinned. The signer hashes one open descriptor
+ * and execs that same descriptor. Rebuilds must use
+ * docker/flock-helper.Dockerfile and replace the binary and the digest in
+ * src/signer/flock.ts together.
  */
 #define _GNU_SOURCE
 #include <errno.h>

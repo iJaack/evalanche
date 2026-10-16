@@ -190,7 +190,14 @@ export function decodeCalldata(to: string, data: string, options: DecodeOptions,
     fail(`Function selector ${selector} is not allowlisted`);
   }
   if (selector === '0x') {
-    return [{ kind: 'native-transfer', selector, amount: options.value, asset: NATIVE_ADDRESS }];
+    let recipient: string;
+    try {
+      recipient = getAddress(to);
+    } catch {
+      fail('native transfer recipient is not allowlisted');
+    }
+    requireRole(options, recipient, 'recipient', 'native transfer recipient');
+    return [{ kind: 'native-transfer', selector, amount: options.value, asset: NATIVE_ADDRESS, recipient }];
   }
   if (selector === SELECTOR.multicall) {
     let decoded: ReturnType<Interface['decodeFunctionData']>;

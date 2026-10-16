@@ -4,15 +4,16 @@
  * The file is created only with --init-nonces. Every write is fsynced, and
  * the parent directory is fsynced after the rename. An exclusive kernel lock
  * on a lock file keeps a second signer from opening the same store. Darwin
- * uses O_EXLOCK. Linux uses the pinned helper. The kernel releases that lock
- * when this process dies. `startedAt` is recorded
+ * uses O_EXLOCK (0x20). Linux execs the pinned helper from the descriptor
+ * that was hashed. If that helper exits after the lock is held, the signer
+ * stops. The kernel releases the lock when the helper dies. `startedAt` is recorded
  * at initialization; approvals created before that time are rejected.
  */
 
 import { open, rename, mkdir, readFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { EvalancheError, EvalancheErrorCode } from '../utils/errors';
-import { holdExclusiveLock, type HeldLock } from './flock';
+import { holdExclusiveLock, type HeldLock, type HoldLockOptions } from './flock';
 
 export interface WalletNonce {
   lastNonce: string;
@@ -39,9 +40,9 @@ export class NonceStore {
     this.wallets = file.wallets;
   }
 
-  static async open(path: string, initNonces: boolean): Promise<NonceStore> {
+  static async open(path: string, initNonces: boolean, options: HoldLockOptions = {}): Promise<NonceStore> {
     await mkdir(dirname(path), { recursive: true });
-    const held = await holdExclusiveLock(`${path}.lock`);
+    const held = await holdExclusiveLock(`${path}.lock`, options);
     try {
       const file = await loadOrInit(path, initNonces);
       return new NonceStore(path, held, file);

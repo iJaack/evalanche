@@ -197,6 +197,7 @@ export class EvalancheSignerServer {
   private prevHash = AUDIT_ROOT;
   private queue: Promise<void> = Promise.resolve();
   private http: ReturnType<typeof createServer> | null = null;
+  private halted = false;
   private simulateFn: ((tx: PendingTransaction) => Promise<SimulationResult>) | null;
   private priceCache: { fetchedAt: number; prices: Record<string, number> } | null = null;
 
@@ -229,8 +230,16 @@ export class EvalancheSignerServer {
       throw new EvalancheError('Price source URL must be https', EvalancheErrorCode.INVALID_CONFIG);
     }
     const wallet = await loadSignerWallet(options, keystoreJson);
-    const nonces = await NonceStore.open(options.nonceStorePath, options.initNonces === true);
+    const bridge: { server?: EvalancheSignerServer } = {};
+    const nonces = await NonceStore.open(options.nonceStorePath, options.initNonces === true, {
+      allowInsecureFilePermissions: options.allowInsecureFilePermissions === true,
+      onLockLost: () => {
+        if (bridge.server) bridge.server.stopBecauseLockLost();
+        else process.exit(1);
+      },
+    });
     const server = new EvalancheSignerServer(wallet, options, nonces);
+    bridge.server = server;
     try {
       if (server.policy) server.policy.restore(await readBudget(options.nonceStorePath));
       await server.loadAudit();
@@ -303,8 +312,28 @@ export class EvalancheSignerServer {
     await this.nonces.close();
   }
 
+  /**
+   * The nonce lock helper exited after startup. Stop accepting and signing,
+   * then leave the process with a non-zero status. release() does not call this.
+   */
+  stopBecauseLockLost(): void {
+    if (this.halted) return;
+    this.halted = true;
+    const http = this.http;
+    this.http = null;
+    http?.close();
+    process.exit(1);
+  }
+
   async handle(request: CanonicalSigningRequest): Promise<SigningResult> {
+    this.assertRunning();
     return this.exclusive(() => this.handleLocked(request));
+  }
+
+  private assertRunning(): void {
+    if (this.halted) {
+      throw new EvalancheError('signer stopped: nonce lock lost', EvalancheErrorCode.INVALID_CONFIG);
+    }
   }
 
   private async handleLocked(request: CanonicalSigningRequest): Promise<SigningResult> {
@@ -863,6 +892,10 @@ export class EvalancheSignerServer {
   }
 
   private async handleHttp(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    if (this.halted) {
+      sendJson(res, 503, { error: 'signer stopped: nonce lock lost', code: 'INVALID_CONFIG' });
+      return;
+    }
     if (req.url === '/health' && req.method === 'GET') {
       sendJson(res, 200, { ok: true });
       return;

@@ -10,6 +10,11 @@ export default defineConfig([
     clean: false,
     target: 'node20',
     shims: true,
+    // The published tarball cap is 1_000_000 bytes. Embedded sources in the
+    // maps push a single helper copy over that cap. Mappings stay.
+    esbuildOptions(options) {
+      options.sourcesContent = false;
+    },
     // Keep Avalanche deps external — they're lazy-loaded at runtime
     external: ['@avalanche-sdk/client', '@avalanche-sdk/client/accounts', '@avalabs/avalanchejs'],
   },
