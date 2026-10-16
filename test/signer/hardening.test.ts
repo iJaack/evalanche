@@ -41,10 +41,10 @@ afterEach(async () => {
 
 const ALLOW: Record<string, AllowEntry[]> = {
   [CHAIN]: [
-    { address: ROUTER, selectors: ['0x', '0x6e553f65', '0x4630a0d8', '0xac9650d8', '0x39509351'], decimals: 18 },
-    { address: USDC, selectors: ['0xa9059cbb', '0x095ea7b3', '0x39509351', '0xdeadbeef'], decimals: 6 },
-    { address: SAVAX_CONTRACT, selectors: ['0xfbc3b807', '0x5bcb2fc6'], decimals: 18 },
-    { address: POLYMARKET_DENY_CONTRACTS[0], selectors: ['0x'], decimals: 6 },
+    { address: ROUTER, selectors: ['0x', '0x6e553f65', '0x4630a0d8', '0xac9650d8', '0x39509351'], decimals: 18, roles: ['dex', 'spender', 'recipient', 'vault'] },
+    { address: USDC, selectors: ['0xa9059cbb', '0x095ea7b3', '0x39509351', '0xdeadbeef'], decimals: 6, roles: ['token'] },
+    { address: SAVAX_CONTRACT, selectors: ['0xfbc3b807', '0x5bcb2fc6'], decimals: 18, roles: ['vault', 'token'] },
+    { address: POLYMARKET_DENY_CONTRACTS[0], selectors: ['0x'], decimals: 6, roles: ['token'] },
   ],
 };
 
@@ -178,7 +178,7 @@ describe('signer hardening', () => {
       'ops',
       h.wallet.address,
       1n,
-      [[ROUTER, ROUTER, USDC, USDC, 1000n, '0x', false]],
+      [[ROUTER, ROUTER, USDC, USDC, 1000n, '0x', true]],
     ]);
     const swapTx = txFields({ data: swapData });
     const swapIntent = intent(h.wallet.address, swapTx, {
@@ -666,7 +666,7 @@ describe('signer hardening', () => {
     const capped = await boot({ tokenCaps: { [getAddress(USDC).toLowerCase()]: '1000000' } });
     const fatData = lifi.encodeFunctionData('swapTokensGeneric', [
       `0x${'11'.repeat(32)}`, 'evalanche', 'ops', capped.wallet.address, 1n,
-      [[ROUTER, ROUTER, USDC, USDC, 5_000_000n, '0x', false]],
+      [[ROUTER, ROUTER, USDC, USDC, 5_000_000n, '0x', true]],
     ]);
     const fatTx = txFields({ data: fatData, value: '0' });
     const fat = intent(capped.wallet.address, fatTx, {
@@ -682,8 +682,8 @@ describe('signer hardening', () => {
     const okData = lifi.encodeFunctionData('swapTokensGeneric', [
       `0x${'22'.repeat(32)}`, 'evalanche', 'ops', priced.wallet.address, 1n,
       [
-        [ROUTER, ROUTER, USDC, ROUTER, 1_000_000n, '0x', false],
-        [ROUTER, ROUTER, ROUTER, USDC, 50n, '0x', false],
+        [ROUTER, ROUTER, USDC, SAVAX_CONTRACT, 1_000_000n, '0x', true],
+        [ROUTER, ROUTER, SAVAX_CONTRACT, USDC, 50n, '0x', false],
       ],
     ]);
     const okTx = txFields({ data: okData, value: '0' });

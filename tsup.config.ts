@@ -9,6 +9,7 @@ export default defineConfig([
     sourcemap: true,
     clean: false,
     target: 'node20',
+    shims: true,
     // Keep Avalanche deps external — they're lazy-loaded at runtime
     external: ['@avalanche-sdk/client', '@avalanche-sdk/client/accounts', '@avalabs/avalanchejs'],
   },
@@ -48,5 +49,6 @@ export default defineConfig([
     target: 'node20',
     banner: { js: '#!/usr/bin/env node' },
     outDir: 'dist/signer',
+    onSuccess: 'node scripts/copy-flock-helper.mjs',
   },
 ]);

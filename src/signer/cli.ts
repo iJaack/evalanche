@@ -7,7 +7,7 @@
  */
 
 import { readFile } from 'node:fs/promises';
-import { readSecureFile } from './secure-path';
+import { assertSecureParents, readSecureFile } from './secure-path';
 import { startSignerServer, type SignerServerOptions } from './server';
 
 interface CliArgs {
@@ -42,7 +42,7 @@ function parseArgs(argv: string[]): CliArgs {
       i += 1;
     } else if (token === '--help' || token === '-h') {
       process.stdout.write('evalanche-signer --config signer.json [--dry-run] [--init-nonces] [--host 127.0.0.1] [--port 7410] [--socket /path.sock]\n');
-      process.stdout.write('--allow-insecure-file-permissions is for tests only. Production files must be root-owned and not group/other writable.\n');
+      process.stdout.write('--allow-insecure-file-permissions is for tests only. Config and keys must be root-owned. State directories must be mode 0700 and owned by the signer user.\n');
       process.exit(0);
     } else {
       throw new Error(`Unknown argument: ${token}`);
@@ -54,9 +54,13 @@ function parseArgs(argv: string[]): CliArgs {
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   if (!args.config) throw new Error('Missing --config <file>');
-  const configText = args.allowInsecureFilePermissions
-    ? await readFile(args.config, 'utf8')
-    : await readSecureFile(args.config);
+  let configText: string;
+  if (args.allowInsecureFilePermissions) {
+    configText = await readFile(args.config, 'utf8');
+  } else {
+    await assertSecureParents(args.config);
+    configText = await readSecureFile(args.config);
+  }
   const raw = JSON.parse(configText) as SignerServerOptions & {
     token?: string;
     privateKey?: string;

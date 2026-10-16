@@ -19,7 +19,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { chmod, mkdir, readFile, stat } from 'node:fs/promises';
 import { open as openFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import { assertSecureFileIfExists, assertSecureParents, readSecureFile } from './secure-path';
+import { assertSecureParents, assertSignerStateDirectory, assertSocketDirectory, assertStateFileIfExists, readSecureFile } from './secure-path';
 import { JsonRpcProvider, Wallet, getAddress, keccak256, toUtf8Bytes, type TransactionRequest } from 'ethers';
 import type { HDNodeWallet } from 'ethers';
 import { EvalancheError, EvalancheErrorCode } from '../utils/errors';
@@ -52,6 +52,7 @@ import {
   isHardDeniedContract,
   isSavaxInstantUnstake,
   selectorOf,
+  type AllowRole,
   type DecodedCall,
 } from './decode';
 import { NonceStore, writeDurable } from './nonce-store';
@@ -80,6 +81,12 @@ export interface AllowEntry {
   decimals?: number;
   /** ERC-4626 underlying. Deposit caps price this asset, not the vault. */
   underlying?: string;
+  /**
+   * What this address may be. `dex` is callTo, `spender` is approveTo / approve,
+   * `recipient` receives an ERC-20 transfer, `token` is an asset, `vault` is a
+   * deposit or redeem target. A token is never accepted as callTo.
+   */
+  roles?: AllowRole[];
 }
 
 export interface TypedDataAllow {
@@ -545,7 +552,7 @@ export class EvalancheSignerServer {
       }
       const spender = typedParty(typed, 'spender');
       if (!spender) deny('Permit spender could not be decoded', EvalancheErrorCode.SIGNER_REJECTED);
-      if (!this.addressAllowed(Number(request.chainId), spender)) {
+      if (!this.hasRole(Number(request.chainId), spender, 'spender')) {
         deny('Permit spender is not allowlisted', EvalancheErrorCode.SIGNER_REJECTED);
       }
     }
@@ -562,6 +569,10 @@ export class EvalancheSignerServer {
       deny('to is not an address', EvalancheErrorCode.INVALID_PARAMS);
     }
     return this.allow.get(chainId)?.find((entry) => getAddress(entry.address) === address);
+  }
+
+  private hasRole(chainId: number, address: string, role: AllowRole): boolean {
+    return Boolean(this.allowEntry(chainId, address)?.roles?.includes(role));
   }
 
   private addressAllowed(chainId: number, address: string): boolean {
@@ -586,6 +597,7 @@ export class EvalancheSignerServer {
         tokenOut: intent.tokenOut?.address,
         amountIn: intent.amountIn === undefined ? undefined : BigInt(intent.amountIn),
         allowAddress: (address) => this.addressAllowed(chainId, address),
+        allowRole: (address, role) => this.hasRole(chainId, address, role),
         allowSelector: (to, selector) => {
           const entry = this.allowEntry(chainId, to);
           return Boolean(entry?.selectors.includes(selector.toLowerCase()));
@@ -935,6 +947,8 @@ function resolveGasCap(configured: string | undefined): bigint {
   return value;
 }
 
+const ALLOW_ROLES = new Set<AllowRole>(['dex', 'spender', 'recipient', 'token', 'vault']);
+
 function indexAllow(allow: Record<string, AllowEntry[]>): Map<number, AllowEntry[]> {
   const map = new Map<number, AllowEntry[]>();
   for (const [chain, entries] of Object.entries(allow ?? {})) {
@@ -945,10 +959,20 @@ function indexAllow(allow: Record<string, AllowEntry[]>): Map<number, AllowEntry
       selectors: (entry.selectors ?? []).map((selector) => selector.toLowerCase()),
       decimals: entry.decimals,
       underlying: entry.underlying ? getAddress(entry.underlying) : undefined,
-    })).filter((entry) => entry.selectors.length > 0);
+      roles: normalizeRoles(entry.roles),
+    })).filter((entry) => entry.selectors.length > 0 || entry.roles.length > 0);
     if (normalized.length > 0) map.set(chainId, normalized);
   }
   return map;
+}
+
+function normalizeRoles(roles: AllowRole[] | undefined): AllowRole[] {
+  if (!Array.isArray(roles)) return [];
+  const out: AllowRole[] = [];
+  for (const role of roles) {
+    if (ALLOW_ROLES.has(role) && !out.includes(role)) out.push(role);
+  }
+  return out;
 }
 
 function assertStartup(options: SignerServerOptions): void {
@@ -975,16 +999,26 @@ function assertStartup(options: SignerServerOptions): void {
 
 async function assertFilePermissions(options: SignerServerOptions): Promise<string | undefined> {
   if (options.allowInsecureFilePermissions) return undefined;
-  await assertSecureParents(options.nonceStorePath);
-  await assertSecureParents(options.auditLogPath);
-  await assertSecureFileIfExists(options.nonceStorePath);
-  await assertSecureFileIfExists(options.auditLogPath);
-  await assertSecureFileIfExists(budgetPath(options.nonceStorePath));
-  if (options.socketPath) await assertSecureParents(options.socketPath);
-  if (options.configPath) await readSecureFile(options.configPath);
-  if (options.verifierPublicKeyPath) await readSecureFile(options.verifierPublicKeyPath);
-  if (options.keystorePath) return readSecureFile(options.keystorePath);
-  return undefined;
+  let keystore: string | undefined;
+  if (options.configPath) {
+    await assertSecureParents(options.configPath);
+    await readSecureFile(options.configPath);
+  }
+  if (options.verifierPublicKeyPath) await assertSecureParents(options.verifierPublicKeyPath);
+  if (options.keystorePath) {
+    await assertSecureParents(options.keystorePath);
+    keystore = await readSecureFile(options.keystorePath);
+  }
+  const nonceDir = dirname(options.nonceStorePath);
+  await assertSignerStateDirectory(nonceDir);
+  const auditDir = dirname(options.auditLogPath);
+  if (auditDir !== nonceDir) await assertSignerStateDirectory(auditDir);
+  await assertStateFileIfExists(options.nonceStorePath);
+  await assertStateFileIfExists(options.auditLogPath);
+  await assertStateFileIfExists(budgetPath(options.nonceStorePath));
+  await assertStateFileIfExists(`${options.nonceStorePath}.lock`);
+  if (options.socketPath) await assertSocketDirectory(dirname(options.socketPath));
+  return keystore;
 }
 
 async function resolveVerifierKey(options: SignerServerOptions): Promise<SignerServerOptions> {

@@ -57,8 +57,8 @@ async function boot(extra: Record<string, unknown> = {}, paths?: { audit: string
     allowInsecureFilePermissions: true,
     allow: {
       [CHAIN]: [
-        { address: ROUTER, selectors: ['0x', '0x095ea7b3', '0xa9059cbb'] },
-        { address: USDC, selectors: ['0x095ea7b3', '0xa9059cbb'], decimals: 6 },
+        { address: ROUTER, selectors: ['0x', '0x095ea7b3', '0xa9059cbb'], roles: ['dex', 'spender', 'recipient', 'vault'] },
+        { address: USDC, selectors: ['0x095ea7b3', '0xa9059cbb'], decimals: 6, roles: ['token'] },
       ],
     },
     ...rest,

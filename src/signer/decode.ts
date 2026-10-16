@@ -112,7 +112,11 @@ export interface DecodeOptions {
   allowSelector: (to: string, selector: string) => boolean;
   /** ERC-4626 underlying configured for a vault, if any. */
   underlyingOf?: (vault: string) => string | undefined;
+  /** True when `address` carries `role` on this chain's allow map. */
+  allowRole: (address: string, role: AllowRole) => boolean;
 }
+
+export type AllowRole = 'dex' | 'spender' | 'recipient' | 'token' | 'vault';
 
 const HARD_DENIED_CONTRACTS = new Set(POLYMARKET_DENY_CONTRACTS.map((address) => getAddress(address)));
 const SAVAX_ADDRESS = getAddress(SAVAX_CONTRACT);
@@ -145,6 +149,10 @@ export function isNativeAsset(address: string): boolean {
 /** Price and cap native under the zero address, whichever sentinel the calldata used. */
 export function canonicalAsset(address: string): string {
   return isNativeAsset(address) ? NATIVE_ADDRESS : getAddress(address);
+}
+
+function requireRole(options: DecodeOptions, address: string, role: AllowRole, label: string): void {
+  if (!options.allowRole(address, role)) fail(`${label} is not an allowlisted ${role}`);
 }
 
 function sameAsset(left: string, right: string): boolean {
@@ -204,7 +212,8 @@ function decodeOne(to: string, data: string, selector: string, options: DecodeOp
       case SELECTOR.transfer: {
         const decoded = ERC20.decodeFunctionData('transfer', data);
         const recipient = getAddress(String(decoded[0]));
-        if (!options.allowAddress(recipient)) fail('ERC-20 transfer recipient is not allowlisted');
+        if (!options.allowRole(recipient, 'recipient')) fail('ERC-20 transfer recipient is not allowlisted');
+        requireRole(options, getAddress(to), 'token', 'token contract');
         return { kind: 'erc20-transfer', selector, amount: BigInt(decoded[1]), recipient, asset: getAddress(to) };
       }
       case SELECTOR.approve: {
@@ -212,7 +221,8 @@ function decodeOne(to: string, data: string, selector: string, options: DecodeOp
         const amount = BigInt(decoded[1]);
         if (amount === MaxUint256) fail('Unlimited ERC-20 approval is denied');
         const spender = getAddress(String(decoded[0]));
-        if (!options.allowAddress(spender)) fail('approve spender is not allowlisted');
+        if (!options.allowRole(spender, 'spender')) fail('approve spender is not allowlisted');
+        requireRole(options, getAddress(to), 'token', 'token contract');
         return { kind: 'erc20-approve', selector, amount, spender, asset: getAddress(to) };
       }
       case SELECTOR.increaseAllowance: {
@@ -220,7 +230,8 @@ function decodeOne(to: string, data: string, selector: string, options: DecodeOp
         const amount = BigInt(decoded[1]);
         if (amount === MaxUint256) fail('Unlimited ERC-20 increaseAllowance is denied');
         const spender = getAddress(String(decoded[0]));
-        if (!options.allowAddress(spender)) fail('increaseAllowance spender is not allowlisted');
+        if (!options.allowRole(spender, 'spender')) fail('increaseAllowance spender is not allowlisted');
+        requireRole(options, getAddress(to), 'token', 'token contract');
         return { kind: 'erc20-increase-allowance', selector, amount, spender, asset: getAddress(to) };
       }
       case SELECTOR.erc2612Permit: {
@@ -230,7 +241,8 @@ function decodeOne(to: string, data: string, selector: string, options: DecodeOp
         const amount = BigInt(decoded[2]);
         if (amount === MaxUint256) fail('Unlimited ERC-20 permit is denied');
         const spender = getAddress(String(decoded[1]));
-        if (!options.allowAddress(spender)) fail('Permit spender is not allowlisted');
+        if (!options.allowRole(spender, 'spender')) fail('Permit spender is not allowlisted');
+        requireRole(options, getAddress(to), 'token', 'token contract');
         return { kind: 'erc2612-permit', selector, amount, receiver: owner, spender, asset: getAddress(to) };
       }
       case SELECTOR.permit2: {
@@ -241,12 +253,16 @@ function decodeOne(to: string, data: string, selector: string, options: DecodeOp
         const amount = BigInt(details.amount);
         if (amount === MaxUint256 || amount >= (1n << 160n) - 1n) fail('Unlimited Permit2 allowance is denied');
         const spender = getAddress(String(decoded[1].spender));
-        if (!options.allowAddress(spender)) fail('Permit2 spender is not allowlisted');
+        if (!options.allowRole(spender, 'spender')) fail('Permit2 spender is not allowlisted');
+        const permitToken = canonicalAsset(String(details.token));
+        if (!isNativeAsset(permitToken)) requireRole(options, permitToken, 'token', 'permit token');
         return { kind: 'permit2', selector, amount, receiver: owner, spender, asset: canonicalAsset(String(details.token)) };
       }
       case SELECTOR.deposit: {
         const decoded = ERC4626.decodeFunctionData('deposit', data);
+        requireRole(options, getAddress(to), 'vault', 'vault');
         const underlying = options.underlyingOf?.(to);
+        if (underlying && !isNativeAsset(underlying)) requireRole(options, canonicalAsset(underlying), 'token', 'vault underlying');
         return {
           kind: 'erc4626-deposit',
           selector,
@@ -257,6 +273,7 @@ function decodeOne(to: string, data: string, selector: string, options: DecodeOp
       }
       case SELECTOR.redeem: {
         const decoded = ERC4626.decodeFunctionData('redeem', data);
+        requireRole(options, getAddress(to), 'vault', 'vault');
         return {
           kind: 'erc4626-redeem',
           selector,
@@ -268,10 +285,12 @@ function decodeOne(to: string, data: string, selector: string, options: DecodeOp
       }
       case SELECTOR.submit: {
         SAVAX.decodeFunctionData('submit', data);
+        requireRole(options, getAddress(to), 'vault', 'vault');
         if (getAddress(to) !== SAVAX_ADDRESS) fail('submit() is only decoded for Benqi sAVAX');
         return { kind: 'savax-submit', selector, amount: options.value, receiver: options.wallet, asset: NATIVE_ADDRESS };
       }
       case SELECTOR.requestRedeem: {
+        requireRole(options, getAddress(to), 'vault', 'vault');
         if (getAddress(to) !== SAVAX_ADDRESS) fail('requestRedeem is only decoded for Benqi sAVAX');
         const decoded = SAVAX.decodeFunctionData('requestRedeem', data);
         return { kind: 'savax-request-redeem', selector, amount: BigInt(decoded[0]), receiver: options.wallet, asset: SAVAX_ADDRESS };
@@ -294,6 +313,7 @@ interface SwapLeg {
   sendingAsset: string;
   receivingAsset: string;
   fromAmount: bigint;
+  requiresDeposit: boolean;
 }
 
 function decodeSwap(to: string, data: string, selector: string, options: DecodeOptions): DecodedCall {
@@ -307,6 +327,7 @@ function decodeSwap(to: string, data: string, selector: string, options: DecodeO
     sendingAssetId: string;
     receivingAssetId: string;
     fromAmount: bigint;
+    requiresDeposit: boolean;
   }>;
   if (!swaps || swaps.length === 0) fail('Li.Fi swapTokensGeneric has no swap legs');
   const legs: SwapLeg[] = swaps.map((swap) => ({
@@ -315,6 +336,7 @@ function decodeSwap(to: string, data: string, selector: string, options: DecodeO
     sendingAsset: String(swap.sendingAssetId),
     receivingAsset: String(swap.receivingAssetId),
     fromAmount: BigInt(swap.fromAmount),
+    requiresDeposit: Boolean(swap.requiresDeposit),
   }));
   if (!options.tokenIn) fail('Li.Fi swap requires tokenIn');
   if (!options.tokenOut) fail('Li.Fi swap requires tokenOut');
@@ -333,9 +355,18 @@ function decodeSwap(to: string, data: string, selector: string, options: DecodeO
   if (!sameAsset(last.receivingAsset, options.tokenOut)) {
     fail('last leg receivingAsset does not match tokenOut');
   }
+  if (first.requiresDeposit !== true) fail('first swap leg must set requiresDeposit');
+  for (let i = 1; i < legs.length; i += 1) {
+    if (legs[i].requiresDeposit !== false) fail('later swap legs must not set requiresDeposit');
+  }
   for (const leg of legs) {
-    if (!options.allowAddress(leg.callTo)) fail('Li.Fi callTo is not allowlisted');
-    if (!options.allowAddress(leg.approveTo)) fail('Li.Fi approveTo is not allowlisted');
+    if (options.allowRole(leg.callTo, 'token')) fail('token address cannot be callTo');
+    if (!options.allowRole(leg.callTo, 'dex')) fail('Li.Fi callTo is not allowlisted');
+    if (!options.allowRole(leg.approveTo, 'spender')) fail('Li.Fi approveTo is not allowlisted');
+    for (const asset of [leg.sendingAsset, leg.receivingAsset]) {
+      if (isNativeAsset(asset)) continue;
+      requireRole(options, canonicalAsset(asset), 'token', 'swap asset');
+    }
   }
   const native = isNativeAsset(first.sendingAsset);
   if (native) {

@@ -43,8 +43,8 @@ async function dirs(): Promise<{ audit: string; nonce: string }> {
 
 const ALLOW: Record<string, AllowEntry[]> = {
   [CHAIN_ID]: [
-    { address: SPEND, selectors: ['0x', '0xa9059cbb', '0x095ea7b3', '0x6e553f65', '0x4630a0d8', '0xac9650d8'], decimals: 18 },
-    { address: TOKEN, selectors: ['0x', '0xa9059cbb', '0x095ea7b3'], decimals: 6 },
+    { address: SPEND, selectors: ['0x', '0xa9059cbb', '0x095ea7b3', '0x6e553f65', '0x4630a0d8', '0xac9650d8'], decimals: 18, roles: ['dex', 'spender', 'recipient', 'vault'] },
+    { address: TOKEN, selectors: ['0x', '0xa9059cbb', '0x095ea7b3'], decimals: 6, roles: ['token'] },
   ],
 };
 
@@ -543,7 +543,7 @@ describe('remote signer', () => {
       'ops',
       harness.wallet.address,
       0n,
-      [[SPEND, SPEND, TOKEN, TOKEN, 1_000_000n, '0x', false]],
+      [[SPEND, SPEND, TOKEN, TOKEN, 1_000_000n, '0x', true]],
     ]);
     const swap = intent(harness.wallet.address, data, {
       action: 'swap',

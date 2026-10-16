@@ -2,9 +2,10 @@
  * Single-instance nonce store.
  *
  * The file is created only with --init-nonces. Every write is fsynced, and
- * the parent directory is fsynced after the rename. An exclusive flock(2)
- * on a lock file keeps a second signer from opening the same store. The
- * kernel releases that lock when this process dies. `startedAt` is recorded
+ * the parent directory is fsynced after the rename. An exclusive kernel lock
+ * on a lock file keeps a second signer from opening the same store. Darwin
+ * uses O_EXLOCK. Linux uses the pinned helper. The kernel releases that lock
+ * when this process dies. `startedAt` is recorded
  * at initialization; approvals created before that time are rejected.
  */
 
@@ -39,9 +40,9 @@ export class NonceStore {
   }
 
   static async open(path: string, initNonces: boolean): Promise<NonceStore> {
-    const held = holdExclusiveLock(`${path}.lock`);
+    await mkdir(dirname(path), { recursive: true });
+    const held = await holdExclusiveLock(`${path}.lock`);
     try {
-      await mkdir(dirname(path), { recursive: true });
       const file = await loadOrInit(path, initNonces);
       return new NonceStore(path, held, file);
     } catch (error) {

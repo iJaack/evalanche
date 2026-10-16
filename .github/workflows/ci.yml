@@ -46,3 +46,28 @@ jobs:
           name: sdk-check-evidence
           path: .release-artifacts/
           include-hidden-files: true
+
+  # No compiler and no Python. The signer lock must come from the pinned helper.
+  signer-linux-clean:
+    runs-on: ubuntu-latest
+    container:
+      image: node:22-bookworm-slim
+    timeout-minutes: 20
+    steps:
+      - name: Install git without build tools
+        run: apt-get update && apt-get install -y --no-install-recommends git ca-certificates
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+      - run: npm ci
+      - run: npx vitest run test/signer test/poc test/poc2 test/poc3
+
+  signer-macos:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npx vitest run test/signer test/poc test/poc2 test/poc3
