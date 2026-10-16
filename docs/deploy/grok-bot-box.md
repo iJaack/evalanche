@@ -21,7 +21,9 @@ The key is not written to disk, not placed in the config, and not logged. After 
 | `/opt/evalanche-signer` | root | `0755` | Pinned `evalanche@1.15.0` install. Not under `/workspace`. |
 | `/etc/evalanche-signer/config.json` | root | `0644` | Allow map, paths, chain id. No key and no bearer token. |
 | `/etc/evalanche-signer/token` | root | `0640` | Bearer token. Group `evalanche-signer`. Not regenerated on start. |
+| `/etc/evalanche-signer/verifier.key` | root | `0600` | Ed25519 approval private key. Generated on the box. Not an environment secret. |
 | `/etc/evalanche-signer/verifier.pub` | root | `0644` | Ed25519 verifier public key. |
+| `/var/lib/evalanche-signer/state/start.lock` | root | `0600` | flock held for the whole `start`. |
 | `/var/lib/evalanche-signer` | root | `0755` | Parent of the state, log, and socket directories. |
 | `/var/lib/evalanche-signer/state` | `evalanche-signer` | `0700` | Nonce file, audit JSONL, budget, lock, pid file. |
 | `/var/lib/evalanche-signer/log` | `evalanche-signer` | `0700` | Process log. |
@@ -75,7 +77,21 @@ install -d -o evalanche-signer -g evalanche-signer -m 0750 /var/lib/evalanche-si
 
 `--ignore-scripts` skips package lifecycle scripts. npm still links the `evalanche-signer` bin.
 
-Write the verifier public key, and only the public key, to `/etc/evalanche-signer/verifier.pub` (root, mode `0644`). Keep the Ed25519 private key in the verifier agent.
+Generate the Ed25519 approval key on the box. The private key is written to `/etc/evalanche-signer/verifier.key` (root, mode `0600`). The public key is written to `/etc/evalanche-signer/verifier.pub` (root, mode `0644`). The key is not an environment secret and it is not placed on a command line. Run this as root from the install directory:
+
+```sh
+cd /opt/evalanche-signer
+node --input-type=module <<'EOF'
+import { writeFileSync } from 'node:fs';
+import { generateEd25519KeyPair } from 'evalanche';
+const pair = generateEd25519KeyPair();
+writeFileSync('/etc/evalanche-signer/verifier.key', `${pair.privateKey}\n`, { mode: 0o600 });
+writeFileSync('/etc/evalanche-signer/verifier.pub', `${pair.publicKey}\n`, { mode: 0o644 });
+EOF
+chown root:root /etc/evalanche-signer/verifier.key /etc/evalanche-signer/verifier.pub
+chmod 0600 /etc/evalanche-signer/verifier.key
+chmod 0644 /etc/evalanche-signer/verifier.pub
+```
 
 `/etc/evalanche-signer/config.json` (root, mode `0644`):
 
@@ -127,7 +143,7 @@ EVALANCHE_SIGNER_PRIVATE_KEY="$MONY_WALLET_PRIVATE_KEY" \
   /opt/evalanche-signer/bin/grok-bot-signer.sh start --live
 ```
 
-`start` removes a stale socket, launches the signer with `setsid`, waits until the new pid answers `GET /health` with status 200, and only then writes the pidfile. It fails if a signer is already running, including when the pidfile is missing. `stop` checks `/proc/<pid>/cmdline` and the uid before it signals the process. It does not kill an unverified pid, and it exits non-zero if the process is still alive. `SIGTERM` and `SIGINT` close the server and unlink the socket.
+`start` holds an exclusive flock on `/var/lib/evalanche-signer/state/start.lock` for the whole launch, so a second start waits and then fails if a signer is already running. It records only the child it launched. That child is identified by an environment mark, not by the first signer pid on the host. `start` removes a stale socket, launches the signer with `setsid`, waits until that pid answers `GET /health` with status 200, and only then writes the pidfile. It stops waiting as soon as that child exits. `stop` checks `/proc/<pid>/cmdline` and the uid from `/proc/<pid>/status` before it signals the process. It does not kill an unverified pid. When the pidfile is missing, empty, stale, or a zombie, `stop` signals each verified signer pid and exits non-zero if any remain. `SIGTERM` and `SIGINT` halt the signer first, so every route returns 503 and no signature is produced, then close the server. When this script runs as root it ignores `EVALANCHE_BOX_*` overrides, including `EVALANCHE_BOX_SKIP_ROOT` and `EVALANCHE_BOX_BIN`, and uses the paths in the layout table.
 
 The dry-run command is equivalent to running the binary as the signer user with `--dry-run`. The script reads the token file into `EVALANCHE_SIGNER_TOKEN` for that process:
 
@@ -180,8 +196,16 @@ The proposer and the verifier are the two `box` agents. The proposer builds an i
 ### Verifier: approve an intent
 
 ```js
+import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { computeApprovedTxHash, signVerifierApproval } from 'evalanche';
 
+const verifierPrivateKey = execFileSync(
+  'sudo',
+  ['-n', 'cat', '/etc/evalanche-signer/verifier.key'],
+  { encoding: 'utf8' },
+).trim();
+const verifierPublicKey = readFileSync('/etc/evalanche-signer/verifier.pub', 'utf8').trim();
 const wallet = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266';
 const mode = process.env.EVALANCHE_SIGNER_MODE === 'live' ? 'live' : 'dry-run';
 const now = Date.now();
@@ -214,14 +238,14 @@ const intent = {
 };
 const approval = signVerifierApproval({
   intent,
-  verifierPrivateKey: process.env.EVALANCHE_VERIFIER_PRIVATE_KEY,
-  verifierPublicKey: process.env.EVALANCHE_VERIFIER_PUBLIC_KEY,
+  verifierPrivateKey,
+  verifierPublicKey,
   mode,
   signerAddress: wallet,
 });
 ```
 
-`signVerifierApproval` signs `evalanche-verifier/v1`, the decision `approve`, the mode (`dry-run` or `live`), the signer address, the chain id, and the intent hash. The mode must match `/health`. The default above is `dry-run`. The public key must be the one in `/etc/evalanche-signer/verifier.pub`. The proposer reads `/etc/evalanche-signer/token` into `EVALANCHE_SIGNER_TOKEN` before it calls the socket.
+`signVerifierApproval` signs `evalanche-verifier/v1`, the decision `approve`, the mode (`dry-run` or `live`), the signer address, the chain id, and the intent hash. The mode must match `/health`. The default above is `dry-run`. The approval step reads `/etc/evalanche-signer/verifier.key` with `sudo -n cat`. The path is the only argument. The key is not read from the environment and it is not passed in argv. The public key is the file `/etc/evalanche-signer/verifier.pub`. The proposer reads `/etc/evalanche-signer/token` into `EVALANCHE_SIGNER_TOKEN` before it calls the socket.
 
 ### Proposer: submit the approved intent on the socket
 
