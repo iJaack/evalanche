@@ -68,6 +68,8 @@ export const MAX_APPROVAL_TTL_MS = 600_000;
 export const AUDIT_ROOT = createHash('sha256').update('evalanche-audit-root/v1').digest('hex');
 
 const MAX_BODY_BYTES = 64 * 1024;
+const SHUTDOWN_GRACE_MS = 200;
+const SHUTDOWN_FORCE_MS = 3_000;
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1']);
 const DEFAULT_PRICE_TTL_MS = 60_000;
 const TX_FIELDS = [
@@ -198,6 +200,9 @@ export class EvalancheSignerServer {
   private queue: Promise<void> = Promise.resolve();
   private http: ReturnType<typeof createServer> | null = null;
   private halted = false;
+  private haltReason = 'signer stopped';
+  private shutdownStarted = false;
+  private resourcesClosed = false;
   private simulateFn: ((tx: PendingTransaction) => Promise<SimulationResult>) | null;
   private priceCache: { fetchedAt: number; prices: Record<string, number> } | null = null;
 
@@ -298,32 +303,76 @@ export class EvalancheSignerServer {
   async close(): Promise<void> {
     const http = this.http;
     if (http) {
+      if (this.shutdownStarted) http.closeAllConnections();
       await new Promise<void>((resolve, reject) => {
         http.close((error) => {
           if (error && (error as NodeJS.ErrnoException).code !== 'ERR_SERVER_NOT_RUNNING') reject(error);
           else resolve();
         });
       });
-      if (this.options.socketPath) {
-        const { unlink } = await import('node:fs/promises');
-        await unlink(this.options.socketPath).catch(() => undefined);
-      }
-      this.http = null;
     }
-    await this.nonces.close();
+    await this.finishClose();
   }
 
   /**
-   * The nonce lock helper exited after startup. Stop accepting and signing,
-   * then leave the process with a non-zero status. release() does not call this.
+   * Refuse every route and every signature. Call this before closing sockets
+   * so an in-flight keep-alive request cannot still be signed.
    */
-  stopBecauseLockLost(): void {
+  halt(reason = 'signer stopped'): void {
     if (this.halted) return;
     this.halted = true;
+    this.haltReason = reason;
+  }
+
+  /**
+   * The nonce lock helper exited after startup. Halt first, then leave the
+   * process with a non-zero status. release() does not call this.
+   */
+  stopBecauseLockLost(): void {
+    this.beginShutdown((code) => process.exit(code), 1, 'signer stopped: nonce lock lost');
+  }
+
+  /**
+   * Halt first so every route, including an in-flight keep-alive request,
+   * returns 503 and does not sign. Then stop accepting, destroy sockets after
+   * a short grace, and force the process out if that path stalls.
+   */
+  beginShutdown(exit: (code: number) => void, code = 0, reason?: string): void {
+    if (this.shutdownStarted) return;
+    this.shutdownStarted = true;
+    this.halt(reason ?? (code === 0 ? 'signer stopped' : 'signer stopped: nonce lock lost'));
     const http = this.http;
-    this.http = null;
+    // Do not wait for the close callback. It runs only after connections drain.
     http?.close();
-    process.exit(1);
+    const force = setTimeout(() => {
+      try { http?.closeAllConnections(); } catch { /* already closed */ }
+      exit(code);
+    }, SHUTDOWN_FORCE_MS);
+    force.unref();
+    setTimeout(() => {
+      try { http?.closeAllConnections(); } catch { /* already closed */ }
+      void this.finishClose().then(
+        () => {
+          clearTimeout(force);
+          exit(code);
+        },
+        () => {
+          clearTimeout(force);
+          exit(code === 0 ? 1 : code);
+        },
+      );
+    }, SHUTDOWN_GRACE_MS);
+  }
+
+  private async finishClose(): Promise<void> {
+    if (this.resourcesClosed) return;
+    this.resourcesClosed = true;
+    if (this.options.socketPath) {
+      const { unlink } = await import('node:fs/promises');
+      await unlink(this.options.socketPath).catch(() => undefined);
+    }
+    this.http = null;
+    await this.nonces.close();
   }
 
   async handle(request: CanonicalSigningRequest): Promise<SigningResult> {
@@ -333,7 +382,7 @@ export class EvalancheSignerServer {
 
   private assertRunning(): void {
     if (this.halted) {
-      throw new EvalancheError('signer stopped: nonce lock lost', EvalancheErrorCode.INVALID_CONFIG);
+      throw new EvalancheError(this.haltReason, EvalancheErrorCode.INVALID_CONFIG);
     }
   }
 
@@ -362,9 +411,11 @@ export class EvalancheSignerServer {
       this.nonces.note(walletKey, request.approval!.nonce);
       await this.nonces.persist();
       if (this.options.dryRun) {
+        this.assertRunning();
         await this.audit({ ...base, decision: 'dry_run', reason: 'verified; signature withheld' });
         return { requestId: request.requestId, dryRun: true, decision: 'allow' };
       }
+      this.assertRunning();
       const signed = await this.produce(request);
       if (this.policy && request.kind === 'transaction') {
         const txHash = signed.signedTransaction ? keccak256(signed.signedTransaction) : signed.requestId;
@@ -812,6 +863,7 @@ export class EvalancheSignerServer {
   }
 
   private async produce(request: CanonicalSigningRequest): Promise<SigningResult> {
+    this.assertRunning();
     if (request.kind === 'transaction') {
       const type = request.type ?? 0;
       const tx: TransactionRequest = {
@@ -829,15 +881,18 @@ export class EvalancheSignerServer {
       } else {
         tx.gasPrice = BigInt(request.gasPrice ?? '0');
       }
+      this.assertRunning();
       const signedTransaction = await this.wallet.signTransaction(tx);
       return { requestId: request.requestId, signedTransaction };
     }
     if (request.kind === 'message') {
+      this.assertRunning();
       const signature = await this.wallet.signMessage(toUtf8Bytes((request.message ?? '').normalize('NFC')));
       return { requestId: request.requestId, signature };
     }
     const typed = request.typedData;
     if (!typed) deny('typedData is required', EvalancheErrorCode.INVALID_PARAMS);
+    this.assertRunning();
     const signature = await this.wallet.signTypedData(typed.domain as never, typed.types as never, typed.value);
     return { requestId: request.requestId, signature };
   }
@@ -894,7 +949,7 @@ export class EvalancheSignerServer {
 
   private async handleHttp(req: IncomingMessage, res: ServerResponse): Promise<void> {
     if (this.halted) {
-      sendJson(res, 503, { error: 'signer stopped: nonce lock lost', code: 'INVALID_CONFIG' });
+      sendJson(res, 503, { error: this.haltReason, code: 'INVALID_CONFIG' });
       return;
     }
     if (req.url === '/health' && req.method === 'GET') {
@@ -928,8 +983,16 @@ export class EvalancheSignerServer {
     }
     try {
       const result = await this.handle(request);
+      if (this.halted) {
+        sendJson(res, 503, { error: this.haltReason, code: 'INVALID_CONFIG' });
+        return;
+      }
       sendJson(res, 200, result);
     } catch (error) {
+      if (this.halted) {
+        sendJson(res, 503, { error: this.haltReason, code: 'INVALID_CONFIG' });
+        return;
+      }
       const message = stripUrls(error instanceof Error ? error.message : String(error));
       const code = error instanceof SignerRejection ? error.code : EvalancheErrorCode.SIGNER_REJECTED;
       const status = code === EvalancheErrorCode.INVALID_PARAMS ? 400 : 403;
@@ -1233,17 +1296,24 @@ export function takeSignerEnvToken(): string | undefined {
 }
 
 /**
- * Close the HTTP server, which unlinks a unix socket, and release the nonce lock.
- * Signal handlers call this and then exit. A second call is ignored.
+ * Halt the signer, close it, and exit. SIGTERM and SIGINT call this.
+ * A server with beginShutdown halts before it closes sockets. A second call is ignored.
  */
 export function attachSignerShutdown(
-  server: { close(): Promise<void> },
+  server: {
+    close(): Promise<void>;
+    beginShutdown?: (exit: (code: number) => void, code?: number) => void;
+  },
   exit: (code: number) => void = (code) => process.exit(code),
 ): { shutdown: () => void; dispose: () => void } {
   let shuttingDown = false;
   const shutdown = () => {
     if (shuttingDown) return;
     shuttingDown = true;
+    if (server.beginShutdown) {
+      server.beginShutdown(exit, 0);
+      return;
+    }
     server.close().then(
       () => exit(0),
       () => exit(1),
