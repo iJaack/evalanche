@@ -65,6 +65,16 @@ signer_uid() {
   printf '%s\n' "$SIGNER_UID"
 }
 
+# A zombie still answers kill -0. In a container, pid 1 may not reap it.
+# Stop treats that process as gone.
+pid_is_live() {
+  raw=$(cat "/proc/$1/stat" 2>/dev/null) || return 1
+  rest=${raw#*)}
+  rest=${rest# }
+  state=${rest%% *}
+  [ -n "$state" ] && [ "$state" != "Z" ]
+}
+
 # A signer process has the signer uid and a command line that is the
 # configured binary or signer/cli.mjs. Wrappers (sh, sudo, setsid) do not count.
 is_signer_pid() {
@@ -231,7 +241,7 @@ run_start() {
       ready=1
       break
     fi
-    if ! kill -0 "$newpid" 2>/dev/null; then
+    if ! pid_is_live "$newpid"; then
       echo "signer process $newpid exited; see $LOG" >&2
       exit 1
     fi
@@ -264,7 +274,7 @@ stop_signer() {
     echo "pidfile is empty" >&2
     exit 1
   fi
-  if ! kill -0 "$pid" 2>/dev/null; then
+  if ! pid_is_live "$pid"; then
     rm -f "$PIDFILE"
     echo "signer is not running"
     exit 0
@@ -279,11 +289,11 @@ stop_signer() {
   fi
   kill -TERM "$pid" 2>/dev/null || true
   i=0
-  while kill -0 "$pid" 2>/dev/null && [ "$i" -lt 50 ]; do
+  while pid_is_live "$pid" && [ "$i" -lt 50 ]; do
     i=$((i + 1))
     sleep 0.1
   done
-  if kill -0 "$pid" 2>/dev/null; then
+  if pid_is_live "$pid"; then
     echo "signer pid $pid is still alive" >&2
     exit 1
   fi
