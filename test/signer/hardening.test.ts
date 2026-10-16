@@ -68,6 +68,7 @@ async function boot(extra: Record<string, unknown> = {}) {
     port: 0,
     allow: ALLOW,
     initNonces: true,
+    allowInsecureFilePermissions: true,
     simulate: async () => ({ success: true }),
     ...rest,
     verifierPublicKey: verifier.publicKey,
@@ -180,13 +181,20 @@ describe('signer hardening', () => {
       [[ROUTER, ROUTER, USDC, USDC, 1000n, '0x', false]],
     ]);
     const swapTx = txFields({ data: swapData });
-    const swapIntent = intent(h.wallet.address, swapTx, { action: 'swap', amountIn: '1000', minAmountOut: '5', nonce: '3' });
+    const swapIntent = intent(h.wallet.address, swapTx, {
+      action: 'swap',
+      amountIn: '1000',
+      minAmountOut: '5',
+      nonce: '3',
+      tokenIn: { address: USDC, symbol: 'USDC', decimals: 6 },
+      tokenOut: { address: USDC, symbol: 'USDC', decimals: 6 },
+    });
     await expect(h.server.handle(request(h.wallet.address, swapIntent, approvalFor(h, swapIntent)))).rejects.toThrow(/minOut/i);
   });
 
   it('M2 prices and caps follow the decoded amount, not a smaller self-reported amount', async () => {
     const h = await boot({ tokenCaps: { [getAddress(USDC).toLowerCase()]: '10' } });
-    const transfer = new Interface(['function transfer(address,uint256)']).encodeFunctionData('transfer', [ATTACKER, 1000n]);
+    const transfer = new Interface(['function transfer(address,uint256)']).encodeFunctionData('transfer', [ROUTER, 1000n]);
     const tx = txFields({ to: getAddress(USDC), data: transfer, value: '0' });
     const built = intent(h.wallet.address, tx, {
       action: 'transfer',
@@ -272,7 +280,7 @@ describe('signer hardening', () => {
       approval: approvalFor(h, built),
     })).rejects.toThrow(/message signing is disabled/i);
 
-    const increase = new Interface(['function increaseAllowance(address,uint256)']).encodeFunctionData('increaseAllowance', [ATTACKER, 5n]);
+    const increase = new Interface(['function increaseAllowance(address,uint256)']).encodeFunctionData('increaseAllowance', [ROUTER, 5n]);
     const incTx = txFields({ to: getAddress(USDC), data: increase, value: '0' });
     const incIntent = intent(h.wallet.address, incTx, {
       nonce: '2',
@@ -393,6 +401,7 @@ describe('signer hardening', () => {
       chainId: CHAIN,
       port: 0,
       allow: ALLOW,
+      allowInsecureFilePermissions: true,
     };
     await expect(startSignerServer(common)).rejects.toThrow(/init-nonces/i);
     await writeFile(p.nonce, '{}');
@@ -460,6 +469,7 @@ describe('signer hardening', () => {
       port: 0,
       allow: ALLOW,
       initNonces: true,
+      allowInsecureFilePermissions: true,
       policy: { dryRun: true },
     })).rejects.toThrow(/dryRun/i);
   });
@@ -476,11 +486,12 @@ describe('signer hardening', () => {
       port: 0,
       allow: ALLOW,
       initNonces: true,
+      allowInsecureFilePermissions: true,
       priceSourceUrl: 'http://prices.example/feed',
     })).rejects.toThrow(/https/i);
 
     const symbolOnly = await boot({ maxPerTxUsd: 1, prices: { USDC: 1 } });
-    const transfer = new Interface(['function transfer(address,uint256)']).encodeFunctionData('transfer', [ATTACKER, 1_000_000n]);
+    const transfer = new Interface(['function transfer(address,uint256)']).encodeFunctionData('transfer', [ROUTER, 1_000_000n]);
     const tx = txFields({ to: getAddress(USDC), data: transfer, value: '0' });
     const built = intent(symbolOnly.wallet.address, tx, {
       action: 'transfer',
@@ -625,6 +636,7 @@ describe('signer hardening', () => {
       chainId: CHAIN,
       allow: ALLOW,
       initNonces: true,
+      allowInsecureFilePermissions: true,
       socketPath,
       simulate: async () => ({ success: true }),
     });
@@ -642,8 +654,146 @@ describe('signer hardening', () => {
       chainId: CHAIN,
       allow: ALLOW,
       initNonces: true,
+      allowInsecureFilePermissions: true,
       socketPath: join(loose.root, 'nope.sock'),
     })).rejects.toThrow(/0750/);
+  });
+
+  it('B2 prices the sold asset, and a native swap is not counted twice', async () => {
+    const lifi = new Interface([
+      'function swapTokensGeneric(bytes32,string,string,address,uint256,(address,address,address,address,uint256,bytes,bool)[])',
+    ]);
+    const capped = await boot({ tokenCaps: { [getAddress(USDC).toLowerCase()]: '1000000' } });
+    const fatData = lifi.encodeFunctionData('swapTokensGeneric', [
+      `0x${'11'.repeat(32)}`, 'evalanche', 'ops', capped.wallet.address, 1n,
+      [[ROUTER, ROUTER, USDC, USDC, 5_000_000n, '0x', false]],
+    ]);
+    const fatTx = txFields({ data: fatData, value: '0' });
+    const fat = intent(capped.wallet.address, fatTx, {
+      action: 'swap',
+      amountIn: '5000000',
+      minAmountOut: '1',
+      tokenIn: { address: USDC, symbol: 'USDC', decimals: 6 },
+      tokenOut: { address: USDC, symbol: 'USDC', decimals: 6 },
+    });
+    await expect(capped.server.handle(request(capped.wallet.address, fat, approvalFor(capped, fat)))).rejects.toThrow(/oversize/i);
+
+    const priced = await boot({ maxPerTxUsd: 10, prices: { [getAddress(USDC).toLowerCase()]: 1 } });
+    const okData = lifi.encodeFunctionData('swapTokensGeneric', [
+      `0x${'22'.repeat(32)}`, 'evalanche', 'ops', priced.wallet.address, 1n,
+      [
+        [ROUTER, ROUTER, USDC, ROUTER, 1_000_000n, '0x', false],
+        [ROUTER, ROUTER, ROUTER, USDC, 50n, '0x', false],
+      ],
+    ]);
+    const okTx = txFields({ data: okData, value: '0' });
+    const ok = intent(priced.wallet.address, okTx, {
+      action: 'swap',
+      amountIn: '1000000',
+      minAmountOut: '1',
+      tokenIn: { address: USDC, symbol: 'USDC', decimals: 6 },
+      tokenOut: { address: USDC, symbol: 'USDC', decimals: 6 },
+    });
+    expect((await priced.server.handle(request(priced.wallet.address, ok, approvalFor(priced, ok)))).signedTransaction).toMatch(/^0x/);
+
+    const native = await boot({ maxPerTxUsd: 1.5, prices: { [NATIVE_ADDRESS]: 100 } });
+    const send = txFields({ value: '10000000000000000' });
+    const sendIntent = intent(native.wallet.address, send, { amountIn: '10000000000000000' });
+    expect((await native.server.handle(request(native.wallet.address, sendIntent, approvalFor(native, sendIntent)))).signedTransaction).toMatch(/^0x/);
+  });
+
+  it('rejects transaction type 1 and a gas cost above the default cap', async () => {
+    const h = await boot();
+    const typed = txFields({ type: 1 });
+    const typedIntent = intent(h.wallet.address, typed);
+    await expect(h.server.handle(request(h.wallet.address, typedIntent, approvalFor(h, typedIntent)))).rejects.toThrow(/type is not allowed/i);
+
+    const costly = txFields({ gasLimit: '1000000', gasPrice: '30000000000', nonce: '1' });
+    const costlyIntent = intent(h.wallet.address, costly, { nonce: '2', amountIn: '0' });
+    await expect(h.server.handle(request(h.wallet.address, costlyIntent, approvalFor(h, costlyIntent)))).rejects.toThrow(/gas cost exceeds the cap/i);
+  });
+
+  it('keeps an hourly budget after the signer restarts', async () => {
+    const p = await paths();
+    const verifier = generateEd25519KeyPair();
+    const policy = { maxPerHour: '100', maxPerDay: '100' };
+    const first = await boot({ paths: p, verifier, policy });
+    const firstTx = txFields({ value: '60' });
+    const firstIntent = intent(first.wallet.address, firstTx, { amountIn: '60' });
+    expect((await first.server.handle(request(first.wallet.address, firstIntent, approvalFor(first, firstIntent)))).signedTransaction).toMatch(/^0x/);
+    await first.server.close();
+
+    const second = await boot({ paths: p, verifier, policy });
+    const secondTx = txFields({ value: '60', nonce: '1' });
+    const secondIntent = intent(second.wallet.address, secondTx, { amountIn: '60', nonce: '2' });
+    await expect(second.server.handle(request(second.wallet.address, secondIntent, approvalFor(second, secondIntent)))).rejects.toThrow(/hourly/i);
+  });
+
+  it('loads the verifier key from its file and checks an opted-in permit spender', async () => {
+    const p = await paths();
+    const verifier = generateEd25519KeyPair();
+    const keyPath = join(p.root, 'verifier.pub');
+    await writeFile(keyPath, `${verifier.publicKey}\n`);
+    const loaded = await startSignerServer({
+      privateKey: KEY,
+      verifierPublicKeyPath: keyPath,
+      token: 't',
+      auditLogPath: p.audit,
+      nonceStorePath: p.nonce,
+      chainId: CHAIN,
+      port: 0,
+      allow: ALLOW,
+      initNonces: true,
+      allowInsecureFilePermissions: true,
+      simulate: async () => ({ success: true }),
+      explicitAllows: ['permit'],
+      typedDataAllow: [{ domainName: 'USD Coin', primaryType: 'Permit', chainId: CHAIN, verifyingContract: USDC }],
+    });
+    servers.push(loaded);
+    const wallet = new Wallet(KEY);
+    const typedData = {
+      domain: { name: 'USD Coin', version: '2', chainId: CHAIN, verifyingContract: USDC },
+      types: { Permit: [{ name: 'owner', type: 'address' }, { name: 'spender', type: 'address' }, { name: 'value', type: 'uint256' }, { name: 'nonce', type: 'uint256' }, { name: 'deadline', type: 'uint256' }] },
+      value: { owner: wallet.address, spender: ATTACKER, value: '5', nonce: '0', deadline: '1' },
+    };
+    const { computeTypedDataRouteHash } = await import('../../src/signer/intent');
+    const permitIntent = intent(wallet.address, txFields(), { action: 'permit', amountIn: '5', tx: undefined });
+    delete permitIntent.tx;
+    permitIntent.routeHash = computeTypedDataRouteHash(typedData);
+    const approval = signVerifierApproval({ intent: permitIntent, verifierPrivateKey: verifier.privateKey, verifierPublicKey: verifier.publicKey });
+    await expect(loaded.handle({
+      requestId: 'permit-spender',
+      kind: 'typed-data',
+      chainId: CHAIN,
+      from: wallet.address,
+      intent: 'permit',
+      typedData,
+      structuredIntent: permitIntent,
+      approval,
+    })).rejects.toThrow(/spender/i);
+
+    const other = generateEd25519KeyPair();
+    await expect(startSignerServer({
+      privateKey: KEY,
+      verifierPublicKey: other.publicKey,
+      verifierPublicKeyPath: keyPath,
+      token: 't',
+      auditLogPath: join(p.root, 'audit-2.jsonl'),
+      nonceStorePath: join(p.root, 'nonce-2.json'),
+      chainId: CHAIN,
+      port: 0,
+      allow: ALLOW,
+      initNonces: true,
+      allowInsecureFilePermissions: true,
+    })).rejects.toThrow(/does not match/i);
+  });
+
+  it('rejects a non-canonical Ed25519 approval signature', async () => {
+    const h = await boot();
+    const built = intent(h.wallet.address, txFields());
+    const approval = approvalFor(h, built);
+    const mangled = `${approval.signature.slice(0, -2)}80`;
+    await expect(h.server.handle(request(h.wallet.address, built, { ...approval, signature: mangled }))).rejects.toThrow(/signature/i);
   });
 
   it('exports the approval error code used by a rejected signature', () => {

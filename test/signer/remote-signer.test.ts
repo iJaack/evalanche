@@ -147,6 +147,7 @@ async function boot(opts: {
     allow: opts.allow ?? ALLOW,
     messageAllowlist: opts.messageAllowlist,
     initNonces: !opts.paths,
+    allowInsecureFilePermissions: true,
     simulate: async () => ({ success: true }),
   });
   servers.push(server);
@@ -295,6 +296,7 @@ describe('remote signer', () => {
       chainId: CHAIN_ID,
       port: 0,
       allow: ALLOW,
+      allowInsecureFilePermissions: true,
       simulate: async () => ({ success: true }),
     });
     servers.push(restarted);
@@ -543,7 +545,12 @@ describe('remote signer', () => {
       0n,
       [[SPEND, SPEND, TOKEN, TOKEN, 1_000_000n, '0x', false]],
     ]);
-    const swap = intent(harness.wallet.address, data, { action: 'swap', minAmountOut: undefined, nonce: '11' });
+    const swap = intent(harness.wallet.address, data, {
+      action: 'swap',
+      minAmountOut: undefined,
+      nonce: '11',
+      tokenOut: { address: TOKEN, symbol: 'USDC', decimals: 6 },
+    });
     await expect(signTx(harness, swap, txRequest(harness.wallet.address, data))).rejects.toThrow(/minAmountOut/);
 
     const paths = await dirs();
@@ -559,6 +566,7 @@ describe('remote signer', () => {
       port: 0,
       allow: ALLOW,
       initNonces: true,
+      allowInsecureFilePermissions: true,
       simulate: async () => ({ success: false, revertReason: 'boom' }),
     });
     servers.push(reverting);
@@ -592,6 +600,7 @@ describe('remote signer', () => {
       socketPath,
       allow: ALLOW,
       initNonces: true,
+      allowInsecureFilePermissions: true,
       simulate: async () => ({ success: true }),
     });
     servers.push(server);
@@ -654,6 +663,7 @@ describe('remote signer', () => {
       port: 0,
       allow: ALLOW,
       initNonces: true,
+      allowInsecureFilePermissions: true,
     })).rejects.toThrow(/127\.0\.0\.1/);
   });
 });

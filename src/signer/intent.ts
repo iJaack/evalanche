@@ -8,6 +8,7 @@
 
 import { createPrivateKey, createPublicKey, generateKeyPairSync, sign, verify, timingSafeEqual } from 'crypto';
 import { getAddress, getBytes, hexlify, keccak256, toUtf8Bytes } from 'ethers';
+import { ed25519PointError, ed25519SignatureError } from './ed25519';
 import { canonicalJson } from './jcs';
 
 export interface TokenRef {
@@ -420,7 +421,14 @@ export function generateEd25519KeyPair(): Ed25519KeyPair {
   };
 }
 
+export function assertEd25519PublicKey(publicKeyHex: string): void {
+  const raw = rawKey(publicKeyHex, 32, 'Ed25519 public key');
+  const problem = ed25519PointError(raw);
+  if (problem) throw new Error(`Verifier public key is rejected: ${problem}`);
+}
+
 function publicKeyObject(publicKeyHex: string) {
+  assertEd25519PublicKey(publicKeyHex);
   const raw = rawKey(publicKeyHex, 32, 'Ed25519 public key');
   return createPublicKey({
     key: { kty: 'OKP', crv: 'Ed25519', x: raw.toString('base64url') },
@@ -455,6 +463,9 @@ export function signBytes(message: Uint8Array, privateKeyHex: string, publicKeyH
 export function verifyBytes(message: Uint8Array, signatureHex: string, publicKeyHex: string): boolean {
   try {
     const signature = rawKey(signatureHex, 64, 'Ed25519 signature');
+    const signatureProblem = ed25519SignatureError(signature);
+    if (signatureProblem) return false;
+    assertEd25519PublicKey(publicKeyHex);
     return verify(null, Buffer.from(message), publicKeyObject(publicKeyHex), signature);
   } catch {
     return false;

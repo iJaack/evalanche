@@ -7,6 +7,7 @@
  */
 
 import { readFile } from 'node:fs/promises';
+import { readSecureFile } from './secure-path';
 import { startSignerServer, type SignerServerOptions } from './server';
 
 interface CliArgs {
@@ -53,7 +54,10 @@ function parseArgs(argv: string[]): CliArgs {
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   if (!args.config) throw new Error('Missing --config <file>');
-  const raw = JSON.parse(await readFile(args.config, 'utf8')) as SignerServerOptions & {
+  const configText = args.allowInsecureFilePermissions
+    ? await readFile(args.config, 'utf8')
+    : await readSecureFile(args.config);
+  const raw = JSON.parse(configText) as SignerServerOptions & {
     token?: string;
     privateKey?: string;
     verifierPublicKeyPath?: string;

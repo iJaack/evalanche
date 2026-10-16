@@ -54,8 +54,12 @@ async function boot(extra: Record<string, unknown> = {}, paths?: { audit: string
     simulate: async () => ({ success: true }),
     tokenCaps: { native: '1000000000000000000' },
     initNonces: initNonces !== false,
+    allowInsecureFilePermissions: true,
     allow: {
-      [CHAIN]: [{ address: ROUTER, selectors: ['0x', '0x095ea7b3', '0xa9059cbb'] }],
+      [CHAIN]: [
+        { address: ROUTER, selectors: ['0x', '0x095ea7b3', '0xa9059cbb'] },
+        { address: USDC, selectors: ['0x095ea7b3', '0xa9059cbb'], decimals: 6 },
+      ],
     },
     ...rest,
     verifierPublicKey: verifier.publicKey,
@@ -94,28 +98,54 @@ function approve(h: Awaited<ReturnType<typeof boot>>, i: SigningIntent) {
 }
 
 describe('PoC regressions', () => {
-  it('P1: to/value/gas are not bound by the approval', async () => {
+  it('P1: changing one approved field after an approve is denied', async () => {
     const h = await boot();
-    const data = '0xabcdef01';
-    const i = mkIntent(h.wallet.address, computeRouteHash(data));
-    const evil: CanonicalSigningRequest = {
+    const data = new Interface(['function approve(address,uint256)']).encodeFunctionData('approve', [ROUTER, 1_000_000n]);
+    const tx = {
+      to: USDC,
+      value: '0',
+      data: data.toLowerCase(),
+      chainId: CHAIN,
+      nonce: '0',
+      gasLimit: '80000',
+      maxFeePerGas: '0',
+      maxPriorityFeePerGas: '0',
+      gasPrice: '1',
+      type: 0,
+    };
+    const i = mkIntent(h.wallet.address, computeApprovedTxHash(tx), {
+      action: 'approve',
+      minAmountOut: undefined,
+      tx,
+    });
+    const approval = approve(h, i);
+    const base: CanonicalSigningRequest = {
       requestId: 'r',
       kind: 'transaction',
       chainId: CHAIN,
       from: h.wallet.address,
-      to: ATTACKER,
-      value: '1000000000000000000',
-      data,
-      gasLimit: '30000000',
-      gasPrice: '100000000000000',
-      nonce: 0,
-      type: 0,
+      to: tx.to,
+      value: tx.value,
+      data: tx.data,
+      gasLimit: tx.gasLimit,
+      gasPrice: tx.gasPrice,
+      maxFeePerGas: tx.maxFeePerGas,
+      maxPriorityFeePerGas: tx.maxPriorityFeePerGas,
+      nonce: Number(tx.nonce),
+      type: tx.type,
       intent: 'x',
       structuredIntent: i,
-      approval: approve(h, i),
+      approval,
     };
-    await expect(h.server.handle(evil)).rejects.toThrow(/match|bound|allow|gas|denied|selector/i);
-    expect(evil.to).toBe(ATTACKER);
+    for (const [field, value] of [
+      ['to', ATTACKER],
+      ['value', '1'],
+      ['gasPrice', '2'],
+      ['type', 2],
+      ['nonce', 5],
+    ] as const) {
+      await expect(h.server.handle({ ...base, requestId: `p1-${field}`, [field]: value })).rejects.toThrow(/does not match|not allowed/);
+    }
   });
 
   it('P1b: empty-calldata approval cannot become a native send to any address', async () => {
