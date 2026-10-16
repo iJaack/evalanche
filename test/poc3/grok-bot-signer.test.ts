@@ -71,10 +71,7 @@ if (process.env.FAKE_IGNORE_TERM === '1') {
   process.on('SIGTERM', () => {});
   process.on('SIGINT', () => {});
 } else {
-  const stop = () => server.close(() => {
-    try { fs.unlinkSync(socket); } catch {}
-    process.exit(0);
-  });
+  const stop = () => process.exit(0);
   process.on('SIGTERM', stop);
   process.on('SIGINT', stop);
 }

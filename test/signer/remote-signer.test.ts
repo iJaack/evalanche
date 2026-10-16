@@ -325,7 +325,9 @@ describe('remote signer', () => {
       verifierPrivateKey: harness.verifier.privateKey,
       verifierPublicKey: harness.verifier.publicKey,
     });
-    const flipped = `${approval.signature.slice(0, -2)}00`;
+    const last = approval.signature.slice(-2);
+    const flippedByte = (Number.parseInt(last, 16) ^ 0xff).toString(16).padStart(2, '0');
+    const flipped = `${approval.signature.slice(0, -2)}${flippedByte}`;
     await expect(harness.server.handle({
       ...txRequest(harness.wallet.address, data),
       requestId: 'bad-sig',
