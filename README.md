@@ -10,7 +10,7 @@ Avalanche-first agent wallet and execution SDK for AI agents, with multi-EVM sup
 - Current package surface:
   - Add a pluggable signer so an agent can sign without a local private key in the Evalanche process.
   - Add an HTTP(S) and unix-socket remote signer client with bearer auth, request ids, timeouts, and a check that the returned signed transaction decodes to the requested fields.
-  - Add `evalanche-signer`, a reference server that verifies the pinned verifier key, recomputes the intent hash from the transaction, and enforces nonce, expiry, the deny list, SpendingPolicy, token caps, and simulation.
+  - Add `evalanche-signer`, a reference server that verifies the pinned verifier key, binds the approval to the exact transaction, and enforces an allow map, calldata checks, nonce state, expiry, SpendingPolicy, token caps, and simulation.
   - Fail closed, with a typed `EvalancheError`, on paths that still need raw key material: the Polymarket CLI (`POLYMARKET_PRIVATE_KEY`) and Avalanche X/P-chain / `platform-cli` signing. Read-only tools work from an address alone.
 - Docs:
   - [Release notes](docs/releases/README.md)
@@ -98,17 +98,19 @@ const agent = new Evalanche({
 const watcher = new Evalanche({ address: agent.address, network: 'avalanche' });
 ```
 
-`privateKey`, `mnemonic`, and `signer` are mutually exclusive. Build the intent with sorted keys via `canonicalIntentJson`, hash it with `computeIntentHash`, and have the verifier sign that 32-byte hash. `routeHash` is `computeRouteHash` of the transaction data. Swap and bridge intents must set `minAmountOut`. Attach the approval with `agent.setSigningContext({ intent, structuredIntent, approval })` before `send`, `signMessage`, or a venue call.
+`privateKey`, `mnemonic`, and `signer` are mutually exclusive. Build a version `"1"` intent with `canonicalIntentJson` and hash it with `computeIntentHash`. Put the exact transaction in `intent.tx` (`to`, `value`, `data`, `chainId`, `nonce`, `gasLimit`, `maxFeePerGas`, `maxPriorityFeePerGas`, `gasPrice`, `type`) and set `routeHash` to `computeApprovedTxHash`. Money and the approval nonce are decimal strings. The verifier signs `signVerifierApproval`, which covers `evalanche-verifier/v1`, the decision, `dry-run` or `live`, the signer address, the chain id, and the intent hash. Only `decision: "approve"` verifies. Swap and bridge intents must set `minAmountOut`. Attach the approval with `agent.setSigningContext({ intent, structuredIntent, approval })` before `send`, `signMessage`, or a venue call.
 
 ```bash
 export EVALANCHE_SIGNER_TOKEN="$(openssl rand -hex 32)"
 export EVALANCHE_SIGNER_PRIVATE_KEY="0x..."
-npx evalanche-signer --config signer.json
-# dry-run verifies policy and approval, then returns without a signature
-npx evalanche-signer --config signer.json --dry-run
+npx evalanche-signer --config signer.json --init-nonces
+# dry-run verifies policy and approval, consumes the nonce, then returns without a signature
+npx evalanche-signer --config signer.json --init-nonces --dry-run
 ```
 
-The signer listens on `127.0.0.1` or `--socket`. It rejects a non-loopback bind unless configured otherwise. Before it signs it checks the pinned verifier key, recomputes the intent hash from the transaction, enforces a monotonic single-use nonce and expiry, applies the deny list (Hyperliquid order tools and unlimited ERC-20 approvals by default; an `approve` amount must equal `amountIn`), runs `SpendingPolicy` plus token or USD caps, simulates, and appends the decision to a JSONL audit log.
+The signer listens on `127.0.0.1` or `--socket`. The socket directory must be mode `0750` and the socket is mode `0660`. It rejects a non-loopback bind unless configured otherwise. Config, keystore, and verifier pubkey files must be root-owned and not writable by group or other. `--allow-insecure-file-permissions` is for tests only.
+
+Before it signs, the signer checks the pinned verifier key and accepts only an `approve` decision for the process mode. It matches every transaction field to `intent.tx`, decodes known calldata (ERC-20 transfer and approve, ERC-4626 deposit and redeem, Benqi submit and delayed redeem, Li.Fi `swapTokensGeneric` and `multicall`), and denies unknown selectors. A non-empty `allow` map is required. Benqi sAVAX instant unstake and Polymarket contracts cannot be allowlisted back on. Hyperliquid typed data is denied from the EIP-712 domain and types. Message and typed-data signing are off unless allowlisted. Permit, Permit2, and `increaseAllowance` stay off unless `explicitAllows` names them. The nonce file must already exist unless `--init-nonces` is passed. Dry-run consumes the nonce. A hard gas-cost cap applies. SpendingPolicy hourly and daily budgets are recorded after a live signature. Prices are by token address, HTTPS only, and fail closed. `/health` returns `{ "ok": true }` and nothing else. Decisions are appended to a JSONL audit log whose `prevHash` chain starts at the SHA-256 of `evalanche-audit-root/v1`.
 
 `evalanche-mcp` can start keyless:
 

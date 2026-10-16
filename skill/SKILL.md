@@ -455,6 +455,6 @@ Avalanche is the default. Native X/P/C operations use `@avalanche-sdk/client`, a
 
 ## v1.15.0 remote signer
 
-Run the agent with no private key in the process. Pass `signer: { url, address, tokenEnv: 'EVALANCHE_SIGNER_TOKEN' }` instead of `privateKey` or `mnemonic`. Start `evalanche-signer` on `127.0.0.1` or a unix socket; it holds the key, checks an Ed25519 verifier approval, and writes a JSONL audit log. MCP: `--signer-url` and `--signer-address`, or `EVALANCHE_SIGNER_URL` and `EVALANCHE_SIGNER_ADDRESS`.
+Run the agent with no private key in the process. Pass `signer: { url, address, tokenEnv: 'EVALANCHE_SIGNER_TOKEN' }` instead of `privateKey` or `mnemonic`. Start `evalanche-signer` on `127.0.0.1` or a unix socket. It holds the key, requires a non-empty allow map, and signs only an Ed25519 `approve` decision bound to the exact transaction, the mode, and the intent hash. Unknown calldata is denied. Pass `--init-nonces` the first time the nonce file is created. MCP: `--signer-url` and `--signer-address`, or `EVALANCHE_SIGNER_URL` and `EVALANCHE_SIGNER_ADDRESS`.
 
-Polymarket CLI and Avalanche X/P-chain signing throw `REMOTE_SIGNER_UNSUPPORTED` in this mode. They do not fall back to `POLYMARKET_PRIVATE_KEY`. Address-only mode is `new Evalanche({ address })` and is read-only.
+Polymarket CLI and Avalanche X/P-chain signing throw `REMOTE_SIGNER_UNSUPPORTED` in this mode. They do not fall back to `POLYMARKET_PRIVATE_KEY`. Address-only mode is `new Evalanche({ address })` or `EVALANCHE_ADDRESS`. That mode does not resolve a local key.

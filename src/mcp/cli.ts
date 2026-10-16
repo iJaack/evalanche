@@ -58,8 +58,14 @@ async function buildConfig(flags: { signerUrl?: string; signerAddress?: string }
   const signerUrl = flags.signerUrl || process.env.EVALANCHE_SIGNER_URL;
   const signerAddress = flags.signerAddress || process.env.EVALANCHE_SIGNER_ADDRESS;
   const readOnlyAddress = process.env.EVALANCHE_ADDRESS;
+  const explicitLocalKey = Boolean(process.env.AGENT_PRIVATE_KEY || process.env.AGENT_MNEMONIC);
+  const addressOnly = Boolean(readOnlyAddress) && !signerUrl && !explicitLocalKey;
 
-  const resolved = signerUrl ? { privateKey: undefined, mnemonic: undefined } : await resolveAgentSecrets();
+  // Address-only mode must not consult the keychain or env fallback. A resolved
+  // local key would silently replace the read-only wallet.
+  const resolved = signerUrl || addressOnly
+    ? { privateKey: undefined, mnemonic: undefined }
+    : await resolveAgentSecrets();
   const privateKey = resolved.privateKey;
   const mnemonic = resolved.mnemonic;
 

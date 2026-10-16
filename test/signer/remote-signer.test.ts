@@ -3,22 +3,23 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
+import { chmod } from 'node:fs/promises';
 import { Interface, MaxUint256, Wallet, getAddress, verifyMessage } from 'ethers';
 import {
   Evalanche,
   EvalancheError,
   EvalancheErrorCode,
   canonicalIntentJson,
+  computeApprovedTxHash,
   computeIntentHash,
   computeRequestRouteHash,
-  computeRouteHash,
   generateEd25519KeyPair,
   signVerifierApproval,
   startSignerServer,
 } from '../../src/index';
 import { RemoteSignerClient } from '../../src/signer/remote-client';
-import type { CanonicalSigningRequest, SigningIntent } from '../../src/signer/intent';
-import type { EvalancheSignerServer } from '../../src/signer/server';
+import type { ApprovedTransaction, CanonicalSigningRequest, SigningIntent } from '../../src/signer/intent';
+import type { AllowEntry, EvalancheSignerServer, SignerServerOptions } from '../../src/signer/server';
 
 const TREASURY_KEY = '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80';
 const OTHER_KEY = '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d';
@@ -40,12 +41,37 @@ async function dirs(): Promise<{ audit: string; nonce: string }> {
   return { audit: join(root, 'audit.jsonl'), nonce: join(root, 'nonces.json') };
 }
 
-function intent(wallet: string, data: string, overrides: Partial<SigningIntent> = {}): SigningIntent {
-  const now = Date.now();
+const ALLOW: Record<string, AllowEntry[]> = {
+  [CHAIN_ID]: [
+    { address: SPEND, selectors: ['0x', '0xa9059cbb', '0x095ea7b3', '0x6e553f65', '0x4630a0d8', '0xac9650d8'], decimals: 18 },
+    { address: TOKEN, selectors: ['0x', '0xa9059cbb', '0x095ea7b3'], decimals: 6 },
+  ],
+};
+
+function boundTx(request: Pick<CanonicalSigningRequest, 'to' | 'value' | 'data' | 'chainId' | 'nonce' | 'gasLimit' | 'maxFeePerGas' | 'maxPriorityFeePerGas' | 'gasPrice' | 'type'>): ApprovedTransaction {
   return {
+    to: getAddress(request.to ?? SPEND),
+    value: request.value ?? '0',
+    data: (request.data && request.data.length > 0 ? request.data : '0x').toLowerCase(),
+    chainId: request.chainId ?? CHAIN_ID,
+    nonce: String(request.nonce ?? 0),
+    gasLimit: request.gasLimit ?? '21000',
+    maxFeePerGas: request.maxFeePerGas ?? '0',
+    maxPriorityFeePerGas: request.maxPriorityFeePerGas ?? '0',
+    gasPrice: request.gasPrice ?? '1000000000',
+    type: request.type ?? 0,
+  };
+}
+
+function intent(wallet: string, data: string, overrides: Partial<SigningIntent> = {}, requestOverrides: Partial<CanonicalSigningRequest> = {}): SigningIntent {
+  const request = { ...txRequest(wallet, data), ...requestOverrides };
+  const tx = boundTx(request);
+  const now = Date.now();
+  const native = (request.data ?? '0x') === '0x';
+  const built: SigningIntent = {
     version: '1',
-    intentId: overrides.intentId ?? 'intent-1',
-    nonce: overrides.nonce ?? '1',
+    intentId: 'intent-1',
+    nonce: '1',
     createdAt: now,
     expiresAt: now + 60_000,
     wallet,
@@ -53,7 +79,7 @@ function intent(wallet: string, data: string, overrides: Partial<SigningIntent> 
     venue: 'spot',
     action: 'send',
     tokenIn: { address: TOKEN, symbol: 'USDC', decimals: 6 },
-    amountIn: '1000000',
+    amountIn: native ? (request.value ?? '0') : '1000000',
     minAmountOut: '990000',
     maxSlippageBps: 100,
     tier: 'core',
@@ -61,11 +87,15 @@ function intent(wallet: string, data: string, overrides: Partial<SigningIntent> 
     sizePctOfTreasury: 1,
     postFrictionEvUsd: '0',
     signalRefs: ['sig-1'],
-    routeHash: computeRouteHash(data),
+    routeHash: computeApprovedTxHash(tx),
+    tx,
     ...overrides,
-    wallet: overrides.wallet ?? wallet,
-    routeHash: overrides.routeHash ?? computeRouteHash(data),
   };
+  built.wallet = overrides.wallet ?? wallet;
+  built.tx = overrides.tx === undefined ? tx : overrides.tx;
+  if (built.tx && overrides.routeHash === undefined) built.routeHash = computeApprovedTxHash(built.tx);
+  else if (overrides.routeHash) built.routeHash = overrides.routeHash;
+  return built;
 }
 
 function txRequest(from: string, data = '0x'): CanonicalSigningRequest {
@@ -79,6 +109,8 @@ function txRequest(from: string, data = '0x'): CanonicalSigningRequest {
     data,
     gasLimit: '21000',
     gasPrice: '1000000000',
+    maxFeePerGas: '0',
+    maxPriorityFeePerGas: '0',
     nonce: 0,
     type: 0,
     intent: 'send a bounded transfer',
@@ -91,11 +123,13 @@ async function boot(opts: {
   tokenCaps?: Record<string, string>;
   maxPerTxUsd?: number;
   prices?: Record<string, number>;
-  denySelectors?: string[];
+  allow?: Record<string, AllowEntry[]>;
+  messageAllowlist?: string[];
   privateKey?: string;
   verifier?: ReturnType<typeof generateEd25519KeyPair>;
+  paths?: { audit: string; nonce: string };
 } = {}) {
-  const paths = await dirs();
+  const paths = opts.paths ?? await dirs();
   const verifier = opts.verifier ?? generateEd25519KeyPair();
   const wallet = new Wallet(opts.privateKey ?? TREASURY_KEY);
   const server = await startSignerServer({
@@ -110,11 +144,13 @@ async function boot(opts: {
     tokenCaps: opts.tokenCaps,
     maxPerTxUsd: opts.maxPerTxUsd,
     prices: opts.prices,
-    deny: { selectors: opts.denySelectors },
+    allow: opts.allow ?? ALLOW,
+    messageAllowlist: opts.messageAllowlist,
+    initNonces: !opts.paths,
     simulate: async () => ({ success: true }),
   });
   servers.push(server);
-  return { server, verifier, wallet, paths };
+  return { server, verifier, wallet, paths, dryRun: Boolean(opts.dryRun) };
 }
 
 function clientFor(server: EvalancheSignerServer & { port?: number }, address: string): RemoteSignerClient {
@@ -135,6 +171,7 @@ async function signTx(
     intent: build,
     verifierPrivateKey: harness.verifier.privateKey,
     verifierPublicKey: harness.verifier.publicKey,
+    mode: harness.dryRun ? 'dry-run' : 'live',
   });
   return harness.server.handle({ ...request, structuredIntent: build, approval });
 }
@@ -155,7 +192,7 @@ describe('canonical intent', () => {
 describe('remote signer', () => {
   it('signs a transaction only when the approval matches the tx', async () => {
     const harness = await boot();
-    const data = '0xabcdef';
+    const data = '0x';
     const built = intent(harness.wallet.address, data);
     const request = txRequest(harness.wallet.address, data);
     request.requestId = 'happy-path';
@@ -171,7 +208,7 @@ describe('remote signer', () => {
   });
 
   it('signs a message through Evalanche without a local private key', async () => {
-    const harness = await boot();
+    const harness = await boot({ messageAllowlist: ['ops-approved'] });
     const message = 'ops-approved';
     const requestBase = {
       kind: 'message' as const,
@@ -237,7 +274,7 @@ describe('remote signer', () => {
       ...txRequest(harness.wallet.address, '0x22'),
       structuredIntent: built,
       approval,
-    })).rejects.toThrow(/routeHash/i);
+    })).rejects.toThrow(/routeHash|does not match/i);
   });
 
   it('rejects a replayed nonce and an expired approval', async () => {
@@ -248,6 +285,7 @@ describe('remote signer', () => {
     await expect(signTx(harness, first, { ...txRequest(harness.wallet.address, data), requestId: 'replay' }))
       .rejects.toThrow(/replayed nonce/i);
 
+    await harness.server.close();
     const restarted = await startSignerServer({
       privateKey: harness.wallet.privateKey,
       verifierPublicKey: harness.verifier.publicKey,
@@ -256,6 +294,7 @@ describe('remote signer', () => {
       nonceStorePath: harness.paths.nonce,
       chainId: CHAIN_ID,
       port: 0,
+      allow: ALLOW,
       simulate: async () => ({ success: true }),
     });
     servers.push(restarted);
@@ -307,10 +346,10 @@ describe('remote signer', () => {
   });
 
   it('rejects a denied selector, an unlimited approval, and an oversize amount', async () => {
-    const denied = await boot({ denySelectors: ['0xdeadbeef'] });
+    const denied = await boot();
     const data = '0xdeadbeef';
     const built = intent(denied.wallet.address, data, { nonce: '4', action: 'call' });
-    await expect(signTx(denied, built, txRequest(denied.wallet.address, data))).rejects.toThrow(/denied/i);
+    await expect(signTx(denied, built, txRequest(denied.wallet.address, data))).rejects.toThrow(/allowlist|denied/i);
 
     const iface = new Interface(['function approve(address spender, uint256 amount)']);
     const unlimited = iface.encodeFunctionData('approve', [SPEND, MaxUint256]);
@@ -318,20 +357,25 @@ describe('remote signer', () => {
       nonce: '5',
       action: 'approve',
       amountIn: MaxUint256.toString(),
-    });
-    await expect(signTx(denied, unlimitedIntent, txRequest(denied.wallet.address, unlimited))).rejects.toThrow(/unlimited/i);
+    }, { to: TOKEN });
+    await expect(signTx(denied, unlimitedIntent, { ...txRequest(denied.wallet.address, unlimited), to: TOKEN })).rejects.toThrow(/unlimited/i);
 
     const exact = iface.encodeFunctionData('approve', [SPEND, 1000n]);
-    const mismatched = intent(denied.wallet.address, exact, { nonce: '6', action: 'approve', amountIn: '1001' });
-    await expect(signTx(denied, mismatched, txRequest(denied.wallet.address, exact))).rejects.toThrow(/amountIn/i);
+    const mismatched = intent(denied.wallet.address, exact, { nonce: '6', action: 'approve', amountIn: '1001' }, { to: TOKEN });
+    await expect(signTx(denied, mismatched, { ...txRequest(denied.wallet.address, exact), to: TOKEN })).rejects.toThrow(/amountIn/i);
 
-    const matched = intent(denied.wallet.address, exact, { nonce: '7', action: 'approve', amountIn: '1000' });
-    const ok = await signTx(denied, matched, { ...txRequest(denied.wallet.address, exact), requestId: 'exact-approve' });
+    const matched = intent(denied.wallet.address, exact, { nonce: '7', action: 'approve', amountIn: '1000' }, { to: TOKEN });
+    const ok = await signTx(denied, matched, { ...txRequest(denied.wallet.address, exact), to: TOKEN, requestId: 'exact-approve' });
     expect(ok.signedTransaction).toMatch(/^0x/);
 
-    const capped = await boot({ tokenCaps: { [TOKEN.toLowerCase()]: '10' }, maxPerTxUsd: 1, prices: { USDC: 1 } });
-    const fat = intent(capped.wallet.address, '0x', { nonce: '1', amountIn: '10000000' });
-    await expect(signTx(capped, fat, txRequest(capped.wallet.address, '0x'))).rejects.toThrow(/oversize/i);
+    const transfer = new Interface(['function transfer(address,uint256)']).encodeFunctionData('transfer', [SPEND, 10_000_000n]);
+    const capped = await boot({
+      tokenCaps: { [getAddress(TOKEN).toLowerCase()]: '10' },
+      maxPerTxUsd: 1,
+      prices: { [getAddress(TOKEN).toLowerCase()]: 1 },
+    });
+    const fat = intent(capped.wallet.address, transfer, { nonce: '1', amountIn: '10000000', action: 'transfer' }, { to: TOKEN });
+    await expect(signTx(capped, fat, { ...txRequest(capped.wallet.address, transfer), to: TOKEN })).rejects.toThrow(/oversize/i);
   });
 
   it('rejects a decoded transaction that does not match the request', async () => {
@@ -488,7 +532,17 @@ describe('remote signer', () => {
 
   it('rejects a swap that omits the minAmountOut bound and a reverted simulation', async () => {
     const harness = await boot();
-    const data = '0x1234';
+    const lifi = new Interface([
+      'function swapTokensGeneric(bytes32 transactionId, string integrator, string referrer, address receiver, uint256 minAmount, tuple(address callTo, address approveTo, address sendingAssetId, address receivingAssetId, uint256 fromAmount, bytes callData, bool requiresDeposit)[] swapData)',
+    ]);
+    const data = lifi.encodeFunctionData('swapTokensGeneric', [
+      `0x${'11'.repeat(32)}`,
+      'evalanche',
+      'ops',
+      harness.wallet.address,
+      0n,
+      [[SPEND, SPEND, TOKEN, TOKEN, 1_000_000n, '0x', false]],
+    ]);
     const swap = intent(harness.wallet.address, data, { action: 'swap', minAmountOut: undefined, nonce: '11' });
     await expect(signTx(harness, swap, txRequest(harness.wallet.address, data))).rejects.toThrow(/minAmountOut/);
 
@@ -503,17 +557,19 @@ describe('remote signer', () => {
       nonceStorePath: paths.nonce,
       chainId: CHAIN_ID,
       port: 0,
+      allow: ALLOW,
+      initNonces: true,
       simulate: async () => ({ success: false, revertReason: 'boom' }),
     });
     servers.push(reverting);
-    const built = intent(wallet.address, data, { nonce: '1' });
+    const built = intent(wallet.address, '0x', { nonce: '1' });
     const approval = signVerifierApproval({
       intent: built,
       verifierPrivateKey: verifier.privateKey,
       verifierPublicKey: verifier.publicKey,
     });
     await expect(reverting.handle({
-      ...txRequest(wallet.address, data),
+      ...txRequest(wallet.address, '0x'),
       structuredIntent: built,
       approval,
     })).rejects.toThrow(/simulation/i);
@@ -521,7 +577,9 @@ describe('remote signer', () => {
 
   it('signs through a unix socket and can load an encrypted keystore', async () => {
     const paths = await dirs();
-    const socketPath = join(paths.audit, '..', 'signer.sock');
+    const socketDir = join(paths.audit, '..');
+    await chmod(socketDir, 0o750);
+    const socketPath = join(socketDir, 'signer.sock');
     const verifier = generateEd25519KeyPair();
     const wallet = new Wallet(TREASURY_KEY);
     const server = await startSignerServer({
@@ -532,6 +590,8 @@ describe('remote signer', () => {
       nonceStorePath: paths.nonce,
       chainId: CHAIN_ID,
       socketPath,
+      allow: ALLOW,
+      initNonces: true,
       simulate: async () => ({ success: true }),
     });
     servers.push(server);
@@ -568,6 +628,9 @@ describe('remote signer', () => {
         nonceStorePath: keystorePaths.nonce,
         chainId: CHAIN_ID,
         port: 0,
+        allow: ALLOW,
+        initNonces: true,
+        allowInsecureFilePermissions: true,
         simulate: async () => ({ success: true }),
       });
       servers.push(fromKeystore);
@@ -589,6 +652,8 @@ describe('remote signer', () => {
       chainId: CHAIN_ID,
       host: '0.0.0.0',
       port: 0,
+      allow: ALLOW,
+      initNonces: true,
     })).rejects.toThrow(/127\.0\.0\.1/);
   });
 });

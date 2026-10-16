@@ -9,7 +9,7 @@ This is the active roadmap for the repository.
 - Shipped in `v1.15.0`:
   - Add a pluggable signer so an agent can sign without a local private key in the Evalanche process.
   - Add an HTTP(S) and unix-socket remote signer client with bearer auth, request ids, timeouts, and a check that the returned signed transaction decodes to the requested fields.
-  - Add `evalanche-signer`, a reference server that verifies the pinned verifier key, recomputes the intent hash from the transaction, and enforces nonce, expiry, the deny list, SpendingPolicy, token caps, and simulation.
+  - Add `evalanche-signer`, a reference server that verifies the pinned verifier key, binds the approval to the exact transaction, and enforces an allow map, calldata checks, nonce state, expiry, SpendingPolicy, token caps, and simulation.
   - Fail closed, with a typed `EvalancheError`, on paths that still need raw key material: the Polymarket CLI (`POLYMARKET_PRIVATE_KEY`) and Avalanche X/P-chain / `platform-cli` signing. Read-only tools work from an address alone.
 
 ## Current Focus

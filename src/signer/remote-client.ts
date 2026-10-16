@@ -11,6 +11,7 @@ import {
   Transaction,
   getAddress,
   hexlify,
+  toUtf8Bytes,
   verifyMessage,
   verifyTypedData,
   type TransactionRequest,
@@ -148,7 +149,7 @@ function assertSignatureMatches(request: CanonicalSigningRequest, signature: str
   }
   try {
     const recovered = request.kind === 'message'
-      ? verifyMessage(request.message ?? '', signature)
+      ? verifyMessage(toUtf8Bytes((request.message ?? '').normalize('NFC')), signature)
       : verifyTypedData(
         request.typedData?.domain as TypedDataDomain,
         request.typedData?.types as Record<string, TypedDataField[]>,

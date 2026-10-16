@@ -1,17 +1,25 @@
 /**
  * Reference signer. The private key lives only in this process.
  *
- * Before a signature is produced the server checks the pinned Ed25519
- * verifier, recomputes the intent hash from the transaction, enforces a
- * monotonic single-use nonce and expiry, applies the deny list and the
- * spending policy, caps token amounts, and simulates. Dry-run does all of
- * that and then stops.
+ * A signature is produced only after the signer has checked a domain-separated
+ * Ed25519 approval, matched every transaction field to the approved object,
+ * decoded known calldata, and applied the allowlist, built-in denials, gas
+ * cap, spending policy, and simulation. Dry-run does the same and consumes
+ * the nonce, then returns without a signature.
+ *
+ * The audit log is append-only JSONL. Its chain root is the hex SHA-256 of
+ * the UTF-8 string `evalanche-audit-root/v1`. That root is fixed in code, not
+ * taken from config. The first record stores it as `prevHash`. Each later
+ * record stores the SHA-256 of the previous line. The process refuses to
+ * start when the chain does not link back to the root.
  */
 
+import { createHash } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { mkdir, readFile, rename, appendFile, writeFile, unlink } from 'node:fs/promises';
+import { chmod, mkdir, readFile, stat } from 'node:fs/promises';
+import { open as openFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import { JsonRpcProvider, Wallet, getAddress, type TransactionRequest } from 'ethers';
+import { JsonRpcProvider, Wallet, getAddress, keccak256, toUtf8Bytes, type TransactionRequest } from 'ethers';
 import type { HDNodeWallet } from 'ethers';
 import { EvalancheError, EvalancheErrorCode } from '../utils/errors';
 import { PolicyEngine } from '../economy/policies';
@@ -19,52 +27,85 @@ import { simulateTransaction, type SimulationResult } from '../economy/simulatio
 import type { PendingTransaction, SpendingPolicy } from '../economy/types';
 import {
   actionRequiresMinAmountOut,
+  approvalSigningBytes,
+  assertIntentShape,
+  computeApprovedTxHash,
   computeIntentHash,
-  computeRequestRouteHash,
+  computeMessageRouteHash,
+  computeTypedDataRouteHash,
   keysEqual,
-  verifyIntentHash,
+  verifyBytes,
+  type ApprovalMode,
+  type ApprovedTransaction,
   type CanonicalSigningRequest,
   type SigningIntent,
   type SigningResult,
+  type TypedDataPayload,
   type VerifierApproval,
 } from './intent';
+import {
+  NATIVE_ADDRESS,
+  decodeCalldata,
+  isHardDeniedContract,
+  isSavaxInstantUnstake,
+  selectorOf,
+  type DecodedCall,
+} from './decode';
+import { NonceStore } from './nonce-store';
 import { bearerEquals } from './remote-client';
 
-const APPROVE_SELECTOR = '0x095ea7b3';
-const MAX_UINT256 = (1n << 256n) - 1n;
+/** One native token. Config may lower this. It cannot raise it. */
+export const HARD_MAX_GAS_COST_WEI = 10n ** 18n;
+export const MAX_APPROVAL_SKEW_MS = 30_000;
+export const MAX_APPROVAL_TTL_MS = 600_000;
+export const AUDIT_ROOT = createHash('sha256').update('evalanche-audit-root/v1').digest('hex');
+
 const MAX_BODY_BYTES = 64 * 1024;
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1']);
+const DEFAULT_PRICE_TTL_MS = 60_000;
+const TX_FIELDS = [
+  'to', 'value', 'data', 'chainId', 'nonce', 'gasLimit', 'maxFeePerGas', 'maxPriorityFeePerGas', 'gasPrice', 'type',
+] as const;
 
-export const DEFAULT_VENUE_ACTIONS = [
-  'hyperliquid:order',
-  'hyperliquid:placeorder',
-  'hyperliquid:marketorder',
-  'hyperliquid:limitorder',
-  'hyperliquid:cancel',
-  'hyperliquid:modify',
-  'hyperliquid:cancelorder',
-  'hyperliquid:batchmodify',
-];
-
-export interface DenyListConfig {
-  selectors?: string[];
-  contracts?: string[];
-  venueActions?: string[];
-  /** When false, the Hyperliquid order-tool defaults are not included. */
-  useDefaults?: boolean;
+export interface AllowEntry {
+  address: string;
+  selectors: string[];
+  /** Decimals used when a USD cap prices this token. Intent decimals are not trusted. */
+  decimals?: number;
 }
 
+export interface TypedDataAllow {
+  domainName: string;
+  primaryType: string;
+  chainId?: number;
+  verifyingContract?: string;
+}
+
+export type ExplicitAllow = 'permit' | 'permit2' | 'increaseAllowance';
+
 export interface SignerServerOptions {
-  /** In-memory key for tests and embedded hosts. Mutually exclusive with keystorePath. */
   privateKey?: string;
   keystorePath?: string;
   keystorePasswordEnv?: string;
   verifierPublicKey: string;
+  /** Path to the pinned verifier key file, checked for root ownership when set. */
+  verifierPublicKeyPath?: string;
+  /** Path to the signer config file, checked for root ownership when set. */
+  configPath?: string;
+  /**
+   * Test-only escape hatch. Production startup refuses a config, keystore, or
+   * verifier pubkey file that is not root-owned or is writable by group/other.
+   */
+  allowInsecureFilePermissions?: boolean;
   token: string;
   auditLogPath: string;
   nonceStorePath: string;
+  /** Required when the nonce file is missing or empty. Otherwise startup fails. */
+  initNonces?: boolean;
   chainId?: number;
   chainIds?: number[];
+  /** Required non-empty map of chain id to allowed contract selectors. */
+  allow: Record<string, AllowEntry[]>;
   host?: string;
   port?: number;
   socketPath?: string;
@@ -74,17 +115,21 @@ export interface SignerServerOptions {
   simulate?: (tx: PendingTransaction) => Promise<SimulationResult>;
   policy?: SpendingPolicy;
   maxPerTxUsd?: number;
+  /** USD prices keyed only by token address. The native token is the zero address. */
   prices?: Record<string, number>;
   tokenCaps?: Record<string, string>;
   priceSourceUrl?: string;
-  deny?: DenyListConfig;
-}
-
-interface NonceState {
-  wallets: Record<string, { lastNonce: string; used: string[] }>;
+  priceTtlMs?: number;
+  /** Tightens the hard gas-cost cap. Values above the hard cap are refused. */
+  maxGasCostWei?: string;
+  messageAllowlist?: string[];
+  typedDataAllow?: TypedDataAllow[];
+  explicitAllows?: ExplicitAllow[];
+  keyId?: string;
 }
 
 interface AuditEntry {
+  prevHash: string;
   timestamp: string;
   requestId: string;
   decision: 'allow' | 'deny' | 'dry_run';
@@ -96,6 +141,12 @@ interface AuditEntry {
   nonce?: string;
   venue?: string;
   action?: string;
+  txHash?: string;
+  to?: string;
+  value?: string;
+  routeHash?: string;
+  keyId?: string;
+  approvalSignature?: string;
 }
 
 class SignerRejection extends Error {
@@ -109,97 +160,66 @@ function deny(message: string, code: EvalancheErrorCode = EvalancheErrorCode.SIG
   throw new SignerRejection(message, code);
 }
 
-function normalizeSelector(selector: string): string {
-  const value = selector.toLowerCase();
-  return value.startsWith('0x') ? value.slice(0, 10) : `0x${value}`.slice(0, 10);
+function stripUrls(text: string): string {
+  return text.replace(/\b(?:https?|wss?):\/\/[^\s"'<>]+/gi, '[redacted-url]');
 }
 
-function mergeDeny(config: DenyListConfig | undefined): { selectors: string[]; contracts: string[]; venueActions: string[] } {
-  const useDefaults = config?.useDefaults !== false;
-  return {
-    selectors: (config?.selectors ?? []).map(normalizeSelector),
-    contracts: (config?.contracts ?? []).map((address) => getAddress(address)),
-    venueActions: [
-      ...(useDefaults ? DEFAULT_VENUE_ACTIONS : []),
-      ...(config?.venueActions ?? []).map((entry) => entry.toLowerCase()),
-    ],
-  };
-}
-
-function parseApproveAmount(data: string | undefined): bigint | null {
-  if (!data) return null;
-  const normalized = data.toLowerCase();
-  if (!normalized.startsWith(APPROVE_SELECTOR)) return null;
-  if (normalized.length < 2 + 8 + 64 + 64) {
-    deny('ERC-20 approve calldata is truncated', EvalancheErrorCode.SIGNER_REJECTED);
-  }
-  try {
-    return BigInt(`0x${normalized.slice(2 + 8 + 64, 2 + 8 + 64 + 64)}`);
-  } catch {
-    deny('ERC-20 approve amount could not be decoded', EvalancheErrorCode.SIGNER_REJECTED);
-  }
-}
-
-function isHyperliquidExchange(request: CanonicalSigningRequest): boolean {
-  if (request.kind !== 'typed-data') return false;
-  const domain = request.typedData?.domain ?? {};
-  return String(domain.name ?? '') === 'Exchange' && Number(domain.chainId ?? 0) === 1337;
-}
-
-function venueAction(request: CanonicalSigningRequest): string | null {
-  const intent = request.structuredIntent;
-  if (intent?.venue && intent.action) {
-    return `${intent.venue}:${intent.action}`.toLowerCase();
-  }
-  if (isHyperliquidExchange(request)) return 'hyperliquid:order';
-  return null;
-}
-
-function usdMicros(amountIn: string, decimals: number, price: number): bigint {
-  if (!Number.isFinite(price) || price < 0) {
-    deny('Price source returned a non-finite price', EvalancheErrorCode.SIGNER_REJECTED);
-  }
-  const priceMicros = BigInt(Math.round(price * 1_000_000));
-  const scale = 10n ** BigInt(decimals);
-  return (BigInt(amountIn) * priceMicros) / scale;
+function lineHash(line: string): string {
+  return createHash('sha256').update(line).digest('hex');
 }
 
 export class EvalancheSignerServer {
   readonly address: string;
+  readonly stateStartedAt: number;
   private readonly wallet: Wallet | HDNodeWallet;
   private readonly options: SignerServerOptions;
-  private readonly deny: ReturnType<typeof mergeDeny>;
   private readonly policy: PolicyEngine | null;
   private readonly allowedChains: number[];
-  private nonces: NonceState = { wallets: {} };
+  private readonly allow: Map<number, AllowEntry[]>;
+  private readonly explicitAllows: Set<string>;
+  private readonly gasCap: bigint;
+  private readonly nonces: NonceStore;
+  private prevHash = AUDIT_ROOT;
   private queue: Promise<void> = Promise.resolve();
   private http: ReturnType<typeof createServer> | null = null;
   private simulateFn: ((tx: PendingTransaction) => Promise<SimulationResult>) | null;
-  private loadedPrices: Record<string, number> | null = null;
+  private priceCache: { fetchedAt: number; prices: Record<string, number> } | null = null;
 
-  private constructor(wallet: Wallet | HDNodeWallet, options: SignerServerOptions) {
+  private constructor(wallet: Wallet | HDNodeWallet, options: SignerServerOptions, nonces: NonceStore) {
     this.wallet = wallet;
     this.address = wallet.address;
     this.options = options;
-    this.deny = mergeDeny(options.deny);
+    this.nonces = nonces;
+    this.stateStartedAt = nonces.startedAt;
     this.policy = options.policy ? new PolicyEngine(options.policy) : null;
     this.allowedChains = options.chainIds ?? (options.chainId !== undefined ? [options.chainId] : []);
+    this.allow = indexAllow(options.allow);
+    this.explicitAllows = new Set(options.explicitAllows ?? []);
+    this.gasCap = resolveGasCap(options.maxGasCostWei);
     this.simulateFn = options.simulate ?? null;
-    if (!options.token) {
-      throw new EvalancheError('Signer auth token is required', EvalancheErrorCode.INVALID_CONFIG);
-    }
-    if (!options.verifierPublicKey) {
-      throw new EvalancheError('Pinned verifier public key is required', EvalancheErrorCode.INVALID_CONFIG);
-    }
-    if (!options.auditLogPath || !options.nonceStorePath) {
-      throw new EvalancheError('auditLogPath and nonceStorePath are required', EvalancheErrorCode.INVALID_CONFIG);
-    }
   }
 
   static async create(options: SignerServerOptions): Promise<EvalancheSignerServer> {
+    assertStartup(options);
+    await assertFilePermissions(options);
+    if (options.policy?.dryRun) {
+      throw new EvalancheError(
+        'Signer refuses a spending policy with dryRun enabled',
+        EvalancheErrorCode.INVALID_CONFIG,
+      );
+    }
+    if (options.priceSourceUrl && !options.priceSourceUrl.startsWith('https://')) {
+      throw new EvalancheError('Price source URL must be https', EvalancheErrorCode.INVALID_CONFIG);
+    }
     const wallet = await loadSignerWallet(options);
-    const server = new EvalancheSignerServer(wallet, options);
-    await server.loadNonces();
+    const nonces = await NonceStore.open(options.nonceStorePath, options.initNonces === true);
+    const server = new EvalancheSignerServer(wallet, options, nonces);
+    try {
+      await server.loadAudit();
+    } catch (error) {
+      await nonces.close();
+      throw error;
+    }
     return server;
   }
 
@@ -221,11 +241,20 @@ export class EvalancheSignerServer {
     });
     this.http = http;
     if (socketPath) {
+      const dirMode = (await stat(dirname(socketPath))).mode & 0o777;
+      if (dirMode !== 0o750) {
+        throw new EvalancheError(
+          `Unix socket directory must be mode 0750, found 0${dirMode.toString(8)}`,
+          EvalancheErrorCode.INVALID_CONFIG,
+        );
+      }
+      const { unlink } = await import('node:fs/promises');
       await unlink(socketPath).catch(() => undefined);
       await new Promise<void>((resolve, reject) => {
         http.once('error', reject);
         http.listen(socketPath, () => resolve());
       });
+      await chmod(socketPath, 0o660);
       return { endpoint: `unix://${socketPath}` };
     }
     const port = this.options.port ?? 7410;
@@ -240,15 +269,22 @@ export class EvalancheSignerServer {
 
   async close(): Promise<void> {
     const http = this.http;
-    if (!http) return;
-    await new Promise<void>((resolve, reject) => {
-      http.close((error) => error ? reject(error) : resolve());
-    });
-    if (this.options.socketPath) await unlink(this.options.socketPath).catch(() => undefined);
-    this.http = null;
+    if (http) {
+      await new Promise<void>((resolve, reject) => {
+        http.close((error) => {
+          if (error && (error as NodeJS.ErrnoException).code !== 'ERR_SERVER_NOT_RUNNING') reject(error);
+          else resolve();
+        });
+      });
+      if (this.options.socketPath) {
+        const { unlink } = await import('node:fs/promises');
+        await unlink(this.options.socketPath).catch(() => undefined);
+      }
+      this.http = null;
+    }
+    await this.nonces.close();
   }
 
-  /** Decide and maybe sign. Exposed for tests that bypass HTTP. */
   async handle(request: CanonicalSigningRequest): Promise<SigningResult> {
     return this.exclusive(() => this.handleLocked(request));
   }
@@ -263,30 +299,55 @@ export class EvalancheSignerServer {
       nonce: request?.approval?.nonce,
       venue: request?.structuredIntent?.venue,
       action: request?.structuredIntent?.action,
+      to: request?.to ?? undefined,
+      value: request?.value,
+      routeHash: request?.structuredIntent?.routeHash,
+      keyId: this.options.keyId ?? this.address,
+      approvalSignature: request?.approval?.signature,
     };
     try {
-      this.evaluate(request);
-      await this.enforceEconomics(request);
+      const checked = this.evaluate(request);
+      const decoded = request.kind === 'transaction' ? this.decode(request, checked) : [];
+      await this.enforceEconomics(request, decoded);
       if (request.kind === 'transaction') await this.simulate(request);
       const walletKey = getAddress(request.from).toLowerCase();
+      this.nonces.note(walletKey, request.approval!.nonce);
+      await this.nonces.persist();
       if (this.options.dryRun) {
         await this.audit({ ...base, decision: 'dry_run', reason: 'verified; signature withheld' });
         return { requestId: request.requestId, dryRun: true, decision: 'allow' };
       }
       const signed = await this.produce(request);
-      await this.commitNonce(walletKey, request.approval!.nonce);
-      await this.audit({ ...base, decision: 'allow', reason: 'signed' });
+      if (this.policy && request.kind === 'transaction') {
+        const txHash = signed.signedTransaction ? keccak256(signed.signedTransaction) : signed.requestId;
+        this.policy.recordSpend({
+          txHash,
+          amount: request.value ?? '0',
+          to: request.to ?? this.address,
+          chainId: Number(request.chainId),
+          timestamp: Date.now(),
+        });
+      }
+      await this.audit({
+        ...base,
+        decision: 'allow',
+        reason: 'signed',
+        txHash: signed.signedTransaction ? keccak256(signed.signedTransaction) : undefined,
+      });
       return signed;
     } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error);
-      const code = error instanceof SignerRejection ? error.code : EvalancheErrorCode.SIGNER_REJECTED;
+      const reason = stripUrls(error instanceof Error ? error.message : String(error));
+      const code = error instanceof SignerRejection
+        ? error.code
+        : error instanceof EvalancheError
+          ? error.code
+          : EvalancheErrorCode.SIGNER_REJECTED;
       await this.audit({ ...base, decision: 'deny', reason });
-      if (error instanceof SignerRejection) throw error;
       throw new SignerRejection(reason, code);
     }
   }
 
-  private evaluate(request: CanonicalSigningRequest): void {
+  private evaluate(request: CanonicalSigningRequest): SigningIntent {
     if (!request || typeof request !== 'object') deny('Signing request is missing', EvalancheErrorCode.INVALID_PARAMS);
     if (!request.requestId || typeof request.requestId !== 'string') {
       deny('requestId is required', EvalancheErrorCode.INVALID_PARAMS);
@@ -306,20 +367,23 @@ export class EvalancheSignerServer {
     if (from !== this.address) {
       deny(`Signer is ${this.address} and will not sign for ${from}`, EvalancheErrorCode.SIGNER_REJECTED);
     }
-    if (this.allowedChains.length === 0) {
-      deny('Signer chain is not configured', EvalancheErrorCode.INVALID_CONFIG);
-    }
+    if (this.allowedChains.length === 0) deny('Signer chain is not configured', EvalancheErrorCode.INVALID_CONFIG);
     if (!this.allowedChains.includes(Number(request.chainId))) {
       deny(`chainId ${request.chainId} is not allowed`, EvalancheErrorCode.SIGNER_REJECTED);
     }
-
     const approval = request.approval;
-    const intent = request.structuredIntent;
     if (!approval) deny('Verifier approval is required', EvalancheErrorCode.APPROVAL_INVALID);
-    if (!intent) deny('Structured intent is required', EvalancheErrorCode.APPROVAL_INVALID);
+    let intent: SigningIntent;
+    try {
+      intent = assertIntentShape(request.structuredIntent);
+    } catch (error) {
+      deny(error instanceof Error ? error.message : 'Structured intent is invalid', EvalancheErrorCode.APPROVAL_INVALID);
+    }
     this.assertApproval(request, approval, intent);
-    this.assertDenyList(request, intent);
-    this.assertApprovalAmount(request, intent);
+    if (request.kind === 'transaction') this.assertTransaction(request, intent);
+    else if (request.kind === 'message') this.assertMessage(request, intent);
+    else this.assertTypedData(request, intent);
+    return intent;
   }
 
   private assertApproval(request: CanonicalSigningRequest, approval: VerifierApproval, intent: SigningIntent): void {
@@ -327,8 +391,17 @@ export class EvalancheSignerServer {
       deny('Approval was signed by the wrong verifier key', EvalancheErrorCode.APPROVAL_INVALID);
     }
     const now = Date.now();
-    if (!Number.isFinite(approval.expiresAt) || now >= approval.expiresAt) {
+    if (!Number.isSafeInteger(intent.createdAt) || intent.createdAt > now + MAX_APPROVAL_SKEW_MS) {
+      deny('createdAt is too far in the future', EvalancheErrorCode.APPROVAL_INVALID);
+    }
+    if (!Number.isSafeInteger(intent.expiresAt) || intent.expiresAt <= now) {
       deny('Approval is expired', EvalancheErrorCode.APPROVAL_INVALID);
+    }
+    if (intent.expiresAt - intent.createdAt > MAX_APPROVAL_TTL_MS) {
+      deny('approval lifetime exceeds 600000ms', EvalancheErrorCode.APPROVAL_INVALID);
+    }
+    if (intent.createdAt < this.nonces.startedAt) {
+      deny('approval was created before the signer state start', EvalancheErrorCode.APPROVAL_INVALID);
     }
     if (Number(intent.expiresAt) !== Number(approval.expiresAt)) {
       deny('Intent expiry does not match the approval', EvalancheErrorCode.APPROVAL_INVALID);
@@ -336,147 +409,273 @@ export class EvalancheSignerServer {
     if (String(intent.nonce) !== String(approval.nonce)) {
       deny('Intent nonce does not match the approval', EvalancheErrorCode.APPROVAL_INVALID);
     }
-    try {
-      if (getAddress(intent.wallet) !== getAddress(request.from)) {
-        deny('Intent wallet does not match the transaction sender', EvalancheErrorCode.APPROVAL_INVALID);
-      }
-    } catch {
-      deny('Intent wallet is not an address', EvalancheErrorCode.APPROVAL_INVALID);
+    if (getAddress(intent.wallet) !== getAddress(request.from)) {
+      deny('Intent wallet does not match the transaction sender', EvalancheErrorCode.APPROVAL_INVALID);
     }
     if (Number(intent.chainId) !== Number(request.chainId)) {
       deny('Intent chainId does not match the transaction', EvalancheErrorCode.APPROVAL_INVALID);
     }
-    const routeHash = computeRequestRouteHash(request);
-    if (String(intent.routeHash).toLowerCase() !== routeHash.toLowerCase()) {
-      deny('routeHash does not match keccak256 of the transaction data', EvalancheErrorCode.APPROVAL_INVALID);
-    }
-    if (actionRequiresMinAmountOut(intent.action) && (intent.minAmountOut === undefined || intent.minAmountOut === '')) {
-      deny('minAmountOut bound is required for this action', EvalancheErrorCode.APPROVAL_INVALID);
-    }
-    const recomputed = computeIntentHash(intent);
-    if (recomputed.toLowerCase() !== String(approval.intentHash).toLowerCase()) {
+    const recomputedEarly = computeIntentHash(intent);
+    if (recomputedEarly.toLowerCase() !== String(approval.intentHash).toLowerCase()) {
       deny('intentHash does not match the canonical intent (wrong hash)', EvalancheErrorCode.APPROVAL_INVALID);
     }
-    if (!verifyIntentHash(recomputed, approval.signature, this.options.verifierPublicKey)) {
+    if (approval.decision !== 'approve') {
+      deny('approval decision is not approve', EvalancheErrorCode.APPROVAL_INVALID);
+    }
+    const mode: ApprovalMode = this.options.dryRun ? 'dry-run' : 'live';
+    if (approval.mode !== mode) {
+      deny('approval mode does not match the signer', EvalancheErrorCode.APPROVAL_INVALID);
+    }
+    let signerAddress: string;
+    try {
+      signerAddress = getAddress(approval.signerAddress);
+    } catch {
+      deny('approval signerAddress is not an address', EvalancheErrorCode.APPROVAL_INVALID);
+    }
+    if (signerAddress !== this.address) {
+      deny('approval signerAddress does not match the signer', EvalancheErrorCode.APPROVAL_INVALID);
+    }
+    const message = approvalSigningBytes({
+      decision: 'approve',
+      mode,
+      signerAddress,
+      chainId: intent.chainId,
+      intentHash: recomputedEarly,
+    });
+    if (!verifyBytes(message, approval.signature, this.options.verifierPublicKey)) {
       deny('Approval signature is invalid', EvalancheErrorCode.APPROVAL_INVALID);
     }
-    this.assertNonce(getAddress(request.from).toLowerCase(), approval.nonce, approval.expiresAt);
+    this.assertNonce(getAddress(request.from).toLowerCase(), approval.nonce);
   }
 
-  private assertNonce(wallet: string, nonce: string, expiresAt: number): void {
-    if (!/^\d+$/.test(nonce)) deny('Approval nonce must be a decimal integer', EvalancheErrorCode.APPROVAL_INVALID);
-    const entry = this.nonces.wallets[wallet] ?? { lastNonce: '-1', used: [] };
+  private assertNonce(wallet: string, nonce: string): void {
+    if (!/^(0|[1-9][0-9]*)$/.test(nonce)) deny('Approval nonce must be a decimal string', EvalancheErrorCode.APPROVAL_INVALID);
+    const entry = this.nonces.get(wallet);
     if (entry.used.includes(nonce)) {
       deny('Replayed nonce: this approval was already used', EvalancheErrorCode.APPROVAL_INVALID);
     }
     if (BigInt(nonce) <= BigInt(entry.lastNonce)) {
       deny('Replayed nonce: approval nonce is not greater than the last signed nonce', EvalancheErrorCode.APPROVAL_INVALID);
     }
-    if (Date.now() >= expiresAt) deny('Approval is expired', EvalancheErrorCode.APPROVAL_INVALID);
   }
 
-  private assertDenyList(request: CanonicalSigningRequest, intent: SigningIntent): void {
-    const selector = (request.data ?? '').toLowerCase().slice(0, 10);
-    if (selector.length === 10 && this.deny.selectors.includes(selector)) {
-      deny(`Function selector ${selector} is denied`, EvalancheErrorCode.SIGNER_REJECTED);
-    }
-    if (request.to) {
-      const to = getAddress(request.to);
-      if (this.deny.contracts.includes(to)) {
-        deny(`Contract ${to} is denied`, EvalancheErrorCode.SIGNER_REJECTED);
+  private assertTransaction(request: CanonicalSigningRequest, intent: SigningIntent): void {
+    if (!intent.tx) deny('transaction is not bound and does not match an approved transaction object', EvalancheErrorCode.APPROVAL_INVALID);
+    const actual = requestTx(request);
+    for (const field of TX_FIELDS) {
+      if (String(actual[field]) !== String(intent.tx[field])) {
+        deny(`transaction field ${field} does not match the approved transaction`, EvalancheErrorCode.APPROVAL_INVALID);
       }
     }
-    const action = venueAction(request);
-    if (action && this.deny.venueActions.includes(action)) {
-      deny(`Venue action ${action} is denied`, EvalancheErrorCode.SIGNER_REJECTED);
+    const route = computeApprovedTxHash(intent.tx);
+    if (route.toLowerCase() !== intent.routeHash.toLowerCase()) {
+      deny('routeHash does not match the approved transaction', EvalancheErrorCode.APPROVAL_INVALID);
     }
-    if (isHyperliquidExchange(request) && this.deny.venueActions.includes('hyperliquid:order') && (!intent.action || /order|cancel|modify/i.test(intent.action))) {
-      deny('Hyperliquid order tools are denied', EvalancheErrorCode.SIGNER_REJECTED);
+    assertGas(intent.tx, this.gasCap);
+    if (request.to && isHardDeniedContract(request.to)) {
+      deny(`Contract ${getAddress(request.to)} is a built-in Polymarket denial`, EvalancheErrorCode.SIGNER_REJECTED);
     }
-  }
-
-  private assertApprovalAmount(request: CanonicalSigningRequest, intent: SigningIntent): void {
-    const amount = parseApproveAmount(request.data);
-    if (amount === null) return;
-    if (amount === MAX_UINT256) {
-      deny('Unlimited ERC-20 approval is denied', EvalancheErrorCode.SIGNER_REJECTED);
+    if (request.to && isSavaxInstantUnstake(request.to, request.data ?? '0x')) {
+      deny('Benqi sAVAX instant unstake (redeemInstant) is denied and cannot be enabled by config', EvalancheErrorCode.SIGNER_REJECTED);
     }
-    if (intent.amountIn === undefined || intent.amountIn === '') {
-      deny('ERC-20 approve requires amountIn and the approved amount must equal amountIn', EvalancheErrorCode.SIGNER_REJECTED);
+    if (intent.venue.toLowerCase() === 'polymarket' || intent.action.toLowerCase().startsWith('polymarket')) {
+      deny('Polymarket is denied and cannot be enabled by config', EvalancheErrorCode.SIGNER_REJECTED);
     }
-    if (amount !== BigInt(intent.amountIn)) {
-      deny('ERC-20 approve amount must equal amountIn', EvalancheErrorCode.SIGNER_REJECTED);
+    const selector = selectorOf(request.data);
+    const entry = this.allowEntry(Number(request.chainId), request.to);
+    if (!entry || !entry.selectors.map((item) => item.toLowerCase()).includes(selector)) {
+      deny(`Function selector ${selector} is not allowlisted`, EvalancheErrorCode.SIGNER_REJECTED);
     }
   }
 
-  private async enforceEconomics(request: CanonicalSigningRequest): Promise<void> {
-    const intent = request.structuredIntent!;
+  private assertMessage(request: CanonicalSigningRequest, intent: SigningIntent): void {
+    const message = (request.message ?? '').normalize('NFC');
+    const route = computeMessageRouteHash(message);
+    if (route.toLowerCase() !== intent.routeHash.toLowerCase()) {
+      deny('routeHash does not match the message', EvalancheErrorCode.APPROVAL_INVALID);
+    }
+    const allowed = (this.options.messageAllowlist ?? []).map((entry) => entry.normalize('NFC'));
+    if (!allowed.includes(message)) {
+      deny('message signing is disabled unless the message is on the allowlist', EvalancheErrorCode.SIGNER_REJECTED);
+    }
+  }
+
+  private assertTypedData(request: CanonicalSigningRequest, intent: SigningIntent): void {
+    const typed = request.typedData;
+    if (!typed) deny('typedData is required', EvalancheErrorCode.INVALID_PARAMS);
+    const route = computeTypedDataRouteHash(typed);
+    if (route.toLowerCase() !== intent.routeHash.toLowerCase()) {
+      deny('routeHash does not match the typed data', EvalancheErrorCode.APPROVAL_INVALID);
+    }
+    if (isHyperliquidTypedData(typed)) {
+      deny('Hyperliquid typed data is denied by domain and type', EvalancheErrorCode.SIGNER_REJECTED);
+    }
+    const permit = permitKind(typed);
+    if (permit) {
+      if (!this.explicitAllows.has(permit)) {
+        deny(`${permit === 'permit2' ? 'Permit2' : 'Permit'} typed data is denied unless explicitly allowed`, EvalancheErrorCode.SIGNER_REJECTED);
+      }
+      const amount = permitAmount(typed);
+      if (amount === null) deny('Permit value could not be decoded', EvalancheErrorCode.SIGNER_REJECTED);
+      if (amount >= (1n << 160n) - 1n) deny('Unlimited permit is denied', EvalancheErrorCode.SIGNER_REJECTED);
+      if (intent.amountIn === undefined || amount !== BigInt(intent.amountIn)) {
+        deny('decoded permit amount does not equal amountIn', EvalancheErrorCode.SIGNER_REJECTED);
+      }
+    }
+    const match = (this.options.typedDataAllow ?? []).find((entry) => typedDataAllowed(entry, typed));
+    if (!match) deny('typed-data signing is disabled unless the domain and type are allowlisted', EvalancheErrorCode.SIGNER_REJECTED);
+  }
+
+  private allowEntry(chainId: number, to: string | null | undefined): AllowEntry | undefined {
+    if (!to) return undefined;
+    let address: string;
+    try {
+      address = getAddress(to);
+    } catch {
+      deny('to is not an address', EvalancheErrorCode.INVALID_PARAMS);
+    }
+    return this.allow.get(chainId)?.find((entry) => getAddress(entry.address) === address);
+  }
+
+  private decode(request: CanonicalSigningRequest, intent: SigningIntent): DecodedCall[] {
+    let decoded: DecodedCall[];
+    try {
+      decoded = decodeCalldata(request.to ?? '', request.data ?? '0x', {
+        wallet: this.address,
+        value: BigInt(request.value ?? '0'),
+        explicitAllows: this.explicitAllows,
+      });
+    } catch (error) {
+      deny(error instanceof Error ? error.message : 'Calldata could not be decoded', EvalancheErrorCode.SIGNER_REJECTED);
+    }
+    const spends = decoded.filter((call) => call.kind !== 'erc20-approve' && call.kind !== 'erc20-increase-allowance' && call.kind !== 'erc2612-permit' && call.kind !== 'permit2');
+    const approvals = decoded.filter((call) => call.kind === 'erc20-approve' || call.kind === 'erc20-increase-allowance' || call.kind === 'erc2612-permit' || call.kind === 'permit2');
+    if (spends.length > 0) this.assertAmount(sumAmounts(spends), intent.amountIn, 'decoded amount');
+    for (const call of approvals) this.assertAmount(call.amount, intent.amountIn, 'decoded approval amount');
+    for (const call of decoded) {
+      if (call.receiver && call.receiver !== this.address) {
+        deny('decoded receiver is not the signer wallet', EvalancheErrorCode.SIGNER_REJECTED);
+      }
+      if (call.owner && call.owner !== this.address) {
+        deny('decoded owner is not the signer wallet', EvalancheErrorCode.SIGNER_REJECTED);
+      }
+      if (call.minOut !== undefined) {
+        if (intent.minAmountOut === undefined) deny('minAmountOut bound is required for this action', EvalancheErrorCode.APPROVAL_INVALID);
+        if (call.minOut < BigInt(intent.minAmountOut)) {
+          deny('decoded minOut is below intent minAmountOut', EvalancheErrorCode.SIGNER_REJECTED);
+        }
+      }
+    }
+    if (actionRequiresMinAmountOut(intent.action) && !decoded.some((call) => call.minOut !== undefined)) {
+      deny('minAmountOut bound is required for this action', EvalancheErrorCode.APPROVAL_INVALID);
+    }
+    const movesToken = decoded.some((call) => call.kind === 'erc20-transfer' || call.kind === 'erc20-approve' || call.kind === 'erc20-increase-allowance');
+    if (movesToken) {
+      if (!intent.tokenIn) deny('token intent is missing tokenIn', EvalancheErrorCode.APPROVAL_INVALID);
+      if (getAddress(request.to ?? '') !== getAddress(intent.tokenIn.address)) {
+        deny('transaction token does not match intent tokenIn', EvalancheErrorCode.SIGNER_REJECTED);
+      }
+    }
+    return decoded;
+  }
+
+  private assertAmount(amount: bigint | undefined, reported: string | undefined, label: string): void {
+    if (amount === undefined) deny(`${label} could not be decoded`, EvalancheErrorCode.SIGNER_REJECTED);
+    if (reported === undefined) deny(`${label} requires amountIn`, EvalancheErrorCode.SIGNER_REJECTED);
+    if (amount !== BigInt(reported)) deny(`${label} does not equal amountIn`, EvalancheErrorCode.SIGNER_REJECTED);
+  }
+
+  private async enforceEconomics(request: CanonicalSigningRequest, decoded: DecodedCall[]): Promise<void> {
     if (this.policy && request.kind === 'transaction' && request.to) {
-      const pending: PendingTransaction = {
+      const result = this.policy.evaluate({
         to: request.to,
+        from: this.address,
         value: request.value ?? '0',
         data: request.data,
         chainId: Number(request.chainId),
         gasLimit: request.gasLimit ? BigInt(request.gasLimit) : undefined,
-      };
-      const result = this.policy.evaluate(pending);
-      if (!result.allowed && !this.policy.policy.dryRun) {
+      });
+      if (!result.allowed) {
         deny(`Spending policy rejected the transaction: ${result.reason}`, EvalancheErrorCode.POLICY_VIOLATION);
       }
     }
     const caps = this.options.tokenCaps ?? {};
-    const nativeCap = caps.native;
-    if (nativeCap !== undefined && BigInt(request.value ?? '0') > BigInt(nativeCap)) {
+    const nativeCap = caps.native ?? caps[NATIVE_ADDRESS] ?? caps[NATIVE_ADDRESS.toLowerCase()];
+    if (nativeCap !== undefined && BigInt(request.value && request.value.length > 0 ? request.value : '0') > BigInt(nativeCap)) {
       deny('Transaction value exceeds the native token cap (oversize)', EvalancheErrorCode.SIGNER_REJECTED);
     }
-    if (intent.amountIn && intent.tokenIn) {
-      const cap = caps[intent.tokenIn.address.toLowerCase()] ?? caps[getAddress(intent.tokenIn.address)];
-      if (cap !== undefined && BigInt(intent.amountIn) > BigInt(cap)) {
-        deny('Token amount exceeds the configured per-transaction cap (oversize)', EvalancheErrorCode.SIGNER_REJECTED);
+    const tokenAmount = decoded.reduce((sum, call) => {
+      if (call.kind === 'native-transfer' || call.kind === 'savax-submit') return sum;
+      return sum + (call.amount ?? 0n);
+    }, 0n);
+    const tokenAddress = request.to ? getAddress(request.to) : undefined;
+    if (tokenAddress && tokenAmount > 0n) {
+      const cap = caps[tokenAddress] ?? caps[tokenAddress.toLowerCase()];
+      if (cap !== undefined && tokenAmount > BigInt(cap)) {
+        deny('Decoded token amount exceeds the configured per-transaction cap (oversize)', EvalancheErrorCode.SIGNER_REJECTED);
       }
-      if (this.options.maxPerTxUsd !== undefined) {
-        const price = await this.priceOf(intent.tokenIn);
-        if (price === null) {
-          deny(`No price for ${intent.tokenIn.symbol || intent.tokenIn.address}; refusing to sign without a cap`, EvalancheErrorCode.SIGNER_REJECTED);
-        }
-        const micros = usdMicros(intent.amountIn, intent.tokenIn.decimals, price);
-        const capMicros = BigInt(Math.round(this.options.maxPerTxUsd * 1_000_000));
-        if (micros > capMicros) {
-          deny('Token amount exceeds the per-transaction USD cap (oversize)', EvalancheErrorCode.SIGNER_REJECTED);
-        }
+    }
+    if (this.options.maxPerTxUsd !== undefined && request.kind === 'transaction') {
+      let micros = 0n;
+      if (tokenAddress && tokenAmount > 0n) {
+        const price = await this.priceOf(tokenAddress);
+        if (price === null) deny(`No price for ${tokenAddress}; refusing to sign without a cap`, EvalancheErrorCode.SIGNER_REJECTED);
+        const decimals = this.allowEntry(Number(request.chainId), tokenAddress)?.decimals;
+        if (decimals === undefined) deny(`No configured decimals for ${tokenAddress}; refusing to price the decoded amount`, EvalancheErrorCode.SIGNER_REJECTED);
+        micros += usdMicros(tokenAmount, decimals, price);
       }
+      const nativeValue = BigInt(request.value && request.value.length > 0 ? request.value : '0');
+      if (nativeValue > 0n) {
+        const price = await this.priceOf(NATIVE_ADDRESS);
+        if (price === null) deny('No price for native value; refusing to sign without a cap', EvalancheErrorCode.SIGNER_REJECTED);
+        micros += usdMicros(nativeValue, 18, price);
+      }
+      const capMicros = BigInt(Math.round(this.options.maxPerTxUsd * 1_000_000));
+      if (micros > capMicros) deny('Decoded amount exceeds the per-transaction USD cap (oversize)', EvalancheErrorCode.SIGNER_REJECTED);
     }
   }
 
-  private async priceOf(token: { address: string; symbol: string }): Promise<number | null> {
+  private async priceOf(address: string): Promise<number | null> {
     const prices = await this.prices();
-    const byAddress = prices[token.address.toLowerCase()];
-    if (typeof byAddress === 'number') return byAddress;
-    if (token.symbol && typeof prices[token.symbol] === 'number') return prices[token.symbol];
-    if (token.symbol && typeof prices[token.symbol.toUpperCase()] === 'number') return prices[token.symbol.toUpperCase()];
-    return null;
+    const value = prices[getAddress(address).toLowerCase()];
+    return typeof value === 'number' && Number.isFinite(value) ? value : null;
   }
 
   private async prices(): Promise<Record<string, number>> {
-    if (this.loadedPrices) return { ...this.options.prices, ...this.loadedPrices };
-    const merged: Record<string, number> = { ...(this.options.prices ?? {}) };
-    if (this.options.priceSourceUrl) {
-      const response = await fetch(this.options.priceSourceUrl, { signal: AbortSignal.timeout(5_000) });
-      if (!response.ok) deny('Price source request failed', EvalancheErrorCode.NETWORK_ERROR);
-      const body = await response.json() as Record<string, unknown>;
-      const table = (body.prices && typeof body.prices === 'object' ? body.prices : body) as Record<string, unknown>;
-      for (const [key, value] of Object.entries(table)) {
-        if (typeof value === 'number') merged[key] = value;
-      }
-      this.loadedPrices = merged;
+    const local = addressPrices(this.options.prices);
+    if (!this.options.priceSourceUrl) return local;
+    const ttl = this.options.priceTtlMs ?? DEFAULT_PRICE_TTL_MS;
+    const now = Date.now();
+    if (this.priceCache && now - this.priceCache.fetchedAt < ttl) {
+      return { ...local, ...this.priceCache.prices };
     }
-    return merged;
+    let response: Response;
+    try {
+      response = await fetch(this.options.priceSourceUrl, { signal: AbortSignal.timeout(5_000) });
+    } catch (error) {
+      deny(`Price source request failed: ${error instanceof Error ? error.message : String(error)}`, EvalancheErrorCode.NETWORK_ERROR);
+    }
+    if (!response.ok) deny('Price source request failed', EvalancheErrorCode.NETWORK_ERROR);
+    const body = await response.json() as Record<string, unknown>;
+    const table = (body.prices && typeof body.prices === 'object' ? body.prices : body) as Record<string, unknown>;
+    const remote: Record<string, number> = {};
+    for (const [key, value] of Object.entries(table)) {
+      if (typeof value !== 'number' || !Number.isFinite(value)) continue;
+      try {
+        remote[getAddress(key).toLowerCase()] = value;
+      } catch {
+        // Symbol keys are ignored. Prices are by address only.
+      }
+    }
+    this.priceCache = { fetchedAt: now, prices: remote };
+    return { ...local, ...remote };
   }
 
   private async simulate(request: CanonicalSigningRequest): Promise<void> {
     if (!request.to) deny('Transaction is missing to; refusing to sign', EvalancheErrorCode.SIMULATION_FAILED);
     const simulate = await this.simulator();
     const result = await simulate({
+      from: this.address,
       to: request.to,
       value: request.value ?? '0',
       data: request.data,
@@ -490,9 +689,7 @@ export class EvalancheSignerServer {
 
   private async simulator(): Promise<(tx: PendingTransaction) => Promise<SimulationResult>> {
     if (this.simulateFn) return this.simulateFn;
-    if (!this.options.rpcUrl) {
-      deny('Simulation requires rpcUrl or an injected simulator', EvalancheErrorCode.SIMULATION_FAILED);
-    }
+    if (!this.options.rpcUrl) deny('Simulation requires rpcUrl or an injected simulator', EvalancheErrorCode.SIMULATION_FAILED);
     const provider = new JsonRpcProvider(this.options.rpcUrl);
     this.simulateFn = (tx) => simulateTransaction(provider, tx);
     return this.simulateFn;
@@ -500,6 +697,7 @@ export class EvalancheSignerServer {
 
   private async produce(request: CanonicalSigningRequest): Promise<SigningResult> {
     if (request.kind === 'transaction') {
+      const type = request.type ?? 0;
       const tx: TransactionRequest = {
         to: request.to ?? undefined,
         value: BigInt(request.value ?? '0'),
@@ -507,58 +705,69 @@ export class EvalancheSignerServer {
         chainId: request.chainId,
         nonce: request.nonce,
         gasLimit: request.gasLimit ? BigInt(request.gasLimit) : undefined,
-        gasPrice: request.gasPrice ? BigInt(request.gasPrice) : undefined,
-        maxFeePerGas: request.maxFeePerGas ? BigInt(request.maxFeePerGas) : undefined,
-        maxPriorityFeePerGas: request.maxPriorityFeePerGas ? BigInt(request.maxPriorityFeePerGas) : undefined,
-        type: request.type,
+        type,
       };
+      if (type === 2) {
+        tx.maxFeePerGas = BigInt(request.maxFeePerGas ?? '0');
+        tx.maxPriorityFeePerGas = BigInt(request.maxPriorityFeePerGas ?? '0');
+      } else {
+        tx.gasPrice = BigInt(request.gasPrice ?? '0');
+      }
       const signedTransaction = await this.wallet.signTransaction(tx);
       return { requestId: request.requestId, signedTransaction };
     }
     if (request.kind === 'message') {
-      const signature = await this.wallet.signMessage(request.message ?? '');
+      const signature = await this.wallet.signMessage(toUtf8Bytes((request.message ?? '').normalize('NFC')));
       return { requestId: request.requestId, signature };
     }
     const typed = request.typedData;
     if (!typed) deny('typedData is required', EvalancheErrorCode.INVALID_PARAMS);
-    const signature = await this.wallet.signTypedData(
-      typed.domain as never,
-      typed.types as never,
-      typed.value,
-    );
+    const signature = await this.wallet.signTypedData(typed.domain as never, typed.types as never, typed.value);
     return { requestId: request.requestId, signature };
   }
 
-  private async commitNonce(wallet: string, nonce: string): Promise<void> {
-    const entry = this.nonces.wallets[wallet] ?? { lastNonce: '-1', used: [] };
-    entry.used.push(nonce);
-    entry.lastNonce = nonce;
-    this.nonces.wallets[wallet] = entry;
-    await this.saveNonces();
-  }
-
-  private async loadNonces(): Promise<void> {
+  private async loadAudit(): Promise<void> {
+    let raw = '';
     try {
-      const raw = await readFile(this.options.nonceStorePath, 'utf8');
-      const parsed = JSON.parse(raw) as NonceState;
-      if (parsed && typeof parsed === 'object' && parsed.wallets) this.nonces = parsed;
+      raw = await readFile(this.options.auditLogPath, 'utf8');
     } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code !== 'ENOENT') throw error;
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+      throw error;
     }
+    const lines = raw.split('\n').filter((line) => line.length > 0);
+    let prev = AUDIT_ROOT;
+    for (const line of lines) {
+      let parsed: { prevHash?: string };
+      try {
+        parsed = JSON.parse(line) as { prevHash?: string };
+      } catch {
+        throw new EvalancheError('Audit log is not append-only JSONL', EvalancheErrorCode.INVALID_CONFIG);
+      }
+      if (parsed.prevHash !== prev) {
+        throw new EvalancheError('Audit log prevHash chain does not link to the root', EvalancheErrorCode.INVALID_CONFIG);
+      }
+      prev = lineHash(line);
+    }
+    this.prevHash = prev;
   }
 
-  private async saveNonces(): Promise<void> {
-    await mkdir(dirname(this.options.nonceStorePath), { recursive: true });
-    const tmp = `${this.options.nonceStorePath}.tmp`;
-    await writeFile(tmp, JSON.stringify(this.nonces), { mode: 0o600 });
-    await rename(tmp, this.options.nonceStorePath);
-  }
-
-  private async audit(entry: Omit<AuditEntry, 'timestamp'>): Promise<void> {
-    const line: AuditEntry = { timestamp: new Date().toISOString(), ...entry };
+  private async audit(entry: Omit<AuditEntry, 'timestamp' | 'prevHash'>): Promise<void> {
+    const lineObject: AuditEntry = {
+      prevHash: this.prevHash,
+      timestamp: new Date().toISOString(),
+      ...entry,
+      reason: stripUrls(entry.reason),
+    };
+    const line = JSON.stringify(lineObject);
     await mkdir(dirname(this.options.auditLogPath), { recursive: true });
-    await appendFile(this.options.auditLogPath, `${JSON.stringify(line)}\n`, { encoding: 'utf8', flag: 'a', mode: 0o600 });
+    const handle = await openFile(this.options.auditLogPath, 'a', 0o600);
+    try {
+      await handle.write(`${line}\n`);
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    this.prevHash = lineHash(line);
   }
 
   private async exclusive<T>(fn: () => Promise<T>): Promise<T> {
@@ -569,7 +778,7 @@ export class EvalancheSignerServer {
 
   private async handleHttp(req: IncomingMessage, res: ServerResponse): Promise<void> {
     if (req.url === '/health' && req.method === 'GET') {
-      sendJson(res, 200, { ok: true, address: this.address, dryRun: Boolean(this.options.dryRun) });
+      sendJson(res, 200, { ok: true });
       return;
     }
     if (req.url !== '/v1/sign' || req.method !== 'POST') {
@@ -586,7 +795,7 @@ export class EvalancheSignerServer {
     try {
       raw = await readBody(req);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = stripUrls(error instanceof Error ? error.message : String(error));
       sendJson(res, 400, { error: message, code: 'INVALID_PARAMS' });
       return;
     }
@@ -601,7 +810,7 @@ export class EvalancheSignerServer {
       const result = await this.handle(request);
       sendJson(res, 200, result);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = stripUrls(error instanceof Error ? error.message : String(error));
       const code = error instanceof SignerRejection ? error.code : EvalancheErrorCode.SIGNER_REJECTED;
       const status = code === EvalancheErrorCode.INVALID_PARAMS ? 400 : 403;
       sendJson(res, status, { error: message, code });
@@ -609,28 +818,190 @@ export class EvalancheSignerServer {
   }
 }
 
-async function loadSignerWallet(options: SignerServerOptions): Promise<Wallet | HDNodeWallet> {
-  const envKey = process.env.EVALANCHE_SIGNER_PRIVATE_KEY;
-  if (options.privateKey && options.keystorePath) {
+function requestTx(request: CanonicalSigningRequest): ApprovedTransaction {
+  let to = '';
+  try {
+    if (request.to) to = getAddress(request.to);
+  } catch {
+    deny('to is not an address', EvalancheErrorCode.INVALID_PARAMS);
+  }
+  const data = (request.data && request.data.length > 0 ? request.data : '0x').toLowerCase();
+  return {
+    to,
+    value: request.value ?? '',
+    data,
+    chainId: Number(request.chainId),
+    nonce: request.nonce === undefined || request.nonce === null ? '' : String(request.nonce),
+    gasLimit: request.gasLimit ?? '',
+    maxFeePerGas: request.maxFeePerGas ?? '',
+    maxPriorityFeePerGas: request.maxPriorityFeePerGas ?? '',
+    gasPrice: request.gasPrice ?? '',
+    type: request.type === undefined ? Number.NaN : Number(request.type),
+  };
+}
+
+function assertGas(tx: ApprovedTransaction, cap: bigint): void {
+  const limit = BigInt(tx.gasLimit);
+  const price = BigInt(tx.gasPrice) > BigInt(tx.maxFeePerGas) ? BigInt(tx.gasPrice) : BigInt(tx.maxFeePerGas);
+  if (limit <= 0n || price < 0n) deny('gas cost is not bounded', EvalancheErrorCode.SIGNER_REJECTED);
+  const cost = limit * price;
+  if (cost > cap) deny('gas cost exceeds the hard cap', EvalancheErrorCode.SIGNER_REJECTED);
+}
+
+function resolveGasCap(configured: string | undefined): bigint {
+  if (configured === undefined) return HARD_MAX_GAS_COST_WEI;
+  if (!/^(0|[1-9][0-9]*)$/.test(configured)) {
+    throw new EvalancheError('maxGasCostWei must be a decimal string', EvalancheErrorCode.INVALID_CONFIG);
+  }
+  const value = BigInt(configured);
+  if (value > HARD_MAX_GAS_COST_WEI) {
+    throw new EvalancheError('maxGasCostWei cannot exceed the hard gas-cost cap', EvalancheErrorCode.INVALID_CONFIG);
+  }
+  return value;
+}
+
+function indexAllow(allow: Record<string, AllowEntry[]>): Map<number, AllowEntry[]> {
+  const map = new Map<number, AllowEntry[]>();
+  for (const [chain, entries] of Object.entries(allow ?? {})) {
+    const chainId = Number(chain);
+    if (!Number.isSafeInteger(chainId) || !Array.isArray(entries) || entries.length === 0) continue;
+    const normalized = entries.map((entry) => ({
+      address: getAddress(entry.address),
+      selectors: (entry.selectors ?? []).map((selector) => selector.toLowerCase()),
+      decimals: entry.decimals,
+    })).filter((entry) => entry.selectors.length > 0);
+    if (normalized.length > 0) map.set(chainId, normalized);
+  }
+  return map;
+}
+
+function assertStartup(options: SignerServerOptions): void {
+  if (!options.token) throw new EvalancheError('Signer auth token is required', EvalancheErrorCode.INVALID_CONFIG);
+  if (!options.verifierPublicKey) throw new EvalancheError('Pinned verifier public key is required', EvalancheErrorCode.INVALID_CONFIG);
+  if (!options.auditLogPath || !options.nonceStorePath) {
+    throw new EvalancheError('auditLogPath and nonceStorePath are required', EvalancheErrorCode.INVALID_CONFIG);
+  }
+  if (!options.allow || indexAllow(options.allow).size === 0) {
     throw new EvalancheError(
-      'privateKey and keystorePath are mutually exclusive',
+      'A non-empty allow map {chainId -> [{address, selectors}]} is required',
       EvalancheErrorCode.INVALID_CONFIG,
     );
   }
+}
+
+async function assertFilePermissions(options: SignerServerOptions): Promise<void> {
+  if (options.allowInsecureFilePermissions) return;
+  const files: Array<[string | undefined, string]> = [
+    [options.configPath, 'Signer config'],
+    [options.keystorePath, 'Signer keystore'],
+    [options.verifierPublicKeyPath, 'Verifier pubkey'],
+  ];
+  for (const [path, label] of files) {
+    if (!path) continue;
+    const info = await stat(path);
+    const mode = info.mode & 0o777;
+    if (info.uid !== 0 || (mode & 0o022) !== 0) {
+      throw new EvalancheError(
+        `${label} must be owned by root and not writable by group or other`,
+        EvalancheErrorCode.INVALID_CONFIG,
+      );
+    }
+  }
+}
+
+function sumAmounts(calls: DecodedCall[]): bigint {
+  return calls.reduce((sum, call) => sum + (call.amount ?? 0n), 0n);
+}
+
+function usdMicros(amount: bigint, decimals: number, price: number): bigint {
+  if (!Number.isFinite(price) || price < 0) deny('Price source returned a non-finite price', EvalancheErrorCode.SIGNER_REJECTED);
+  const priceMicros = BigInt(Math.round(price * 1_000_000));
+  const scale = 10n ** BigInt(decimals);
+  return (amount * priceMicros) / scale;
+}
+
+function addressPrices(prices: Record<string, number> | undefined): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [key, value] of Object.entries(prices ?? {})) {
+    if (typeof value !== 'number' || !Number.isFinite(value)) continue;
+    try {
+      out[getAddress(key).toLowerCase()] = value;
+    } catch {
+      // Ignore symbol keys.
+    }
+  }
+  return out;
+}
+
+const HL_AGENT = [
+  { name: 'source', type: 'string' },
+  { name: 'connectionId', type: 'bytes32' },
+];
+
+function isHyperliquidTypedData(typed: TypedDataPayload): boolean {
+  const name = String(typed.domain?.name ?? '');
+  const chainId = Number(typed.domain?.chainId ?? NaN);
+  if (name === 'Exchange' && chainId === 1337) return true;
+  if (name === 'HyperliquidSignTransaction' || /hyperliquid/i.test(name)) return true;
+  for (const [typeName, fields] of Object.entries(typed.types ?? {})) {
+    if (/hyperliquid/i.test(typeName) || /approveagent/i.test(typeName)) return true;
+    if (typeName === 'Agent' && sameFields(fields, HL_AGENT)) return true;
+  }
+  return false;
+}
+
+function sameFields(actual: Array<{ name: string; type: string }> | undefined, expected: Array<{ name: string; type: string }>): boolean {
+  if (!actual || actual.length !== expected.length) return false;
+  return expected.every((field, index) => actual[index]?.name === field.name && actual[index]?.type === field.type);
+}
+
+function permitAmount(typed: TypedDataPayload): bigint | null {
+  const value = typed.value ?? {};
+  if (value.value !== undefined && /^\d+$/.test(String(value.value))) return BigInt(String(value.value));
+  const details = value.details as { amount?: string | number } | undefined;
+  if (details && details.amount !== undefined && /^\d+$/.test(String(details.amount))) return BigInt(String(details.amount));
+  return null;
+}
+
+function permitKind(typed: TypedDataPayload): 'permit' | 'permit2' | null {
+  const domain = String(typed.domain?.name ?? '').toLowerCase();
+  if (domain.includes('permit2')) return 'permit2';
+  for (const name of Object.keys(typed.types ?? {})) {
+    const lower = name.toLowerCase();
+    if (lower === 'permit') return 'permit';
+    if (lower.includes('permit')) return 'permit2';
+  }
+  return null;
+}
+
+function typedDataAllowed(entry: TypedDataAllow, typed: TypedDataPayload): boolean {
+  if (String(typed.domain?.name ?? '') !== entry.domainName) return false;
+  if (!Object.prototype.hasOwnProperty.call(typed.types ?? {}, entry.primaryType)) return false;
+  if (entry.chainId !== undefined && Number(typed.domain?.chainId) !== entry.chainId) return false;
+  if (entry.verifyingContract !== undefined) {
+    try {
+      if (getAddress(String(typed.domain?.verifyingContract)) !== getAddress(entry.verifyingContract)) return false;
+    } catch {
+      return false;
+    }
+  }
+  return true;
+}
+
+async function loadSignerWallet(options: SignerServerOptions): Promise<Wallet | HDNodeWallet> {
+  const envKey = process.env.EVALANCHE_SIGNER_PRIVATE_KEY;
+  if (options.privateKey && options.keystorePath) {
+    throw new EvalancheError('privateKey and keystorePath are mutually exclusive', EvalancheErrorCode.INVALID_CONFIG);
+  }
   if (options.privateKey) return new Wallet(options.privateKey);
   if (envKey && options.keystorePath) {
-    throw new EvalancheError(
-      'EVALANCHE_SIGNER_PRIVATE_KEY and keystorePath are mutually exclusive',
-      EvalancheErrorCode.INVALID_CONFIG,
-    );
+    throw new EvalancheError('EVALANCHE_SIGNER_PRIVATE_KEY and keystorePath are mutually exclusive', EvalancheErrorCode.INVALID_CONFIG);
   }
   if (envKey) return new Wallet(envKey);
   if (options.keystorePath) {
     const envName = options.keystorePasswordEnv ?? 'EVALANCHE_SIGNER_KEYSTORE_PASSWORD';
     const password = process.env[envName];
-    if (!password) {
-      throw new EvalancheError(`Keystore password env ${envName} is empty`, EvalancheErrorCode.INVALID_CONFIG);
-    }
+    if (!password) throw new EvalancheError(`Keystore password env ${envName} is empty`, EvalancheErrorCode.INVALID_CONFIG);
     const json = await readFile(options.keystorePath, 'utf8');
     return Wallet.fromEncryptedJson(json, password);
   }
@@ -669,6 +1040,11 @@ function readBody(req: IncomingMessage): Promise<string> {
 
 export async function startSignerServer(options: SignerServerOptions): Promise<EvalancheSignerServer & { endpoint: string; port?: number }> {
   const server = await EvalancheSignerServer.create(options);
-  const listening = await server.listen();
-  return Object.assign(server, listening);
+  try {
+    const listening = await server.listen();
+    return Object.assign(server, listening);
+  } catch (error) {
+    await server.close();
+    throw error;
+  }
 }

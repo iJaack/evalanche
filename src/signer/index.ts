@@ -1,12 +1,15 @@
 export {
   canonicalIntentJson,
   canonicalJson,
+  computeApprovedTxHash,
   computeIntentHash,
+  computeMessageRouteHash,
   computeRequestRouteHash,
   computeRouteHash,
   generateEd25519KeyPair,
   isRemoteSignerConfig,
   isSigningProvider,
+  signIntentHash,
   signVerifierApproval,
   verifyIntentHash,
 } from './intent';
@@ -22,6 +25,9 @@ export type {
   TokenRef,
   TypedDataPayload,
   VerifierApproval,
+  ApprovedTransaction,
+  ApprovalDecision,
+  ApprovalMode,
 } from './intent';
 
 export { RemoteSignerClient, assertSignedTransactionMatches, assertSigningResult } from './remote-client';
@@ -33,5 +39,10 @@ export {
   signerModeOf,
 } from './ethers-adapter';
 export type { SignerMode } from './ethers-adapter';
-export { EvalancheSignerServer, startSignerServer, DEFAULT_VENUE_ACTIONS } from './server';
-export type { DenyListConfig, SignerServerOptions } from './server';
+export {
+  AUDIT_ROOT,
+  EvalancheSignerServer,
+  HARD_MAX_GAS_COST_WEI,
+  startSignerServer,
+} from './server';
+export type { AllowEntry, ExplicitAllow, SignerServerOptions, TypedDataAllow } from './server';

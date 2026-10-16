@@ -1,13 +1,14 @@
 /**
  * Canonical treasury intents and Ed25519 verifier approvals.
  *
- * The agent builds an intent, hashes it, and asks the verifier (Ops) to sign
- * that hash. The signer recomputes the hash from the transaction it is about
- * to sign and rejects anything that does not match the approval.
+ * The verifier signs a domain-separated approval, not the raw intent hash.
+ * The intent carries the exact transaction object. The signer decodes only
+ * known calldata and denies every path it cannot decode.
  */
 
 import { createPrivateKey, createPublicKey, generateKeyPairSync, sign, verify, timingSafeEqual } from 'crypto';
-import { getBytes, hexlify, keccak256, toUtf8Bytes } from 'ethers';
+import { getAddress, getBytes, hexlify, keccak256, toUtf8Bytes } from 'ethers';
+import { canonicalJson } from './jcs';
 
 export interface TokenRef {
   address: string;
@@ -16,9 +17,28 @@ export interface TokenRef {
 }
 
 /**
- * Fields the verifier commits to. `routeHash` is keccak256 of the transaction
- * data (or the message / typed-data payload). `minAmountOut` is the slippage
- * bound and is part of the hashed intent, not of `routeHash` itself.
+ * Transaction fields the verifier commits to. Every value is matched exactly
+ * before the signer produces a signature. `gasPrice` is included so a legacy
+ * transaction cannot move its fee out of the hashed object.
+ */
+export interface ApprovedTransaction {
+  to: string;
+  value: string;
+  data: string;
+  chainId: number;
+  nonce: string;
+  gasLimit: string;
+  maxFeePerGas: string;
+  maxPriorityFeePerGas: string;
+  gasPrice: string;
+  type: number;
+}
+
+/**
+ * Fields the verifier commits to. `routeHash` commits to the approved
+ * transaction object, or to the UTF-8 message / typed-data payload.
+ * `minAmountOut` is the slippage bound. Money fields and `nonce` are decimal
+ * strings. `maxSlippageBps` is an integer.
  */
 export interface SigningIntent {
   version: string;
@@ -41,17 +61,28 @@ export interface SigningIntent {
   postFrictionEvUsd?: string;
   signalRefs?: string[];
   routeHash: string;
+  tx?: ApprovedTransaction;
 }
 
-/** Ed25519 approval attached to a signing request. */
+export type ApprovalDecision = 'approve' | 'deny';
+export type ApprovalMode = 'dry-run' | 'live';
+
+/**
+ * Ed25519 approval. The signature covers
+ * `evalanche-verifier/v1\0 || decision || mode || signerAddress || chainId || intentHash`.
+ * Only `decision=approve` is accepted, and `mode` must match the signer process.
+ */
 export interface VerifierApproval {
   intentHash: string;
   nonce: string;
   expiresAt: number;
   /** Hex-encoded 32-byte Ed25519 public key. */
   verifier: string;
-  /** Hex-encoded 64-byte Ed25519 signature over the raw 32-byte intent hash. */
+  /** Hex-encoded 64-byte Ed25519 signature over the domain-separated approval bytes. */
   signature: string;
+  decision: ApprovalDecision;
+  mode: ApprovalMode;
+  signerAddress: string;
 }
 
 export interface SigningContext {
@@ -140,28 +171,151 @@ export function isRemoteSignerConfig(value: unknown): value is RemoteSignerConfi
   return hasEndpoint && typeof record.address === 'string';
 }
 
-export function sortValue(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sortValue);
-  if (value && typeof value === 'object') {
-    const source = value as Record<string, unknown>;
-    const sorted: Record<string, unknown> = {};
-    for (const key of Object.keys(source).sort()) {
-      if (source[key] === undefined) continue;
-      sorted[key] = sortValue(source[key]);
+export { canonicalJson } from './jcs';
+
+const INTENT_FIELDS = [
+  'version', 'intentId', 'nonce', 'createdAt', 'expiresAt', 'wallet', 'chainId', 'venue', 'action',
+  'tokenIn', 'tokenOut', 'amountIn', 'minAmountOut', 'maxSlippageBps', 'tier', 'sleeve',
+  'sizePctOfTreasury', 'postFrictionEvUsd', 'signalRefs', 'routeHash', 'tx',
+] as const;
+
+const TOKEN_FIELDS = ['address', 'symbol', 'decimals'] as const;
+const TX_FIELDS = [
+  'to', 'value', 'data', 'chainId', 'nonce', 'gasLimit', 'maxFeePerGas', 'maxPriorityFeePerGas', 'gasPrice', 'type',
+] as const;
+
+const DECIMAL = /^(0|[1-9][0-9]*)$/;
+
+function reject(message: string): never {
+  throw new Error(message);
+}
+
+function ownKeys(value: unknown): string[] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) reject('Expected an object');
+  return Object.getOwnPropertyNames(value as object);
+}
+
+function assertExactKeys(value: unknown, allowed: readonly string[], label: string): Record<string, unknown> {
+  const keys = ownKeys(value);
+  for (const key of keys) {
+    if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+      reject(`Forbidden key ${key}`);
     }
-    return sorted;
+    if (!allowed.includes(key)) reject(`${label} has unknown field ${key}`);
+  }
+  return value as Record<string, unknown>;
+}
+
+function decimal(value: unknown, label: string): string {
+  if (typeof value !== 'string' || !DECIMAL.test(value)) {
+    reject(`${label} must be a decimal string`);
   }
   return value;
 }
 
-/** JSON with recursively sorted object keys and no insignificant whitespace. */
-export function canonicalJson(value: unknown): string {
-  return JSON.stringify(sortValue(value));
+function integer(value: unknown, label: string): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value)) reject(`${label} must be an integer`);
+  return value;
+}
+
+function nfc(value: unknown, label: string): string {
+  if (typeof value !== 'string' || value.length === 0) reject(`${label} must be a string`);
+  return value.normalize('NFC');
+}
+
+function tokenRef(value: unknown, label: string): TokenRef {
+  const record = assertExactKeys(value, TOKEN_FIELDS, label);
+  for (const field of TOKEN_FIELDS) {
+    if (!(field in record)) reject(`${label}.${field} is required`);
+  }
+  let address: string;
+  try {
+    address = getAddress(String(record.address));
+  } catch {
+    reject(`${label}.address is not an address`);
+  }
+  const decimals = integer(record.decimals, `${label}.decimals`);
+  if (decimals < 0 || decimals > 255) reject(`${label}.decimals is out of range`);
+  return { address, symbol: nfc(record.symbol, `${label}.symbol`), decimals };
+}
+
+export function normalizeApprovedTx(tx: ApprovedTransaction): ApprovedTransaction {
+  let to: string;
+  try {
+    to = getAddress(tx.to);
+  } catch {
+    reject('tx.to is not an address');
+  }
+  const data = tx.data.toLowerCase();
+  if (!/^0x[0-9a-f]*$/.test(data) || data.length % 2 !== 0) reject('tx.data must be even-length hex');
+  return {
+    to,
+    value: decimal(tx.value, 'tx.value'),
+    data,
+    chainId: integer(tx.chainId, 'tx.chainId'),
+    nonce: decimal(tx.nonce, 'tx.nonce'),
+    gasLimit: decimal(tx.gasLimit, 'tx.gasLimit'),
+    maxFeePerGas: decimal(tx.maxFeePerGas, 'tx.maxFeePerGas'),
+    maxPriorityFeePerGas: decimal(tx.maxPriorityFeePerGas, 'tx.maxPriorityFeePerGas'),
+    gasPrice: decimal(tx.gasPrice, 'tx.gasPrice'),
+    type: integer(tx.type, 'tx.type'),
+  };
+}
+
+/** Reject extra keys, non-canonical numbers, and prototype keys. Returns the normalized intent. */
+export function assertIntentShape(value: unknown): SigningIntent {
+  const record = assertExactKeys(value, INTENT_FIELDS, 'intent');
+  if (record.version !== '1') reject('intent.version must be "1"');
+  const intent: SigningIntent = {
+    version: '1',
+    intentId: nfc(record.intentId, 'intent.intentId'),
+    nonce: decimal(record.nonce, 'intent.nonce'),
+    createdAt: integer(record.createdAt, 'intent.createdAt'),
+    expiresAt: integer(record.expiresAt, 'intent.expiresAt'),
+    wallet: '',
+    chainId: integer(record.chainId, 'intent.chainId'),
+    venue: nfc(record.venue, 'intent.venue'),
+    action: nfc(record.action, 'intent.action'),
+    routeHash: nfc(record.routeHash, 'intent.routeHash'),
+  };
+  try {
+    intent.wallet = getAddress(String(record.wallet));
+  } catch {
+    reject('intent.wallet is not an address');
+  }
+  if (!/^0x[0-9a-fA-F]{64}$/.test(intent.routeHash)) reject('intent.routeHash must be a 32-byte hex hash');
+  if (record.tokenIn !== undefined) intent.tokenIn = tokenRef(record.tokenIn, 'tokenIn');
+  if (record.tokenOut !== undefined) intent.tokenOut = tokenRef(record.tokenOut, 'tokenOut');
+  if (record.amountIn !== undefined) intent.amountIn = decimal(record.amountIn, 'intent.amountIn');
+  if (record.minAmountOut !== undefined) intent.minAmountOut = decimal(record.minAmountOut, 'intent.minAmountOut');
+  if (record.maxSlippageBps !== undefined) {
+    const bps = integer(record.maxSlippageBps, 'intent.maxSlippageBps');
+    if (bps < 0) reject('intent.maxSlippageBps must be a non-negative integer');
+    intent.maxSlippageBps = bps;
+  }
+  if (record.tier !== undefined) intent.tier = nfc(record.tier, 'intent.tier');
+  if (record.sleeve !== undefined) intent.sleeve = nfc(record.sleeve, 'intent.sleeve');
+  if (record.sizePctOfTreasury !== undefined) {
+    const size = integer(record.sizePctOfTreasury, 'intent.sizePctOfTreasury');
+    if (size < 0) reject('intent.sizePctOfTreasury must be a non-negative integer');
+    intent.sizePctOfTreasury = size;
+  }
+  if (record.postFrictionEvUsd !== undefined) intent.postFrictionEvUsd = decimal(record.postFrictionEvUsd, 'intent.postFrictionEvUsd');
+  if (record.signalRefs !== undefined) {
+    if (!Array.isArray(record.signalRefs)) reject('intent.signalRefs must be an array');
+    intent.signalRefs = record.signalRefs.map((entry, index) => nfc(entry, `intent.signalRefs[${index}]`));
+  }
+  if (record.tx !== undefined) {
+    assertExactKeys(record.tx, TX_FIELDS, 'tx');
+    intent.tx = normalizeApprovedTx(record.tx as ApprovedTransaction);
+    if (intent.tx.chainId !== intent.chainId) reject('tx.chainId does not match intent.chainId');
+  }
+  return intent;
 }
 
 /** Canonical intent JSON. Object keys are sorted at every level. */
 export function canonicalIntentJson(intent: SigningIntent): string {
-  return canonicalJson(intent);
+  return canonicalJson(assertIntentShape(intent));
 }
 
 /** keccak256 of the canonical intent JSON, as a 0x-prefixed hex string. */
@@ -169,32 +323,74 @@ export function computeIntentHash(intent: SigningIntent): string {
   return keccak256(toUtf8Bytes(canonicalIntentJson(intent)));
 }
 
-/**
- * keccak256 of transaction calldata (0x-hex) or, when `data` is not hex,
- * keccak256 of its UTF-8 bytes. Empty calldata hashes as `keccak256(0x)`.
- */
-export function computeRouteHash(data: string): string {
-  if (typeof data === 'string' && data.startsWith('0x')) return keccak256(data);
-  return keccak256(toUtf8Bytes(data ?? ''));
+/** keccak256 of the canonical approved transaction object. */
+export function computeApprovedTxHash(tx: ApprovedTransaction): string {
+  return keccak256(toUtf8Bytes(canonicalJson(normalizeApprovedTx(tx))));
 }
 
-/** Payload whose keccak256 is the routeHash for a signing request. */
-export function routeMaterial(request: Pick<CanonicalSigningRequest, 'kind' | 'data' | 'message' | 'typedData'>): string {
-  if (request.kind === 'transaction') return request.data && request.data.length > 0 ? request.data : '0x';
-  if (request.kind === 'message') {
-    const message = request.message ?? '';
-    return message.startsWith('0x') ? message : hexlify(toUtf8Bytes(message));
-  }
-  const typed = request.typedData ?? { domain: {}, types: {}, value: {} };
-  return hexlify(toUtf8Bytes(canonicalJson({
+/**
+ * keccak256 of a message as UTF-8. A 0x prefix is not treated as hex, so
+ * the string "x" and the string "0x78" hash differently.
+ */
+export function computeMessageRouteHash(message: string): string {
+  return keccak256(toUtf8Bytes(message.normalize('NFC')));
+}
+
+export function computeTypedDataRouteHash(typed: TypedDataPayload): string {
+  return keccak256(toUtf8Bytes(canonicalJson({
     domain: typed.domain,
     types: typed.types,
     value: typed.value,
   })));
 }
 
-export function computeRequestRouteHash(request: Pick<CanonicalSigningRequest, 'kind' | 'data' | 'message' | 'typedData'>): string {
-  return computeRouteHash(routeMaterial(request));
+/** @deprecated Calldata-only hash. Transaction approvals use computeApprovedTxHash. */
+export function computeRouteHash(data: string): string {
+  if (typeof data === 'string' && data.startsWith('0x')) return keccak256(data);
+  return keccak256(toUtf8Bytes(data ?? ''));
+}
+
+type RouteRequest = Pick<CanonicalSigningRequest, 'kind' | 'data' | 'message' | 'typedData' | 'to' | 'value' | 'chainId' | 'nonce' | 'gasLimit' | 'maxFeePerGas' | 'maxPriorityFeePerGas' | 'gasPrice' | 'type'>;
+
+/** Payload whose keccak256 is the routeHash for a signing request. */
+export function routeMaterial(request: RouteRequest): string {
+  if (request.kind === 'transaction') {
+    return canonicalJson(normalizeApprovedTx({
+      to: request.to ?? '',
+      value: request.value ?? '0',
+      data: request.data && request.data.length > 0 ? request.data : '0x',
+      chainId: Number(request.chainId),
+      nonce: String(request.nonce ?? 0),
+      gasLimit: request.gasLimit ?? '0',
+      maxFeePerGas: request.maxFeePerGas ?? '0',
+      maxPriorityFeePerGas: request.maxPriorityFeePerGas ?? '0',
+      gasPrice: request.gasPrice ?? '0',
+      type: request.type ?? 0,
+    }));
+  }
+  if (request.kind === 'message') return request.message ?? '';
+  const typed = request.typedData ?? { domain: {}, types: {}, value: {} };
+  return canonicalJson({ domain: typed.domain, types: typed.types, value: typed.value });
+}
+
+export function computeRequestRouteHash(request: RouteRequest): string {
+  if (request.kind === 'message') return computeMessageRouteHash(request.message ?? '');
+  if (request.kind === 'typed-data') {
+    const typed = request.typedData ?? { domain: {}, types: {}, value: {} };
+    return computeTypedDataRouteHash(typed);
+  }
+  return computeApprovedTxHash({
+    to: request.to ?? '',
+    value: request.value ?? '0',
+    data: request.data && request.data.length > 0 ? request.data : '0x',
+    chainId: Number(request.chainId),
+    nonce: String(request.nonce ?? 0),
+    gasLimit: request.gasLimit ?? '0',
+    maxFeePerGas: request.maxFeePerGas ?? '0',
+    maxPriorityFeePerGas: request.maxPriorityFeePerGas ?? '0',
+    gasPrice: request.gasPrice ?? '0',
+    type: request.type ?? 0,
+  });
 }
 
 export interface Ed25519KeyPair {
@@ -246,19 +442,59 @@ function privateKeyObject(privateKeyHex: string, publicKeyHex: string) {
   });
 }
 
-/** Sign the raw 32-byte intent hash. Returns 0x-hex. */
+/** Sign arbitrary bytes. `signIntentHash` still signs only the raw hash and is not an approval. */
 export function signIntentHash(intentHash: string, privateKeyHex: string, publicKeyHex: string): string {
-  const signature = sign(null, Buffer.from(getBytes(intentHash)), privateKeyObject(privateKeyHex, publicKeyHex));
+  return signBytes(getBytes(intentHash), privateKeyHex, publicKeyHex);
+}
+
+export function signBytes(message: Uint8Array, privateKeyHex: string, publicKeyHex: string): string {
+  const signature = sign(null, Buffer.from(message), privateKeyObject(privateKeyHex, publicKeyHex));
   return hexlify(signature);
+}
+
+export function verifyBytes(message: Uint8Array, signatureHex: string, publicKeyHex: string): boolean {
+  try {
+    const signature = rawKey(signatureHex, 64, 'Ed25519 signature');
+    return verify(null, Buffer.from(message), publicKeyObject(publicKeyHex), signature);
+  } catch {
+    return false;
+  }
 }
 
 export function verifyIntentHash(intentHash: string, signatureHex: string, publicKeyHex: string): boolean {
   try {
-    const signature = rawKey(signatureHex, 64, 'Ed25519 signature');
-    return verify(null, Buffer.from(getBytes(intentHash)), publicKeyObject(publicKeyHex), signature);
+    return verifyBytes(getBytes(intentHash), signatureHex, publicKeyHex);
   } catch {
     return false;
   }
+}
+
+/**
+ * Bytes the verifier signs. Layout:
+ * "evalanche-verifier/v1\0" || decision || "\0" || mode || "\0" || signerAddress || "\0" || chainId || "\0" || intentHash
+ */
+export function approvalSigningBytes(args: {
+  decision: ApprovalDecision;
+  mode: ApprovalMode;
+  signerAddress: string;
+  chainId: number;
+  intentHash: string;
+}): Uint8Array {
+  const address = getAddress(args.signerAddress).toLowerCase();
+  const hash = args.intentHash.startsWith('0x') ? args.intentHash.slice(2) : args.intentHash;
+  if (!/^[0-9a-fA-F]{64}$/.test(hash)) reject('intentHash must be 32 bytes');
+  return Buffer.concat([
+    Buffer.from('evalanche-verifier/v1\0', 'utf8'),
+    Buffer.from(args.decision, 'utf8'),
+    Buffer.from('\0', 'utf8'),
+    Buffer.from(args.mode, 'utf8'),
+    Buffer.from('\0', 'utf8'),
+    Buffer.from(address, 'utf8'),
+    Buffer.from('\0', 'utf8'),
+    Buffer.from(String(args.chainId), 'utf8'),
+    Buffer.from('\0', 'utf8'),
+    Buffer.from(hash, 'hex'),
+  ]);
 }
 
 export function keysEqual(leftHex: string, rightHex: string): boolean {
@@ -275,14 +511,31 @@ export function signVerifierApproval(args: {
   intent: SigningIntent;
   verifierPrivateKey: string;
   verifierPublicKey: string;
+  decision?: ApprovalDecision;
+  mode?: ApprovalMode;
+  signerAddress?: string;
 }): VerifierApproval {
-  const intentHash = computeIntentHash(args.intent);
+  const intent = assertIntentShape(args.intent);
+  const decision = args.decision ?? 'approve';
+  const mode = args.mode ?? 'live';
+  const signerAddress = getAddress(args.signerAddress ?? intent.wallet);
+  const intentHash = computeIntentHash(intent);
+  const message = approvalSigningBytes({
+    decision,
+    mode,
+    signerAddress,
+    chainId: intent.chainId,
+    intentHash,
+  });
   return {
     intentHash,
-    nonce: String(args.intent.nonce),
-    expiresAt: Number(args.intent.expiresAt),
+    nonce: intent.nonce,
+    expiresAt: intent.expiresAt,
     verifier: args.verifierPublicKey,
-    signature: signIntentHash(intentHash, args.verifierPrivateKey, args.verifierPublicKey),
+    signature: signBytes(message, args.verifierPrivateKey, args.verifierPublicKey),
+    decision,
+    mode,
+    signerAddress,
   };
 }
 

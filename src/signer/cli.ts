@@ -15,14 +15,18 @@ interface CliArgs {
   host?: string;
   port?: number;
   socket?: string;
+  initNonces: boolean;
+  allowInsecureFilePermissions: boolean;
 }
 
 function parseArgs(argv: string[]): CliArgs {
-  const args: CliArgs = { dryRun: false };
+  const args: CliArgs = { dryRun: false, initNonces: false, allowInsecureFilePermissions: false };
   for (let i = 0; i < argv.length; i += 1) {
     const token = argv[i];
     const next = argv[i + 1];
     if (token === '--dry-run') args.dryRun = true;
+    else if (token === '--init-nonces') args.initNonces = true;
+    else if (token === '--allow-insecure-file-permissions') args.allowInsecureFilePermissions = true;
     else if (token === '--config' && next) {
       args.config = next;
       i += 1;
@@ -36,7 +40,8 @@ function parseArgs(argv: string[]): CliArgs {
       args.socket = next;
       i += 1;
     } else if (token === '--help' || token === '-h') {
-      process.stdout.write(`evalanche-signer --config signer.json [--dry-run] [--host 127.0.0.1] [--port 7410] [--socket /path.sock]\n`);
+      process.stdout.write('evalanche-signer --config signer.json [--dry-run] [--init-nonces] [--host 127.0.0.1] [--port 7410] [--socket /path.sock]\n');
+      process.stdout.write('--allow-insecure-file-permissions is for tests only. Production files must be root-owned and not group/other writable.\n');
       process.exit(0);
     } else {
       throw new Error(`Unknown argument: ${token}`);
@@ -48,7 +53,11 @@ function parseArgs(argv: string[]): CliArgs {
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   if (!args.config) throw new Error('Missing --config <file>');
-  const raw = JSON.parse(await readFile(args.config, 'utf8')) as SignerServerOptions & { token?: string; privateKey?: string };
+  const raw = JSON.parse(await readFile(args.config, 'utf8')) as SignerServerOptions & {
+    token?: string;
+    privateKey?: string;
+    verifierPublicKeyPath?: string;
+  };
   if (raw.token || raw.privateKey) {
     throw new Error('Refusing to read token or privateKey from the config file. Use EVALANCHE_SIGNER_TOKEN and EVALANCHE_SIGNER_PRIVATE_KEY or a keystore.');
   }
@@ -61,6 +70,10 @@ async function main(): Promise<void> {
     host: args.host ?? raw.host,
     port: args.port ?? raw.port,
     socketPath: args.socket ?? raw.socketPath,
+    initNonces: args.initNonces,
+    allowInsecureFilePermissions: args.allowInsecureFilePermissions,
+    configPath: args.config,
+    verifierPublicKeyPath: raw.verifierPublicKeyPath,
   });
   process.stderr.write(`evalanche-signer listening on ${server.endpoint} for ${server.address}\n`);
 }

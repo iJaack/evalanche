@@ -81,5 +81,24 @@ describe('Evalanche MCP CLI configuration', () => {
       network: 'avalanche',
     });
     expect(cliState.configs[0]).not.toHaveProperty('privateKey');
+    expect(cliState.resolveAgentSecrets).not.toHaveBeenCalled();
+  });
+
+  it('skips resolveAgentSecrets in address-only mode so a local key cannot win', async () => {
+    cliState.resolveAgentSecrets.mockResolvedValue({ privateKey: '0xabc', source: 'env' });
+    vi.stubEnv('EVALANCHE_ADDRESS', '0x0000000000000000000000000000000000000001');
+    vi.stubEnv('AGENT_PRIVATE_KEY', '');
+    vi.stubEnv('AGENT_MNEMONIC', '');
+
+    await import('../../src/mcp/cli');
+
+    await vi.waitFor(() => expect(cliState.configs).toHaveLength(1));
+    expect(cliState.resolveAgentSecrets).not.toHaveBeenCalled();
+    expect(cliState.configs[0]).toMatchObject({
+      address: '0x0000000000000000000000000000000000000001',
+      network: 'avalanche',
+    });
+    expect(cliState.configs[0]).not.toHaveProperty('privateKey');
+    expect(cliState.configs[0]).not.toHaveProperty('mnemonic');
   });
 });
