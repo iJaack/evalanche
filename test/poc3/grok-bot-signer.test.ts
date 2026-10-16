@@ -141,6 +141,15 @@ function creds(box: Box): { uid?: number; gid?: number } {
   return box.drop ? { uid: box.drop.uid, gid: box.drop.gid } : {};
 }
 
+/** A setuid child is not dumpable, so root cannot open its environ. Read it as the signer uid. */
+function readEnviron(pid: number, box: Box): string {
+  const path = `/proc/${pid}/environ`;
+  if (!box.drop) return readFileSync(path).toString('utf8');
+  const result = spawnSync('cat', [path], { uid: box.drop.uid, gid: box.drop.gid });
+  if (result.status !== 0) throw new Error(result.stderr?.toString() || `could not read ${path}`);
+  return (result.stdout ?? Buffer.alloc(0)).toString('utf8');
+}
+
 function run(args: string[], box: Box) {
   const options: SpawnSyncOptions = { env: box.env, encoding: 'utf8', timeout: 20_000, ...creds(box) };
   const result = spawnSync(script, args, options);
@@ -305,7 +314,7 @@ describe.skipIf(!linux)('grok-bot signer start and stop', () => {
     expect(denied[0]?.stderr).toMatch(/already running/);
     const pid = Number(readFileSync(box.pidfile, 'utf8').trim());
     expect(signerPids(box.bin).filter((candidate) => pidState(candidate) !== 'Z')).toEqual([pid]);
-    const environ = readFileSync(`/proc/${pid}/environ`).toString('utf8');
+    const environ = readEnviron(pid, box);
     expect(environ).toContain('EVALANCHE_SIGNER_START_MARK=');
   }, 20_000);
 });
