@@ -11,6 +11,7 @@ const servers: Array<{ close(): Promise<void> }> = [];
 
 afterEach(async () => {
   delete process.env.EVALANCHE_SIGNER_PRIVATE_KEY;
+  delete process.env.EVALANCHE_SIGNER_TOKEN;
   while (servers.length) await servers.pop()?.close();
 });
 
@@ -19,6 +20,7 @@ describe('signer env key', () => {
     const root = await mkdtemp(join(tmpdir(), 'env-key-'));
     const verifier = generateEd25519KeyPair();
     process.env.EVALANCHE_SIGNER_PRIVATE_KEY = KEY;
+    process.env.EVALANCHE_SIGNER_TOKEN = 'env-token-value';
     const server = await startSignerServer({
       verifierPublicKey: verifier.publicKey,
       token: 't',
@@ -33,6 +35,7 @@ describe('signer env key', () => {
     });
     servers.push(server);
     expect(process.env.EVALANCHE_SIGNER_PRIVATE_KEY).toBeUndefined();
+    expect(process.env.EVALANCHE_SIGNER_TOKEN).toBeUndefined();
     expect(server.address).toBe('0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266');
   });
 

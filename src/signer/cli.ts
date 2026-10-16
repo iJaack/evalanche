@@ -4,13 +4,15 @@
  * The box launch key comes from EVALANCHE_SIGNER_PRIVATE_KEY. The process
  * removes that variable after reading it. An encrypted keystore remains
  * available for other installs. The key is not written to the config or logs.
- * The bearer token comes from EVALANCHE_SIGNER_TOKEN. Neither belongs in the
- * config file. The process binds to 127.0.0.1 or a unix socket.
+ * The bearer token comes from EVALANCHE_SIGNER_TOKEN. The process removes that
+ * variable after reading it. Neither secret belongs in the config file. The
+ * process binds to 127.0.0.1 or a unix socket. SIGTERM and SIGINT close the
+ * server and unlink the socket.
  */
 
 import { readFile } from 'node:fs/promises';
 import { assertSecureParents, readSecureFile } from './secure-path';
-import { startSignerServer, type SignerServerOptions } from './server';
+import { attachSignerShutdown, startSignerServer, takeSignerEnvToken, type SignerServerOptions } from './server';
 
 interface CliArgs {
   config?: string;
@@ -54,7 +56,9 @@ function parseArgs(argv: string[]): CliArgs {
 }
 
 async function main(): Promise<void> {
+  const token = takeSignerEnvToken();
   const args = parseArgs(process.argv.slice(2));
+  if (!token) throw new Error('EVALANCHE_SIGNER_TOKEN is required');
   if (!args.config) throw new Error('Missing --config <file>');
   let configText: string;
   if (args.allowInsecureFilePermissions) {
@@ -71,11 +75,10 @@ async function main(): Promise<void> {
   if (raw.token || raw.privateKey) {
     throw new Error('Refusing to read token or privateKey from the config file. Use EVALANCHE_SIGNER_TOKEN and EVALANCHE_SIGNER_PRIVATE_KEY or a keystore.');
   }
-  const token = process.env.EVALANCHE_SIGNER_TOKEN;
-  if (!token) throw new Error('EVALANCHE_SIGNER_TOKEN is required');
   const server = await startSignerServer({
     ...raw,
     token,
+    // OR so a root config with dryRun:true cannot be cleared by any flag.
     dryRun: args.dryRun || raw.dryRun,
     host: args.host ?? raw.host,
     port: args.port ?? raw.port,
@@ -85,6 +88,7 @@ async function main(): Promise<void> {
     configPath: args.config,
     verifierPublicKeyPath: raw.verifierPublicKeyPath,
   });
+  attachSignerShutdown(server);
   process.stderr.write(`evalanche-signer listening on ${server.endpoint} for ${server.address}\n`);
 }
 

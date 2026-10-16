@@ -621,7 +621,10 @@ describe('signer hardening', () => {
   it('serves a bare health check and leaves the unix socket mode 0660', async () => {
     const h = await boot();
     const health = await fetch(`http://127.0.0.1:${h.server.port}/health`);
-    expect(await health.json()).toEqual({ ok: true });
+    expect(await health.json()).toEqual({ ok: true, mode: 'live' });
+    const dry = await boot({ dryRun: true });
+    const dryHealth = await fetch(`http://127.0.0.1:${dry.server.port}/health`);
+    expect(await dryHealth.json()).toEqual({ ok: true, mode: 'dry-run' });
 
     const p = await paths();
     await chmod(p.root, 0o750);

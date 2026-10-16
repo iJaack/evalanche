@@ -216,6 +216,7 @@ export class EvalancheSignerServer {
   }
 
   static async create(options: SignerServerOptions): Promise<EvalancheSignerServer> {
+    takeSignerEnvToken();
     const resolved = await resolveVerifierKey(options);
     assertStartup(resolved);
     const keystoreJson = await assertFilePermissions(resolved);
@@ -897,7 +898,7 @@ export class EvalancheSignerServer {
       return;
     }
     if (req.url === '/health' && req.method === 'GET') {
-      sendJson(res, 200, { ok: true });
+      sendJson(res, 200, { ok: true, mode: this.options.dryRun ? 'dry-run' : 'live' });
       return;
     }
     if (req.url !== '/v1/sign' || req.method !== 'POST') {
@@ -1212,11 +1213,51 @@ function typedDataAllowed(entry: TypedDataAllow, typed: TypedDataPayload): boole
 /**
  * Copy EVALANCHE_SIGNER_PRIVATE_KEY and remove it from the process environment
  * before any child is spawned. The value is not logged. An empty value is unset.
+ * Deleting process.env does not wipe the process initial environ. See TM-008.
  */
 function takeSignerEnvKey(): string | undefined {
   const value = process.env.EVALANCHE_SIGNER_PRIVATE_KEY;
   if (value !== undefined) delete process.env.EVALANCHE_SIGNER_PRIVATE_KEY;
   return value && value.length > 0 ? value : undefined;
+}
+
+/**
+ * Copy EVALANCHE_SIGNER_TOKEN and remove it from process.env before any child
+ * is spawned. The value is not logged. An empty value is unset. Deleting
+ * process.env does not wipe the process initial environ. See TM-008.
+ */
+export function takeSignerEnvToken(): string | undefined {
+  const value = process.env.EVALANCHE_SIGNER_TOKEN;
+  if (value !== undefined) delete process.env.EVALANCHE_SIGNER_TOKEN;
+  return value && value.length > 0 ? value : undefined;
+}
+
+/**
+ * Close the HTTP server, which unlinks a unix socket, and release the nonce lock.
+ * Signal handlers call this and then exit. A second call is ignored.
+ */
+export function attachSignerShutdown(
+  server: { close(): Promise<void> },
+  exit: (code: number) => void = (code) => process.exit(code),
+): { shutdown: () => void; dispose: () => void } {
+  let shuttingDown = false;
+  const shutdown = () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    server.close().then(
+      () => exit(0),
+      () => exit(1),
+    );
+  };
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
+  return {
+    shutdown,
+    dispose() {
+      process.off('SIGTERM', shutdown);
+      process.off('SIGINT', shutdown);
+    },
+  };
 }
 
 function walletFromSecret(secret: string, label: string): Wallet {
