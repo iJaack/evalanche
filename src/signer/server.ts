@@ -1209,16 +1209,34 @@ function typedDataAllowed(entry: TypedDataAllow, typed: TypedDataPayload): boole
   return true;
 }
 
+/**
+ * Copy EVALANCHE_SIGNER_PRIVATE_KEY and remove it from the process environment
+ * before any child is spawned. The value is not logged. An empty value is unset.
+ */
+function takeSignerEnvKey(): string | undefined {
+  const value = process.env.EVALANCHE_SIGNER_PRIVATE_KEY;
+  if (value !== undefined) delete process.env.EVALANCHE_SIGNER_PRIVATE_KEY;
+  return value && value.length > 0 ? value : undefined;
+}
+
+function walletFromSecret(secret: string, label: string): Wallet {
+  try {
+    return new Wallet(secret);
+  } catch {
+    throw new EvalancheError(`${label} is not a valid signer key`, EvalancheErrorCode.INVALID_CONFIG);
+  }
+}
+
 async function loadSignerWallet(options: SignerServerOptions, keystoreJson?: string): Promise<Wallet | HDNodeWallet> {
-  const envKey = process.env.EVALANCHE_SIGNER_PRIVATE_KEY;
+  const envKey = takeSignerEnvKey();
   if (options.privateKey && options.keystorePath) {
     throw new EvalancheError('privateKey and keystorePath are mutually exclusive', EvalancheErrorCode.INVALID_CONFIG);
   }
-  if (options.privateKey) return new Wallet(options.privateKey);
+  if (options.privateKey) return walletFromSecret(options.privateKey, 'privateKey');
   if (envKey && options.keystorePath) {
     throw new EvalancheError('EVALANCHE_SIGNER_PRIVATE_KEY and keystorePath are mutually exclusive', EvalancheErrorCode.INVALID_CONFIG);
   }
-  if (envKey) return new Wallet(envKey);
+  if (envKey) return walletFromSecret(envKey, 'EVALANCHE_SIGNER_PRIVATE_KEY');
   if (options.keystorePath) {
     const envName = options.keystorePasswordEnv ?? 'EVALANCHE_SIGNER_KEYSTORE_PASSWORD';
     const password = process.env[envName];

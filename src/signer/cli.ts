@@ -1,7 +1,9 @@
 /**
  * evalanche-signer — holds the treasury key and signs only approved intents.
  *
- * The key comes from EVALANCHE_SIGNER_PRIVATE_KEY or an encrypted keystore.
+ * The box launch key comes from EVALANCHE_SIGNER_PRIVATE_KEY. The process
+ * removes that variable after reading it. An encrypted keystore remains
+ * available for other installs. The key is not written to the config or logs.
  * The bearer token comes from EVALANCHE_SIGNER_TOKEN. Neither belongs in the
  * config file. The process binds to 127.0.0.1 or a unix socket.
  */

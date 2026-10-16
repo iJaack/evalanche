@@ -100,6 +100,8 @@ const watcher = new Evalanche({ address: agent.address, network: 'avalanche' });
 
 `privateKey`, `mnemonic`, and `signer` are mutually exclusive. Build a version `"1"` intent with `canonicalIntentJson` and hash it with `computeIntentHash`. Put the exact transaction in `intent.tx` (`to`, `value`, `data`, `chainId`, `nonce`, `gasLimit`, `maxFeePerGas`, `maxPriorityFeePerGas`, `gasPrice`, `type`) and set `routeHash` to `computeApprovedTxHash`. Money and the approval nonce are decimal strings. The verifier signs `signVerifierApproval`, which covers `evalanche-verifier/v1`, the decision, `dry-run` or `live`, the signer address, the chain id, and the intent hash. Only `decision: "approve"` verifies. Swap and bridge intents must set `minAmountOut`. Attach the approval with `agent.setSigningContext({ intent, structuredIntent, approval })` before `send`, `signMessage`, or a venue call.
 
+The Grok Bot box install, Unix socket flow, and dry-run week are in `docs/deploy/grok-bot-box.md`. On that host the signer reads the wallet key only from `EVALANCHE_SIGNER_PRIVATE_KEY` (the verifier maps it from `MONY_WALLET_PRIVATE_KEY`) and then removes the variable from the environment.
+
 ```bash
 export EVALANCHE_SIGNER_TOKEN="$(openssl rand -hex 32)"
 export EVALANCHE_SIGNER_PRIVATE_KEY="0x..."
