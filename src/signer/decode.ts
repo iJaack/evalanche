@@ -391,9 +391,13 @@ function lifiSwapFunction(selector: string): string {
 function decodeSwap(to: string, data: string, selector: string, options: DecodeOptions): DecodedCall {
   void to;
   const decoded = LIFI.decodeFunctionData(lifiSwapFunction(selector), data);
+  const v3 = isLifiV3Selector(selector);
+  if (v3) {
+    const again = LIFI.encodeFunctionData(lifiSwapFunction(selector), decoded);
+    if (again.toLowerCase() !== data.toLowerCase()) fail('Li.Fi V3 calldata has trailing bytes');
+  }
   const receiver = getAddress(String(decoded[3]));
   const minOut = BigInt(decoded[4]);
-  const v3 = isLifiV3Selector(selector);
   if (v3 && minOut === 0n) fail('Li.Fi V3 minAmountOut must be greater than zero');
   // A single SwapData struct is array-like (one slot per field). Branch on the
   // selector; do not use Array.isArray to tell a struct from a leg array.

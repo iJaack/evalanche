@@ -124,8 +124,16 @@ describe('R9 Kyber ABI fuzz', () => {
     const l = leg(enc({ ...b, desc: { ...b.desc, srcReceivers: many, srcAmounts: many.map((_, i) => (i === 0 ? amt : 0n)) } }));
     console.log('F3 300 srcReceivers (all executor, sum ok):', res(() => dec(encodeSingle(l, wallet), [l])));
     const lf = leg(fixture.calldata);
-    console.log('F3 outer V3 + trailing junk:', res(() => dec(encodeSingle(lf, wallet) + 'deadbeef'.repeat(8), [lf])));
-    console.log('F3 outer V3 + 1 trailing byte:', res(() => dec(encodeSingle(lf, wallet) + 'ff', [lf])));
+    const junk = res(() => dec(encodeSingle(lf, wallet) + 'deadbeef'.repeat(8), [lf]));
+    const one = res(() => dec(encodeSingle(lf, wallet) + 'ff', [lf]));
+    console.log('F3 outer V3 + trailing junk:', junk);
+    console.log('F3 outer V3 + 1 trailing byte:', one);
+    expect(junk.startsWith('DENIED')).toBe(true);
+    expect(one.startsWith('DENIED')).toBe(true);
+    const multi = encodeMultiple([lf, lf], wallet);
+    const multiJunk = res(() => dec(multi + 'ff', [lf, lf]));
+    console.log('F3 outer multi V3 + 1 trailing byte:', multiJunk);
+    expect(multiJunk.startsWith('DENIED')).toBe(true);
     const coder = AbiCoder.defaultAbiCoder(); void coder;
     // length word huge for targetData
     const ws = fixture.calldata.slice(10);

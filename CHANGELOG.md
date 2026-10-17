@@ -24,6 +24,7 @@
 - Claim signer paths through a no-follow file descriptor. `provision` uses fchown and fchmod on that descriptor.
 - Reuse the existing evalanche-signer group gid instead of hardcoding gid 960. The signer user stays uid 960.
 - Apply Avalanche slippage classes to USDC and sAVAX. USDC is 50 bps. WAVAX, BTC.b, WETH.e, and sAVAX are 200 bps instead of the 300 bps default.
+- Reject trailing bytes on outer Li.Fi V3 calldata. The decoded `0x4666fc80` and `0x5fd9ae2e` payloads must re-encode to the same length.
 - Match Kyber srcReceivers to decoded pools. Appended and unaligned addresses, and the zero address, are denied.
 - Deny Kyber router selectors other than swap. Executor `callTarget`, `srcReceivers`, and fee amounts are checked. Trailing Kyber bytes are denied.
 - Require quotedAmountOut on Li.Fi V3 swaps. A missing or one-unit quote is denied, and the quote must sit within the bought-token cap.
