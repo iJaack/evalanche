@@ -38,8 +38,9 @@ export interface ApprovedTransaction {
 /**
  * Fields the verifier commits to. `routeHash` commits to the approved
  * transaction object, or to the UTF-8 message / typed-data payload.
- * `minAmountOut` is the slippage bound. Money fields and `nonce` are decimal
- * strings. `maxSlippageBps` is an integer.
+ * `minAmountOut` is the slippage bound. `quotedAmountOut`, when set, is the
+ * quoted bought amount a Li.Fi V3 minOut must cover after slippage. Money
+ * fields and `nonce` are decimal strings. `maxSlippageBps` is an integer.
  */
 export interface SigningIntent {
   version: string;
@@ -55,6 +56,8 @@ export interface SigningIntent {
   tokenOut?: TokenRef;
   amountIn?: string;
   minAmountOut?: string;
+  /** Quoted bought amount. A Li.Fi V3 minOut must cover this after slippage. */
+  quotedAmountOut?: string;
   maxSlippageBps?: number;
   tier?: string;
   sleeve?: string;
@@ -176,7 +179,7 @@ export { canonicalJson } from './jcs';
 
 const INTENT_FIELDS = [
   'version', 'intentId', 'nonce', 'createdAt', 'expiresAt', 'wallet', 'chainId', 'venue', 'action',
-  'tokenIn', 'tokenOut', 'amountIn', 'minAmountOut', 'maxSlippageBps', 'tier', 'sleeve',
+  'tokenIn', 'tokenOut', 'amountIn', 'minAmountOut', 'quotedAmountOut', 'maxSlippageBps', 'tier', 'sleeve',
   'sizePctOfTreasury', 'postFrictionEvUsd', 'signalRefs', 'routeHash', 'tx',
 ] as const;
 
@@ -289,6 +292,7 @@ export function assertIntentShape(value: unknown): SigningIntent {
   if (record.tokenOut !== undefined) intent.tokenOut = tokenRef(record.tokenOut, 'tokenOut');
   if (record.amountIn !== undefined) intent.amountIn = decimal(record.amountIn, 'intent.amountIn');
   if (record.minAmountOut !== undefined) intent.minAmountOut = decimal(record.minAmountOut, 'intent.minAmountOut');
+  if (record.quotedAmountOut !== undefined) intent.quotedAmountOut = decimal(record.quotedAmountOut, 'intent.quotedAmountOut');
   if (record.maxSlippageBps !== undefined) {
     const bps = integer(record.maxSlippageBps, 'intent.maxSlippageBps');
     if (bps < 0) reject('intent.maxSlippageBps must be a non-negative integer');

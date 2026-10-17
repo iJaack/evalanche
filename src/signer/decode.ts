@@ -23,6 +23,14 @@ export const LIFI_DIAMOND = '0x1231DEB6f5749EF6cE6943a275A1D3E7486F4EaE';
  * It serves the ERC-20 V3 selectors. Native V3 selectors stay undecoded.
  */
 export const LIFI_GENERIC_SWAP_FACET_V3 = '0x31a9b1835864706Af10103b31Ea2b79bdb995F5F';
+/**
+ * KyberSwap MetaAggregationRouterV2. Production lists it as `dex` and `spender`
+ * with no selectors. `swap` (`0xe21fd0e9`) is decoded only as the inner
+ * calldata of a Li.Fi V3 leg, not as a transaction the signer will call directly.
+ */
+export const KYBER_META_AGGREGATION_ROUTER_V2 = '0x6131B5fae19EA4f9D964eAc0408E4408b66337b5';
+/** MetaAggregationRouterV2 `swap`. */
+export const KYBER_SWAP_SELECTOR = '0xe21fd0e9';
 
 /** Polymarket protocol contracts. Config cannot put these back on the allowlist. */
 export const POLYMARKET_DENY_CONTRACTS = [
@@ -61,6 +69,10 @@ const LIFI = new Interface([
   'function multicall(bytes[] data)',
 ]);
 
+const KYBER = new Interface([
+  'function swap((address callTarget, address approveTarget, bytes targetData, (address srcToken, address dstToken, address[] srcReceivers, uint256[] srcAmounts, address[] feeReceivers, uint256[] feeAmounts, address dstReceiver, uint256 amount, uint256 minReturnAmount, uint256 flags, bytes permit) desc, bytes clientData) execution) payable returns (uint256 returnAmount, uint256 gasUsed)',
+]);
+
 const PERMIT2 = new Interface([
   'function permit(address owner, tuple(tuple(address token, uint160 amount, uint48 expiration, uint48 nonce) details, address spender, uint256 sigDeadline) permitSingle, bytes signature)',
 ]);
@@ -84,6 +96,11 @@ export const SELECTOR = {
   multicall: '0xac9650d8',
   native: '0x',
 } as const;
+
+export function isLifiV3Selector(selector: string): boolean {
+  return selector === SELECTOR.swapTokensSingleV3ERC20ToERC20
+    || selector === SELECTOR.swapTokensMultipleV3ERC20ToERC20;
+}
 
 export type DecodedKind =
   | 'native-transfer'
@@ -244,6 +261,9 @@ function decodeOne(to: string, data: string, selector: string, options: DecodeOp
       case SELECTOR.approve: {
         const decoded = ERC20.decodeFunctionData('approve', data);
         const amount = BigInt(decoded[1]);
+        // Zero is a reset after a failed swap. Approve and the swap are separate
+        // transactions, so this path does not require a paired swap and does not
+        // reject a spender that also has the dex role. Roles are additive.
         if (amount === MaxUint256) fail('Unlimited ERC-20 approval is denied');
         const spender = getAddress(String(decoded[0]));
         if (!options.allowRole(spender, 'spender')) fail('approve spender is not allowlisted');
@@ -340,6 +360,7 @@ interface SwapLeg {
   sendingAsset: string;
   receivingAsset: string;
   fromAmount: bigint;
+  callData: string;
   requiresDeposit: boolean;
 }
 
@@ -361,6 +382,8 @@ function decodeSwap(to: string, data: string, selector: string, options: DecodeO
   const decoded = LIFI.decodeFunctionData(lifiSwapFunction(selector), data);
   const receiver = getAddress(String(decoded[3]));
   const minOut = BigInt(decoded[4]);
+  const v3 = isLifiV3Selector(selector);
+  if (v3 && minOut === 0n) fail('Li.Fi V3 minAmountOut must be greater than zero');
   // A single SwapData struct is array-like (one slot per field). Branch on the
   // selector; do not use Array.isArray to tell a struct from a leg array.
   const swaps = (selector === SELECTOR.swapTokensSingleV3ERC20ToERC20 ? [decoded[5]] : decoded[5]) as Array<{
@@ -369,18 +392,18 @@ function decodeSwap(to: string, data: string, selector: string, options: DecodeO
     sendingAssetId: string;
     receivingAssetId: string;
     fromAmount: bigint;
+    callData: string;
     requiresDeposit: boolean;
   }>;
   if (!swaps || swaps.length === 0) fail('Li.Fi swap has no swap legs');
-  if (selector !== SELECTOR.swapTokensGeneric) {
-    requireRole(options, receiver, 'recipient', 'Li.Fi receiver');
-  }
+  if (v3) requireRole(options, receiver, 'recipient', 'Li.Fi receiver');
   const legs: SwapLeg[] = swaps.map((swap) => ({
     callTo: getAddress(String(swap.callTo)),
     approveTo: getAddress(String(swap.approveTo)),
     sendingAsset: String(swap.sendingAssetId),
     receivingAsset: String(swap.receivingAssetId),
     fromAmount: BigInt(swap.fromAmount),
+    callData: swap.callData === undefined || swap.callData === null ? '0x' : String(swap.callData),
     requiresDeposit: Boolean(swap.requiresDeposit),
   }));
   if (!options.tokenIn) fail('Li.Fi swap requires tokenIn');
@@ -413,6 +436,7 @@ function decodeSwap(to: string, data: string, selector: string, options: DecodeO
       requireRole(options, canonicalAsset(asset), 'token', 'swap asset');
     }
   }
+  if (v3) assertKyberLegs(legs, options);
   const native = isNativeAsset(first.sendingAsset);
   if (native) {
     if (options.value !== first.fromAmount) fail('native swap value must equal fromAmount');
@@ -427,6 +451,48 @@ function decodeSwap(to: string, data: string, selector: string, options: DecodeO
     receiver,
     asset: canonicalAsset(first.sendingAsset),
   };
+}
+
+/**
+ * A V3 leg whose calldata is Kyber `swap` must name its own tokens, and the
+ * proceeds must land on the diamond (every hop Li.Fi still has to finish) or,
+ * on the last hop only, on an allowlisted recipient. Other inner selectors
+ * stay on the leg allowlist checks. A Kyber selector that does not decode is denied.
+ */
+function assertKyberLegs(legs: SwapLeg[], options: DecodeOptions): void {
+  const diamond = getAddress(LIFI_DIAMOND);
+  for (let i = 0; i < legs.length; i += 1) {
+    const leg = legs[i];
+    if (selectorOf(leg.callData) !== KYBER_SWAP_SELECTOR) continue;
+    let decoded: ReturnType<Interface['decodeFunctionData']>;
+    try {
+      decoded = KYBER.decodeFunctionData('swap', leg.callData);
+    } catch (error) {
+      if (error instanceof EvalancheError) throw error;
+      fail('Kyber swap calldata could not be decoded');
+    }
+    const desc = decoded[0].desc as { srcToken: string; dstToken: string; dstReceiver: string };
+    if (!sameAsset(String(desc.srcToken), leg.sendingAsset)) {
+      fail('Kyber srcToken does not match the swap leg sending asset');
+    }
+    if (!sameAsset(String(desc.dstToken), leg.receivingAsset)) {
+      fail('Kyber dstToken does not match the swap leg receiving asset');
+    }
+    let dstReceiver: string;
+    try {
+      dstReceiver = getAddress(String(desc.dstReceiver));
+    } catch {
+      fail('Kyber dstReceiver is not an address');
+    }
+    const last = i === legs.length - 1;
+    if (!last) {
+      if (dstReceiver !== diamond) fail('Kyber dstReceiver on an intermediate leg must be the Li.Fi diamond');
+      continue;
+    }
+    if (dstReceiver !== diamond && !options.allowRole(dstReceiver, 'recipient')) {
+      fail('Kyber dstReceiver is not the Li.Fi diamond or an allowlisted recipient');
+    }
+  }
 }
 
 function fail(message: string): never {

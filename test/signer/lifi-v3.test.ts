@@ -368,3 +368,69 @@ describe('Avalanche Li.Fi V3', () => {
     })).rejects.toThrow(/unknown selector/i);
   });
 });
+
+describe('Li.Fi V3 slippage floor', () => {
+  const wallet = new Wallet(KEY).address;
+  const bought = () => single.legs[single.legs.length - 1].receivingAssetId;
+  const sold = () => single.legs[0].sendingAssetId;
+
+  async function signOut(minOut: bigint, extra: Record<string, unknown> = {}, overrides: Partial<SigningIntent> = {}) {
+    const data = encode(single, { receiver: wallet, minOut });
+    const allow = allowFor(single, [{ address: wallet, selectors: [], roles: ['recipient'] }]);
+    return sign(single, data, allow, extra, { minAmountOut: minOut.toString(), ...overrides });
+  }
+
+  it('rejects a V3 minAmountOut of zero', async () => {
+    await expect(signOut(0n)).rejects.toThrow(/greater than zero/i);
+  });
+
+  it('rejects maxSlippageBps above the class cap when the quote is absent', async () => {
+    const data = encode(single, { receiver: wallet });
+    const allow = allowFor(single, [{ address: wallet, selectors: [], roles: ['recipient'] }]);
+    await expect(sign(single, data, allow, {}, { maxSlippageBps: 301 })).rejects.toThrow(/slippage cap/i);
+    const signed = await sign(single, data, allow, {}, { maxSlippageBps: 300 });
+    expect(signed.signedTransaction).toMatch(/^0x/);
+  });
+
+  it('uses the bought token for the class cap', async () => {
+    const data = encode(single, { receiver: wallet });
+    const allow = allowFor(single, [{ address: wallet, selectors: [], roles: ['recipient'] }]);
+    const caps = { slippageCaps: { stables: [sold()], top: [bought()] } };
+    await expect(sign(single, data, allow, caps, { maxSlippageBps: 201 })).rejects.toThrow(/200 bps/);
+    const signed = await sign(single, data, allow, caps, { maxSlippageBps: 200 });
+    expect(signed.signedTransaction).toMatch(/^0x/);
+  });
+
+  it('caps a configured stable at 50 bps and a configured top asset at 200 bps', async () => {
+    const data = encode(single, { receiver: wallet });
+    const allow = allowFor(single, [{ address: wallet, selectors: [], roles: ['recipient'] }]);
+    await expect(sign(single, data, allow, { slippageCaps: { stables: [bought()] } }, { maxSlippageBps: 51 })).rejects.toThrow(/50 bps/);
+    const stable = await sign(single, data, allow, { slippageCaps: { stables: [bought()] } }, { maxSlippageBps: 50 });
+    expect(stable.signedTransaction).toMatch(/^0x/);
+    await expect(sign(single, data, allow, { slippageCaps: { top: [bought()] } }, { maxSlippageBps: 201 })).rejects.toThrow(/200 bps/);
+  });
+
+  it('rejects minOut below quotedOut times one minus the slippage', async () => {
+    const caps = { slippageCaps: { stables: [bought()] } };
+    const quote = { quotedAmountOut: '1000000', maxSlippageBps: 50 };
+    await expect(signOut(994_999n, caps, quote)).rejects.toThrow(/slippage floor/i);
+    const signed = await signOut(995_000n, caps, quote);
+    expect(signed.signedTransaction).toMatch(/^0x/);
+  });
+
+  it('applies the class cap when the quote is set and maxSlippageBps is not', async () => {
+    const stable = { slippageCaps: { stables: [bought()] } };
+    await expect(signOut(994_999n, stable, { quotedAmountOut: '1000000' })).rejects.toThrow(/slippage floor/i);
+    const otherFloor = await signOut(970_000n, {}, { quotedAmountOut: '1000000' });
+    expect(otherFloor.signedTransaction).toMatch(/^0x/);
+    await expect(signOut(969_999n, {}, { quotedAmountOut: '1000000' })).rejects.toThrow(/slippage floor/i);
+  });
+
+  it('rejects a zero quote and a slippage cap outside 0 to 10000', async () => {
+    await expect(signOut(single.minOut, {}, { quotedAmountOut: '0' })).rejects.toThrow(/quotedAmountOut/i);
+    const allow = allowFor(single, [{ address: wallet, selectors: [], roles: ['recipient'] }]);
+    await expect(boot(allow, { slippageCaps: { stableBps: -1 } })).rejects.toThrow(/slippageCaps.stableBps/);
+    await expect(boot(allow, { slippageCaps: { otherBps: 10_001 } })).rejects.toThrow(/slippageCaps.otherBps/);
+    await expect(boot(allow, { slippageCaps: { stables: ['not-an-address'] } })).rejects.toThrow(/slippageCaps.stables/);
+  });
+});

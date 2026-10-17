@@ -302,6 +302,43 @@ const agent = new Evalanche({
 
 Same-chain and bridge quotes then send `allowExchanges=kyberswap`. Advanced routes send `options.exchanges.allow` of `['kyberswap']`. A route through another DEX is not returned, so it never reaches the signer. The MCP tools `get_bridge_quote`, `get_bridge_routes`, `bridge_tokens`, `lifi_swap_quote`, `lifi_swap`, and `lifi_compose` accept `allowExchanges`. When that argument is omitted, the config list is used.
 
+## Li.Fi V3 slippage
+
+A V3 swap with `minAmountOut` of zero is rejected. The intent may carry `quotedAmountOut`, the decimal bought amount from the Li.Fi quote, and `maxSlippageBps`. The signer requires `minOut >= quotedAmountOut * (10000 - bps) / 10000`, using integer division. `bps` is `maxSlippageBps` when the intent sets it, and the bought-token class cap otherwise. `maxSlippageBps` above that class cap is rejected. The class is `tokenOut`:
+
+- stable, default 50 bps
+- top, default 200 bps
+- every other token, default 300 bps
+
+Address lists default to empty, so an unlisted bought token uses the other cap until the signer config names it. The signer does not ship a hardcoded top-10. An address listed as both stable and top is a stable. `stableBps`, `topBps`, and `otherBps` are optional integers from 0 to 10000. On this box, name the Avalanche stables and the assets treated as top:
+
+```json
+"slippageCaps": {
+  "stables": [
+    "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E",
+    "0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7",
+    "0xc7198437980c041c805A1EDcbA50c1Ce5db95118"
+  ],
+  "top": [
+    "0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7",
+    "0x152b9d0FdC40C096757F570A51E494bd4b943E50",
+    "0x49D5c2BdFfac6CE2BFdB6640F4F80f226bc10bAB"
+  ]
+}
+```
+
+Those stables are native USDC, USDT, and USDC.e. The top list is WAVAX, BTC.b, and WETH.e. Change the lists in the signer config when the book changes. The proposer should set `quotedAmountOut` from the quote. Without that field the signer still rejects a zero `minAmountOut`, and it still rejects `maxSlippageBps` above the class cap, but it cannot check the quote floor.
+
+## Kyber receivers inside a V3 leg
+
+The production allowlist marks KyberSwap MetaAggregationRouterV2 `0x6131B5fae19EA4f9D964eAc0408E4408b66337b5` as `dex` and `spender`, with no selectors. A direct call to the router is denied. When a Li.Fi V3 leg's `callData` starts with Kyber `swap` (`0xe21fd0e9`), the signer decodes that payload. The source token must be the leg's sending asset and the destination token must be the leg's receiving asset. On every leg except the last, `dstReceiver` must be the Li.Fi diamond `0x1231DEB6f5749EF6cE6943a275A1D3E7486F4EaE`. On the last leg it must be that diamond or an address with the `recipient` role. Real Li.Fi routes set `dstReceiver` to the diamond, including the last hop. A `0xe21fd0e9` payload that does not decode is denied. Other inner selectors are not Kyber and stay on the existing leg checks.
+
+## Allowance reset
+
+`approve(spender, 0)` for an allowlisted token and an allowlisted spender is accepted. A failed swap can clear the allowance it left behind. Unlimited approvals stay denied.
+
+The signer does not require the approve and the swap in one request, and it does not deny an approve whose spender also has the `dex` role. Approve and swap are separate transactions. Requiring both in one signing request would reject the normal two-step flow and would also reject a later reset. The wallet approves the Li.Fi diamond, which is the top-level spender. Kyber's `spender` role is what lets a decoded leg name the router as `approveTo`. Roles are additive, so an address can be `dex` and `spender` together. Denying that combination would reject the Kyber router and would block an allowance reset to the same spender.
+
 ### Dry-run week
 
 `grok-bot-signer.sh start` is dry-run. The verifier signs `mode: 'dry-run'`. The signer answers `{"requestId":"...","dryRun":true,"decision":"allow"}` and does not return a signed transaction. The SDK client treats a missing signature as a rejection, so the dry-run check is a direct socket call:

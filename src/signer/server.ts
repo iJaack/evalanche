@@ -50,6 +50,7 @@ import {
   canonicalAsset,
   decodeCalldata,
   isHardDeniedContract,
+  isLifiV3Selector,
   isSavaxInstantUnstake,
   selectorOf,
   type AllowRole,
@@ -101,6 +102,25 @@ export interface TypedDataAllow {
 
 export type ExplicitAllow = 'permit' | 'permit2' | 'increaseAllowance';
 
+/** Default Li.Fi V3 slippage caps, in basis points, by bought-token class. */
+export const DEFAULT_STABLE_SLIPPAGE_BPS = 50;
+export const DEFAULT_TOP_SLIPPAGE_BPS = 200;
+export const DEFAULT_OTHER_SLIPPAGE_BPS = 300;
+
+/**
+ * Bought-token classes for a Li.Fi V3 quote floor. Address lists default to
+ * empty, so an unlisted token uses `otherBps` until config names it.
+ */
+export interface SlippageCaps {
+  /** Bought tokens capped at `stableBps` (default 50). */
+  stables?: string[];
+  /** Bought tokens capped at `topBps` (default 200). An address in both lists is a stable. */
+  top?: string[];
+  stableBps?: number;
+  topBps?: number;
+  otherBps?: number;
+}
+
 export interface SignerServerOptions {
   privateKey?: string;
   keystorePath?: string;
@@ -140,6 +160,11 @@ export interface SignerServerOptions {
   priceTtlMs?: number;
   /** Tightens the hard gas-cost cap. Values above the hard cap are refused. */
   maxGasCostWei?: string;
+  /**
+   * Li.Fi V3 slippage caps for the bought token. Defaults are 50 bps for
+   * `stables`, 200 for `top`, and 300 for every other token.
+   */
+  slippageCaps?: SlippageCaps;
   messageAllowlist?: string[];
   typedDataAllow?: TypedDataAllow[];
   explicitAllows?: ExplicitAllow[];
@@ -705,6 +730,7 @@ export class EvalancheSignerServer {
         if (call.minOut < BigInt(intent.minAmountOut)) {
           deny('decoded minOut is below intent minAmountOut', EvalancheErrorCode.SIGNER_REJECTED);
         }
+        this.enforceV3Slippage(call, intent);
       }
     }
     if (actionRequiresMinAmountOut(intent.action) && !decoded.some((call) => call.minOut !== undefined)) {
@@ -718,6 +744,22 @@ export class EvalancheSignerServer {
       }
     }
     return decoded;
+  }
+
+  private enforceV3Slippage(call: DecodedCall, intent: SigningIntent): void {
+    if (call.minOut === undefined || !isLifiV3Selector(call.selector)) return;
+    const classBps = tokenClassBps(this.options.slippageCaps, intent.tokenOut?.address);
+    if (intent.maxSlippageBps !== undefined && intent.maxSlippageBps > classBps) {
+      deny(`maxSlippageBps exceeds the ${classBps} bps token class slippage cap`, EvalancheErrorCode.SIGNER_REJECTED);
+    }
+    if (intent.quotedAmountOut === undefined) return;
+    const quoted = BigInt(intent.quotedAmountOut);
+    if (quoted === 0n) deny('quotedAmountOut must be greater than zero', EvalancheErrorCode.SIGNER_REJECTED);
+    const bps = intent.maxSlippageBps ?? classBps;
+    const floor = quoted * (10_000n - BigInt(bps)) / 10_000n;
+    if (call.minOut < floor) {
+      deny('decoded minOut is below the quoted slippage floor', EvalancheErrorCode.SIGNER_REJECTED);
+    }
   }
 
   private assertAmount(amount: bigint | undefined, reported: string | undefined, label: string): void {
@@ -1093,6 +1135,67 @@ function assertStartup(options: SignerServerOptions): void {
       EvalancheErrorCode.INVALID_CONFIG,
     );
   }
+  assertSlippageCaps(options.slippageCaps);
+}
+
+function assertSlippageCaps(caps: SlippageCaps | undefined): void {
+  if (!caps) return;
+  const fields: Array<[string, number | undefined]> = [
+    ['stableBps', caps.stableBps],
+    ['topBps', caps.topBps],
+    ['otherBps', caps.otherBps],
+  ];
+  for (const [name, value] of fields) {
+    if (value === undefined) continue;
+    if (!Number.isSafeInteger(value) || value < 0 || value > 10_000) {
+      throw new EvalancheError(
+        `slippageCaps.${name} must be an integer from 0 to 10000`,
+        EvalancheErrorCode.INVALID_CONFIG,
+      );
+    }
+  }
+  for (const name of ['stables', 'top'] as const) {
+    const list = caps[name];
+    if (list === undefined) continue;
+    if (!Array.isArray(list)) {
+      throw new EvalancheError(`slippageCaps.${name} must be an address list`, EvalancheErrorCode.INVALID_CONFIG);
+    }
+    for (const address of list) {
+      try {
+        getAddress(address);
+      } catch {
+        throw new EvalancheError(`slippageCaps.${name} has an invalid address`, EvalancheErrorCode.INVALID_CONFIG);
+      }
+    }
+  }
+}
+
+function addressInList(list: string[] | undefined, address: string): boolean {
+  if (!list) return false;
+  return list.some((entry) => {
+    try {
+      return getAddress(entry) === address;
+    } catch {
+      return false;
+    }
+  });
+}
+
+/** Bought-token class cap. Stables win over top. Unlisted tokens use the other cap. */
+function tokenClassBps(caps: SlippageCaps | undefined, tokenOut: string | undefined): number {
+  const stable = caps?.stableBps ?? DEFAULT_STABLE_SLIPPAGE_BPS;
+  const top = caps?.topBps ?? DEFAULT_TOP_SLIPPAGE_BPS;
+  const other = caps?.otherBps ?? DEFAULT_OTHER_SLIPPAGE_BPS;
+  if (!tokenOut) return other;
+  let address: string;
+  try {
+    address = getAddress(tokenOut);
+  } catch {
+    return other;
+  }
+  if (addressInList(caps?.stables, address)) return stable;
+  if (addressInList(caps?.top, address)) return top;
+  return other;
 }
 
 async function assertFilePermissions(options: SignerServerOptions): Promise<string | undefined> {

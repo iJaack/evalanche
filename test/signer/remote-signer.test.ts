@@ -372,6 +372,20 @@ describe('remote signer', () => {
     const ok = await signTx(denied, matched, { ...txRequest(denied.wallet.address, exact), to: TOKEN, requestId: 'exact-approve' });
     expect(ok.signedTransaction).toMatch(/^0x/);
 
+    const reset = await boot();
+    const cleared = iface.encodeFunctionData('approve', [SPEND, 0n]);
+    const resetIntent = intent(reset.wallet.address, cleared, {
+      action: 'approve',
+      amountIn: '0',
+      minAmountOut: undefined,
+    }, { to: TOKEN });
+    const resetSigned = await signTx(reset, resetIntent, {
+      ...txRequest(reset.wallet.address, cleared),
+      to: TOKEN,
+      requestId: 'reset-approve',
+    });
+    expect(resetSigned.signedTransaction).toMatch(/^0x/);
+
     const transfer = new Interface(['function transfer(address,uint256)']).encodeFunctionData('transfer', [SPEND, 10_000_000n]);
     const capped = await boot({
       tokenCaps: { [getAddress(TOKEN).toLowerCase()]: '10' },
