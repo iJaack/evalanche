@@ -380,6 +380,30 @@ const agent = new Evalanche({
 
 Same-chain and bridge quotes then send `allowExchanges=kyberswap`. Advanced routes send `options.exchanges.allow` of `['kyberswap']`. A route through another DEX is not returned, so it never reaches the signer. The MCP tools `get_bridge_quote`, `get_bridge_routes`, `bridge_tokens`, `lifi_swap_quote`, `lifi_swap`, and `lifi_compose` accept `allowExchanges`. When that argument is omitted, the config list is used.
 
+A live Li.Fi quote can still insert a "LIFI Fixed Fee" step (`callTo` `0xCE40…8cbd`, selector `0x332d746b`) ahead of Kyber even when `fee` is 0. The signer denies that step. Do not add the fee contract to the allowlist. The box also hit a 54-minute Li.Fi rate limit on that API. Same-chain swaps on this box use the Kyber route builder below instead of a Li.Fi quote.
+
+## Kyber route builder
+
+`buildKyberLifiSwap` fetches the KyberSwap aggregator (`https://aggregator-api.kyberswap.com/avalanche/api/v1/routes`, then `POST .../route/build`) and wraps the returned `swap` calldata as one GenericSwapFacetV3 call. The outer selector is `0x4666fc80` (`swapTokensSingleV3ERC20ToERC20`). The transaction `to` is the Li.Fi diamond `0x1231DEB6f5749EF6cE6943a275A1D3E7486F4EaE`.
+
+The build request sets both `sender` and `recipient` to that diamond. The diamond is the router caller, and it is the address whose token balance the V3 facet measures before it forwards the output. The `treasury` argument is the V3 `receiver`. It must be the signer wallet, with the `recipient` role. `quotedAmountOut` is Kyber's `amountOut`. `minAmountOut` is `quotedAmountOut * (10000 - classCap) / 10000`, using the bought-token class cap (50 bps for a stable, 200 for a top asset, 300 otherwise).
+
+Native-in uses the same `0x4666fc80` selector and sets `value` to `fromAmount`, which the signer already allows. Native V3 selectors stay unused. A Kyber `recipient` other than the diamond is refused, and a positive Kyber fee is refused.
+
+```js
+import { buildKyberLifiSwap } from 'evalanche';
+
+const swap = await buildKyberLifiSwap({
+  chainId: 43114,
+  tokenIn: '0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7',
+  tokenOut: '0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E',
+  amountIn: 100_000_000n,
+  treasury: wallet,
+});
+// swap.to is the diamond, swap.data is 0x4666fc80, swap.value is 0 for ERC-20 in.
+// Put swap.quotedAmountOut and swap.minAmountOut on the signing intent.
+```
+
 ## Li.Fi V3 slippage
 
 A V3 swap with `minAmountOut` of zero is rejected. The intent may carry `quotedAmountOut`, the decimal bought amount from the Li.Fi quote, and `maxSlippageBps`. The signer requires `minOut >= quotedAmountOut * (10000 - bps) / 10000`, using integer division. `bps` is `maxSlippageBps` when the intent sets it, and the bought-token class cap otherwise. `maxSlippageBps` above that class cap is rejected. The class is `tokenOut`:
@@ -412,7 +436,7 @@ Those stables are native USDC, USDT, and USDC.e. The top list is WAVAX, BTC.b, W
 
 The production allowlist marks KyberSwap MetaAggregationRouterV2 `0x6131B5fae19EA4f9D964eAc0408E4408b66337b5` as `dex` and `spender`, with no selectors. A direct call to the router is denied. A Li.Fi V3 leg whose `callTo` is that router must use `swap` (`0xe21fd0e9`). `swapSimpleMode`, `swapGeneric`, empty calldata, and any other selector are denied. The decoded payload must re-encode to the same bytes, so trailing junk is denied.
 
-`callTarget` must be in `kyberExecutors`. The default is the Avalanche AggregationExecutorProxy `0x8F10B468b06c6FD214B65F87778827F7D113f996`. An empty list allows none. `approveTarget` must be the zero address, the router, or that same set. `srcReceivers` must be an allowed executor, or an address that appears in the executor `targetData` (the pool a real Kyber quote names). Their amounts must sum to the swap amount. `feeReceivers` must be empty or every fee amount must be zero. A positive fee is denied.
+`callTarget` must be in `kyberExecutors`. The default is the Avalanche AggregationExecutorProxy `0x8F10B468b06c6FD214B65F87778827F7D113f996`. An empty list allows none. `approveTarget` must be the zero address, the router, or that same set. `srcReceivers` must be an allowed executor, or the pool word of a decoded executor swap. Bytes appended after that array are not pools. Their amounts must sum to the swap amount. `feeReceivers` must be empty or every fee amount must be zero. A positive fee is denied.
 
 The source token must be the leg's sending asset and the destination token must be the leg's receiving asset. On every leg except the last, `dstReceiver` must be the Li.Fi diamond `0x1231DEB6f5749EF6cE6943a275A1D3E7486F4EaE`. On the last leg it must be that diamond or an address with the `recipient` role. Real Li.Fi routes set `dstReceiver` to the diamond, including the last hop. The inner Kyber `minReturnAmount` is not a second floor. The V3 `minAmountOut` is the bound. A `0xe21fd0e9` payload that does not decode is denied. A leg whose `callTo` is not this router is not inner-decoded.
 

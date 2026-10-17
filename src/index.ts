@@ -56,7 +56,8 @@ export type { FeedbackSubmission } from './reputation/types';
 export { X402Client, X402Facilitator } from './x402';
 export type { PaymentRequirements, PayAndFetchOptions, PayAndFetchResult } from './x402';
 
-export { BridgeClient, LiFiClient, GasZipClient, NATIVE_TOKEN } from './bridge';
+export { BridgeClient, LiFiClient, GasZipClient, NATIVE_TOKEN, KYBER_AGGREGATOR_API, assembleLifiV3FromKyber, buildKyberLifiSwap } from './bridge';
+export type { KyberLifiSwap, KyberLifiSwapOptions, KyberLifiSwapRequest } from './bridge';
 export type {
   BridgeQuoteParams,
   BridgeQuote,

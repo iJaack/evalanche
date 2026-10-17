@@ -24,6 +24,7 @@
 - Claim signer paths through a no-follow file descriptor. `provision` uses fchown and fchmod on that descriptor.
 - Reuse the existing evalanche-signer uid instead of pinning uid 960. A missing user gets a free system uid, and the nonce file owner is checked afterwards.
 - Close the start lock before the sudo launcher. A second start refuses while a signer is running.
+- Build a single-step Kyber Li.Fi route from the KyberSwap aggregator. One GenericSwapFacetV3 call, no Li.Fi fixed-fee step, and minOut from the bought-token class cap.
 - Reuse the existing evalanche-signer group gid instead of hardcoding gid 960.
 - Apply Avalanche slippage classes to USDC and sAVAX. USDC is 50 bps. WAVAX, BTC.b, WETH.e, and sAVAX are 200 bps instead of the 300 bps default.
 - Reject trailing bytes on outer Li.Fi V3 calldata. The decoded `0x4666fc80` and `0x5fd9ae2e` payloads must re-encode to the same length.
