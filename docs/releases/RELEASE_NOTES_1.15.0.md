@@ -30,6 +30,7 @@ An agent can run Evalanche with no private key in its process. A separate signer
 - Set example slippage caps to the Avalanche classes. The example config and the config `provision` writes use 50 bps for USDC and USDt, 200 bps for WAVAX, BTC.b, WETH.e, and sAVAX, and 300 bps for every other token.
 - Refuse a node binary that is not root-owned. `start` also refuses a pinned node whose directory chain is group or world writable.
 - Refuse a signer uid outside the system range. `provision` will not reuse uid 0 or a uid below 100 or above 999.
+- Document the hyperliquid Node engine warning. `@nktkas/hyperliquid` 0.33.3 asks for Node 22.12. `npm ci` on Node 20 or an older Node 22 prints that warning. The shrinkwrap pin stays, and the warning does not change the install.
 - Reuse the existing evalanche-signer group gid. `provision` does not hardcode gid 960. A group that already exists, including gid 996, is kept, and the signer user's primary gid is checked against it.
 - Apply Avalanche slippage classes to USDC and sAVAX. USDC is 50 bps. WAVAX, BTC.b, WETH.e, and sAVAX are 200 bps. Those addresses apply without a config list. Every other token stays at 300 bps.
 - Reject trailing bytes on outer Li.Fi V3 calldata. `0x4666fc80` and `0x5fd9ae2e` must re-encode to the same bytes. Extra bytes after the ABI payload are denied.
