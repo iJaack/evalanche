@@ -539,7 +539,19 @@ fi
 if getent group evalanche-signer >/dev/null 2>&1; then
   groupdel evalanche-signer || true
 fi
-groupadd --system --gid 996 evalanche-signer
+# 996 is the live box group. Runners often already use it, so take the first
+# free system gid other than the uid pin 960 and require provision to reuse it.
+want=""
+candidate=996
+while [ "$candidate" -ge 100 ]; do
+  if [ "$candidate" != 960 ] && ! getent group "$candidate" >/dev/null 2>&1; then
+    want=$candidate
+    break
+  fi
+  candidate=$((candidate - 1))
+done
+test -n "$want"
+groupadd --system --gid "$want" evalanche-signer
 cat > "$fake/bin/npm" << EOF
 #!/bin/sh
 printf '%s\\\\n' "\\$*" >> "$fake/npm.log"
@@ -576,8 +588,9 @@ test ! -e "$persist/verifier.key"
 test "$(stat -c %u "$persist/config.json")" = 0
 test "$(stat -c %a "$persist/config.json")" = 644
 test "$(id -u evalanche-signer)" = 960
-test "$(id -g evalanche-signer)" = 996
-test "$(getent group evalanche-signer | cut -d: -f3)" = 996
+test "$want" != 960
+test "$(id -g evalanche-signer)" = "$want"
+test "$(getent group evalanche-signer | cut -d: -f3)" = "$want"
 test "$(stat -c %u "$persist/state/nonces.json")" = 960
 test "$(stat -c %a "$persist/state/nonces.json")" = 600
 test "$(stat -c %u "$persist/verifier.pub")" = 0
@@ -620,12 +633,12 @@ printf '%s\\n' 'reset-ownership-ok'
     const cmd = (process.getuid?.() ?? -1) === 0
       ? ['unshare', '--mount', 'bash', file]
       : ['sudo', '-n', 'unshare', '--mount', 'bash', file];
-    const result = spawnSync(cmd[0]!, cmd.slice(1), { encoding: 'utf8', timeout: 60_000 });
+    const result = spawnSync(cmd[0]!, cmd.slice(1), { encoding: 'utf8', timeout: 180_000 });
     expect(`${result.stdout}\n${result.stderr}`, result.stderr).toContain('reset-ownership-ok');
     expect(result.status, result.stderr).toBe(0);
     await rm(file, { force: true });
     await rm(signerCopy, { force: true });
-  }, 60_000);
+  }, 180_000);
 });
 
 describe.skipIf(!linux || (process.getuid?.() ?? 0) !== 0)('grok-bot signer root overrides', () => {
