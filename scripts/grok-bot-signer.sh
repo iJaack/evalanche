@@ -146,6 +146,40 @@ load_node() {
     echo "pinned node is not executable" >&2
     exit 1
   fi
+  assert_root_owned_chain "$NODE"
+}
+
+# The recorded node binary and every parent directory must be root-owned
+# and not group- or world-writable. A replaced directory on the path would
+# otherwise let a later start exec a different binary.
+assert_root_owned_chain() {
+  path=$1
+  while true; do
+    if [ -L "$path" ]; then
+      echo "pinned node path is a symlink: $path" >&2
+      exit 1
+    fi
+    if [ ! -e "$path" ]; then
+      echo "pinned node path is missing: $path" >&2
+      exit 1
+    fi
+    owner=$(stat -c %u "$path")
+    if [ "$owner" != 0 ]; then
+      echo "pinned node path is not root-owned: $path" >&2
+      exit 1
+    fi
+    mode=$(stat -c %A "$path")
+    group_write=$(printf '%s' "$mode" | cut -c6)
+    other_write=$(printf '%s' "$mode" | cut -c9)
+    if [ "$group_write" = w ] || [ "$other_write" = w ]; then
+      echo "pinned node path is group or world writable: $path" >&2
+      exit 1
+    fi
+    if [ "$path" = / ]; then
+      break
+    fi
+    path=$(dirname "$path")
+  done
 }
 
 # Set once in this shell. Callers must not read it through a nested subshell.

@@ -27,6 +27,7 @@
 - Build a single-step Kyber Li.Fi route from the KyberSwap aggregator. One GenericSwapFacetV3 call, no Li.Fi fixed-fee step, and minOut from the bought-token class cap.
 - Remount signer state mounts nosuid, nodev, and noexec. `start` fails closed when a state or log bind is missing one of those flags.
 - Set example slippage caps to the Avalanche classes. USDC and USDt are 50 bps, WAVAX, BTC.b, WETH.e, and sAVAX are 200 bps, and every other token is 300 bps.
+- Refuse a node binary that is not root-owned, and refuse one whose directory chain is group or world writable.
 - Reuse the existing evalanche-signer group gid instead of hardcoding gid 960.
 - Apply Avalanche slippage classes to USDC and sAVAX. USDC is 50 bps. WAVAX, BTC.b, WETH.e, and sAVAX are 200 bps instead of the 300 bps default.
 - Reject trailing bytes on outer Li.Fi V3 calldata. The decoded `0x4666fc80` and `0x5fd9ae2e` payloads must re-encode to the same length.

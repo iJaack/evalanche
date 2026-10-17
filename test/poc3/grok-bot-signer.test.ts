@@ -737,6 +737,19 @@ printf '%s\\n' "$flag_out" | grep -q 'missing nosuid'
 mount -o remount,bind,nosuid,nodev,noexec /var/lib/evalanche-signer/state
 state_opts=$(findmnt -no OPTIONS --target /var/lib/evalanche-signer/state)
 printf '%s\\n' "$state_opts" | grep -q noexec
+saved_node=$(tr -d '\\n' < /opt/evalanche-signer/node.path)
+bad_node=/opt/evalanche-signer/bad-node
+cp "$saved_node" "$bad_node"
+chown 1000:1000 "$bad_node"
+chmod 755 "$bad_node"
+printf '%s\\n' "$bad_node" > /opt/evalanche-signer/node.path
+set +e
+node_out=$(EVALANCHE_SIGNER_PRIVATE_KEY=0xabc "$SCRIPT" start 2>&1)
+node_rc=$?
+set -e
+test "$node_rc" -ne 0
+printf '%s\\n' "$node_out" | grep -q 'pinned node'
+printf '%s\\n' "$saved_node" > /opt/evalanche-signer/node.path
 test "$(stat -c %u /etc/evalanche-signer/verifier.pub)" = 0
 test "$(tr -d '\\n' < /etc/evalanche-signer/verifier.pub)" = ed25519-pub-keep
 grep -q '/var/lib/evalanche-signer/state/nonces.json' /etc/evalanche-signer/config.json
