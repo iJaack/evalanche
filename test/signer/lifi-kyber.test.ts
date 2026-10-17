@@ -223,6 +223,7 @@ async function sign(data: string, legs: Leg[], receiver: string) {
     action: 'swap',
     amountIn: legs[0].fromAmount.toString(),
     minAmountOut: fixture.minReturnAmount,
+    quotedAmountOut: fixture.minReturnAmount,
     routeHash: computeApprovedTxHash(tx),
     tx,
     tokenIn: { address: legs[0].sendingAssetId, symbol: 'IN', decimals: 6 },

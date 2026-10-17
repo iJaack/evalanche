@@ -409,7 +409,7 @@ Address lists default to empty, so an unlisted bought token uses the other cap u
 }
 ```
 
-Those stables are native USDC, USDT, and USDC.e. The top list is WAVAX, BTC.b, and WETH.e. Change the lists in the signer config when the book changes. The proposer should set `quotedAmountOut` from the quote. Without that field the signer still rejects a zero `minAmountOut`, and it still rejects `maxSlippageBps` above the class cap, but it cannot check the quote floor.
+Those stables are native USDC, USDT, and USDC.e. The top list is WAVAX, BTC.b, and WETH.e. Change the lists in the signer config when the book changes. A V3 intent must set `quotedAmountOut` from the Li.Fi quote. The signer denies the swap when that field is missing. It also denies a quote that integer-divides to a zero token-unit floor, so a quote of 1 with minOut 1 does not sign. When `tokenCaps` names the bought token, `quotedAmountOut` must be within that cap.
 
 ## Kyber receivers inside a V3 leg
 

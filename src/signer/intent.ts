@@ -38,8 +38,9 @@ export interface ApprovedTransaction {
 /**
  * Fields the verifier commits to. `routeHash` commits to the approved
  * transaction object, or to the UTF-8 message / typed-data payload.
- * `minAmountOut` is the slippage bound. `quotedAmountOut`, when set, is the
- * quoted bought amount a Li.Fi V3 minOut must cover after slippage. Money
+ * `minAmountOut` is the slippage bound. A Li.Fi V3 swap requires
+ * `quotedAmountOut`, the quoted bought amount. minOut must cover that quote
+ * after slippage, and the quote must leave a positive token-unit floor. Money
  * fields and `nonce` are decimal strings. `maxSlippageBps` is an integer.
  */
 export interface SigningIntent {
@@ -56,7 +57,7 @@ export interface SigningIntent {
   tokenOut?: TokenRef;
   amountIn?: string;
   minAmountOut?: string;
-  /** Quoted bought amount. A Li.Fi V3 minOut must cover this after slippage. */
+  /** Quoted bought amount. Required for a Li.Fi V3 swap. */
   quotedAmountOut?: string;
   maxSlippageBps?: number;
   tier?: string;

@@ -759,11 +759,30 @@ export class EvalancheSignerServer {
     if (intent.maxSlippageBps !== undefined && intent.maxSlippageBps > classBps) {
       deny(`maxSlippageBps exceeds the ${classBps} bps token class slippage cap`, EvalancheErrorCode.SIGNER_REJECTED);
     }
-    if (intent.quotedAmountOut === undefined) return;
+    if (intent.quotedAmountOut === undefined) {
+      deny('quotedAmountOut is required for a Li.Fi V3 swap', EvalancheErrorCode.SIGNER_REJECTED);
+    }
     const quoted = BigInt(intent.quotedAmountOut);
-    if (quoted === 0n) deny('quotedAmountOut must be greater than zero', EvalancheErrorCode.SIGNER_REJECTED);
+    if (quoted <= 0n) deny('quotedAmountOut must be greater than zero', EvalancheErrorCode.SIGNER_REJECTED);
+    const outAddress = intent.tokenOut?.address;
+    if (outAddress) {
+      let capped = outAddress;
+      try {
+        capped = getAddress(outAddress);
+      } catch {
+        capped = outAddress;
+      }
+      const caps = this.options.tokenCaps ?? {};
+      const cap = caps[capped] ?? caps[capped.toLowerCase()] ?? caps[outAddress] ?? caps[outAddress.toLowerCase()];
+      if (cap !== undefined && quoted > BigInt(cap)) {
+        deny('quotedAmountOut exceeds the configured token cap', EvalancheErrorCode.SIGNER_REJECTED);
+      }
+    }
     const bps = intent.maxSlippageBps ?? classBps;
     const floor = quoted * (10_000n - BigInt(bps)) / 10_000n;
+    if (floor <= 0n) {
+      deny('quotedAmountOut is too small to leave a positive token-unit slippage floor', EvalancheErrorCode.SIGNER_REJECTED);
+    }
     if (call.minOut < floor) {
       deny('decoded minOut is below the quoted slippage floor', EvalancheErrorCode.SIGNER_REJECTED);
     }

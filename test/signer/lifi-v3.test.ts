@@ -211,6 +211,7 @@ function intentFor(wallet: string, swap: ParsedSwap, data: string, overrides: Pa
     action: 'swap',
     amountIn: first.fromAmount.toString(),
     minAmountOut: swap.minOut.toString(),
+    quotedAmountOut: swap.minOut.toString(),
     routeHash: computeApprovedTxHash(tx),
     tx,
     tokenIn: { address: first.sendingAssetId, symbol: 'IN', decimals: 18 },
@@ -384,7 +385,18 @@ describe('Li.Fi V3 slippage floor', () => {
     await expect(signOut(0n)).rejects.toThrow(/greater than zero/i);
   });
 
-  it('rejects maxSlippageBps above the class cap when the quote is absent', async () => {
+  it('requires quotedAmountOut and rejects a one-unit quote', async () => {
+    const data = encode(single, { receiver: wallet });
+    const allow = allowFor(single, [{ address: wallet, selectors: [], roles: ['recipient'] }]);
+    await expect(sign(single, data, allow, {}, { quotedAmountOut: undefined })).rejects.toThrow(/quotedAmountOut is required/);
+    await expect(signOut(1n, {}, { minAmountOut: '1', quotedAmountOut: '1' })).rejects.toThrow(/positive token-unit/);
+    const bought = single.legs[single.legs.length - 1].receivingAssetId;
+    await expect(signOut(single.minOut, {
+      tokenCaps: { [bought.toLowerCase()]: '1' },
+    }, { quotedAmountOut: '2' })).rejects.toThrow(/token cap/);
+  });
+
+  it('rejects maxSlippageBps above the class cap', async () => {
     const data = encode(single, { receiver: wallet });
     const allow = allowFor(single, [{ address: wallet, selectors: [], roles: ['recipient'] }]);
     await expect(sign(single, data, allow, {}, { maxSlippageBps: 301 })).rejects.toThrow(/slippage cap/i);
