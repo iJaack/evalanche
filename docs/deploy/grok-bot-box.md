@@ -27,8 +27,7 @@ That path is the Grok Bot default. Every state path below is still configurable.
 | `/home/box/agent-data/evalanche-persist` | root | `0755` | yes | Durable root. Not the signer's login home. |
 | `.../config.json` | root | `0644` | yes | Allow map and paths. Source of truth. No key and no bearer token. |
 | `.../token` | root | `0640` | yes | Bearer token. Group `evalanche-signer`. Not regenerated on start or provision. |
-| `.../verifier.key` | root | `0600` | yes | Ed25519 approval private key. Generated once. `provision` never replaces it. |
-| `.../verifier.pub` | root | `0644` | yes | Ed25519 verifier public key. `provision` never replaces it. |
+| `.../verifier.pub` | root | `0644` | yes | Ed25519 verifier public key. `provision` never replaces it. The private key is not stored here. |
 | `.../evalanche-1.15.0.tgz` | root | `0644` | yes | Pinned tarball. `provision` with no arguments installs this file. |
 | `.../state` | `evalanche-signer` | `0700` | yes | Nonce file, audit JSONL, budget, lock, pid file. |
 | `.../state/nonces.json` | `evalanche-signer` | `0600` | yes | Nonce high-water mark. Not reset when the file already exists. |
@@ -36,7 +35,7 @@ That path is the Grok Bot default. Every state path below is still configurable.
 | `.../log` | `evalanche-signer` | `0700` | yes | Process log. Bind-mounted onto `/var/lib/evalanche-signer/log`. |
 | `.../state/start.lock` | root | `0600` | yes | flock held for the whole `start`. |
 | `.../bin/grok-bot-signer.sh` | root | `0755` | yes | Script copy used after `/opt` is wiped. |
-| `/etc/evalanche-signer` | root | `0755` | no | Replica of config, verifier key, verifier pubkey, and token. The signer reads this config and this verifier pubkey. |
+| `/etc/evalanche-signer` | root | `0755` | no | Replica of config, verifier pubkey, and token. The signer reads this config and this verifier pubkey. |
 | `/opt/evalanche-signer` | root | `0755` | no | Pinned `evalanche@1.15.0` install. Recreated by `provision`. |
 | `/var/lib/evalanche-signer` | root | `0755` | no | Parent of the bind mounts and the socket directory. |
 | `/var/lib/evalanche-signer/state` | `evalanche-signer` | `0700` | no | Bind mount of `.../state`. The signer opens the nonce file and the audit log here. |
@@ -44,7 +43,7 @@ That path is the Grok Bot default. Every state path below is still configurable.
 | `/var/lib/evalanche-signer/run` | `evalanche-signer` | `0750` | no | Unix socket directory. Group `evalanche-signer`. |
 | `/var/lib/evalanche-signer/run/signer.sock` | `evalanche-signer` | `0660` | no | HTTP over a Unix socket. Created by the process. |
 
-`...` is `/home/box/agent-data/evalanche-persist`. Edit the files there. `provision` copies config, `verifier.key`, `verifier.pub`, and `token` into `/etc/evalanche-signer` and does not write those copies back. It does not copy the nonce file or the audit log there. The signer reads `/etc/evalanche-signer/config.json`. That config points `nonceStorePath` and `auditLogPath` at the bind mount, and `verifierPublicKeyPath` at `/etc/evalanche-signer/verifier.pub`.
+`...` is `/home/box/agent-data/evalanche-persist`. Edit the files there. `provision` copies config, `verifier.pub`, and `token` into `/etc/evalanche-signer` and does not write those copies back. It refuses to continue if `verifier.key` is present. The approval private key is the bot secret `OPS_VERIFIER_ED25519`. It does not copy the nonce file or the audit log there. The signer reads `/etc/evalanche-signer/config.json`. That config points `nonceStorePath` and `auditLogPath` at the bind mount, and `verifierPublicKeyPath` at `/etc/evalanche-signer/verifier.pub`.
 
 The user is recreated at uid `960`, so the nonce files still belong to the signer after the account comes back. The group gid is the existing `evalanche-signer` gid. On this box that gid is `996`. `provision` creates the group only when the name is missing, then checks that the user's primary gid is that group. The signer's login directory is `/var/lib/evalanche-signer`, which does not persist. Durable state is not that home. The Linux lock helper is opened from `/opt/evalanche-signer`. `/opt`, `/var`, and `/var/lib` must be real directories, root-owned, and not group- or world-writable. `provision` recreates the signer directories under them after a reset.
 
@@ -63,7 +62,7 @@ mount --bind /home/box/agent-data/evalanche-persist/log /var/lib/evalanche-signe
 
 ### Ownership after a reset
 
-A reset restores the persistent tree as uid 1000, not root. Every `provision` chowns and chmods it again, then reads the owners back. Config, the verifier key, the verifier pubkey, the token, and the pinned tarball must come back as root, with modes `0644`, `0600`, `0644`, `0640`, and `0644`. The state and log directories must come back as `evalanche-signer` mode `0700`, and the nonce and audit files as that user mode `0600`. If `chown` or `chmod` fails, or the stat afterwards does not match, `provision` exits non-zero and does not report success. `start` checks the same owners and modes and does not chown. A box-owned key, nonce, or config is never used.
+A reset restores the persistent tree as uid 1000, not root. Every `provision` chowns and chmods it again, then reads the owners back. Config, the verifier pubkey, the token, and the pinned tarball must come back as root, with modes `0644`, `0644`, `0640`, and `0644`. The state and log directories must come back as `evalanche-signer` mode `0700`, and the nonce and audit files as that user mode `0600`. If `chown` or `chmod` fails, or the stat afterwards does not match, `provision` exits non-zero and does not report success. `start` checks the same owners and modes and does not chown. A box-owned nonce or config is never used. A `verifier.key` file is refused whether or not it is root-owned.
 
 ### Trust anchor
 
@@ -90,7 +89,7 @@ Root ignores every `EVALANCHE_BOX_*` variable and uses these defaults:
 | Nonce file | `$STATE/nonces.json` | `EVALANCHE_BOX_NONCE` |
 | Audit log | `$STATE/audit.jsonl` | `EVALANCHE_BOX_AUDIT` |
 | Bearer token | `$DURABLE/token` | `EVALANCHE_BOX_TOKEN_FILE` |
-| Verifier private key | `$DURABLE/verifier.key` | `EVALANCHE_BOX_VERIFIER_KEY` |
+| Verifier private key | not on disk | `OPS_VERIFIER_ED25519` |
 | Verifier public key | `$DURABLE/verifier.pub` | `EVALANCHE_BOX_VERIFIER_PUB` |
 | Pinned tarball | `$DURABLE/evalanche-1.15.0.tgz` | `EVALANCHE_BOX_TARBALL` |
 | `/etc` replica | `/etc/evalanche-signer` | `EVALANCHE_BOX_ETC` |
@@ -105,7 +104,7 @@ Root ignores every `EVALANCHE_BOX_*` variable and uses these defaults:
 | Signer user | `evalanche-signer` | `EVALANCHE_BOX_USER` |
 | Binary | `$PREFIX/node_modules/.bin/evalanche-signer` | `EVALANCHE_BOX_BIN` |
 
-`provision` requires the config source, token, both verifier files, the pinned tarball, and the persistent state and log directories to stay under the durable directory. The nonce and audit paths in the config must stay under that state directory or under its bind mount. As root the durable directory must be under `/home`.
+`provision` requires the config source, token, verifier pubkey, and pinned tarball, and the persistent state and log directories, to stay under the durable directory. A `verifier.key` file is refused. The nonce and audit paths in the config must stay under that state directory or under its bind mount. As root the durable directory must be under `/home`.
 
 Add `box` to the `evalanche-signer` group so both agents can connect to the socket and read the bearer token. `usermod -aG` does not change the groups of an agent that is already running. Restart both agents after the group change. The state and log directories stay mode `0700`, so the socket is the path the agents use.
 
@@ -141,7 +140,7 @@ The same command writes `/home/box/agent-data/evalanche-persist/config.json` onl
 
 `--ignore-scripts` skips package lifecycle scripts. npm still links the `evalanche-signer` bin.
 
-Generate the Ed25519 approval key once, into the persistent directory. `provision` does not create or replace it. If `verifier.key` is missing, the `/etc` replica is left without a key. The private key is root, mode `0600`. The public key is root, mode `0644`. The key is not an environment secret and it is not placed on a command line. Run this as root after the first `provision`, from the install directory:
+Generate the Ed25519 approval key once. Keep the private key in the bot secret `OPS_VERIFIER_ED25519`. Write only the public key into the persistent directory. `provision` does not create either file, and it exits non-zero if `verifier.key` exists under the persistent directory or `/etc/evalanche-signer`. The public key is root, mode `0644`. Run this where the bot secret is available, then copy only the public key to the box as root:
 
 ```sh
 cd /opt/evalanche-signer
@@ -149,15 +148,14 @@ node --input-type=module <<'EOF'
 import { writeFileSync } from 'node:fs';
 import { generateEd25519KeyPair } from 'evalanche';
 const pair = generateEd25519KeyPair();
-writeFileSync('/home/box/agent-data/evalanche-persist/verifier.key', `${pair.privateKey}\n`, { mode: 0o600 });
 writeFileSync('/home/box/agent-data/evalanche-persist/verifier.pub', `${pair.publicKey}\n`, { mode: 0o644 });
+process.stdout.write(`${pair.privateKey}\n`);
 EOF
-chown root:root /home/box/agent-data/evalanche-persist/verifier.key /home/box/agent-data/evalanche-persist/verifier.pub
-chmod 0600 /home/box/agent-data/evalanche-persist/verifier.key
+chown root:root /home/box/agent-data/evalanche-persist/verifier.pub
 chmod 0644 /home/box/agent-data/evalanche-persist/verifier.pub
 ```
 
-Run `provision` once more after writing the key so `/etc/evalanche-signer` receives the replica. Later resets do that copy again from the same files.
+Capture that stdout into the bot secret `OPS_VERIFIER_ED25519`. Do not redirect it into `verifier.key`. Run `provision` once more after writing the public key so `/etc/evalanche-signer` receives the replica. Later resets do that copy again from the same file. Delete any `verifier.key` left from an older install before that run.
 
 `/home/box/agent-data/evalanche-persist/config.json` (root, mode `0644`):
 
@@ -278,15 +276,11 @@ The proposer and the verifier are the two `box` agents. The proposer builds an i
 ### Verifier: approve an intent
 
 ```js
-import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { computeApprovedTxHash, signVerifierApproval } from 'evalanche';
 
-const verifierPrivateKey = execFileSync(
-  'sudo',
-  ['-n', 'cat', '/home/box/agent-data/evalanche-persist/verifier.key'],
-  { encoding: 'utf8' },
-).trim();
+const verifierPrivateKey = process.env.OPS_VERIFIER_ED25519;
+if (!verifierPrivateKey) throw new Error('OPS_VERIFIER_ED25519 is required');
 const verifierPublicKey = readFileSync('/home/box/agent-data/evalanche-persist/verifier.pub', 'utf8').trim();
 const wallet = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266';
 const mode = process.env.EVALANCHE_SIGNER_MODE === 'live' ? 'live' : 'dry-run';
@@ -327,7 +321,7 @@ const approval = signVerifierApproval({
 });
 ```
 
-`signVerifierApproval` signs `evalanche-verifier/v1`, the decision `approve`, the mode (`dry-run` or `live`), the signer address, the chain id, and the intent hash. The mode must match `/health`. The default above is `dry-run`. The approval step reads `/home/box/agent-data/evalanche-persist/verifier.key` with `sudo -n cat`. The path is the only argument. The key is not read from the environment and it is not passed in argv. The public key is the file `/home/box/agent-data/evalanche-persist/verifier.pub`. The proposer reads `/home/box/agent-data/evalanche-persist/token` into `EVALANCHE_SIGNER_TOKEN` before it calls the socket. The `/etc` copies are a replica and disappear on reset.
+`signVerifierApproval` signs `evalanche-verifier/v1`, the decision `approve`, the mode (`dry-run` or `live`), the signer address, the chain id, and the intent hash. The mode must match `/health`. The default above is `dry-run`. The approval step reads `OPS_VERIFIER_ED25519`. It does not read a private key file. The public key is the file `/home/box/agent-data/evalanche-persist/verifier.pub`. The proposer reads `/home/box/agent-data/evalanche-persist/token` into `EVALANCHE_SIGNER_TOKEN` before it calls the socket. The `/etc` copies are a replica and disappear on reset.
 
 ### Proposer: submit the approved intent on the socket
 

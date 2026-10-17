@@ -420,9 +420,7 @@ chmod 755 "$prefix/node_modules/.bin/evalanche-signer"
     const chainHead = createHash('sha256').update(headRecord).digest('hex');
     await writeFile(auditPath, audit);
     const pubkey = 'ed25519-pub-keep\n';
-    const privateKey = 'ed25519-key-keep\n';
     await writeFile(join(box.durable, 'verifier.pub'), pubkey);
-    await writeFile(join(box.durable, 'verifier.key'), privateKey);
     await writeFile(join(box.durable, 'token'), 'token-keep\n');
 
     await rm(box.prefix, { recursive: true, force: true });
@@ -437,9 +435,9 @@ chmod 755 "$prefix/node_modules/.bin/evalanche-signer"
     const lines = readFileSync(auditPath, 'utf8').trim().split('\n');
     expect(createHash('sha256').update(lines[lines.length - 1]).digest('hex')).toBe(chainHead);
     expect(readFileSync(join(box.durable, 'verifier.pub'), 'utf8')).toBe(pubkey);
-    expect(readFileSync(join(box.durable, 'verifier.key'), 'utf8')).toBe(privateKey);
+    expect(existsSync(join(box.durable, 'verifier.key'))).toBe(false);
     expect(readFileSync(join(box.etc, 'verifier.pub'), 'utf8')).toBe(pubkey);
-    expect(readFileSync(join(box.etc, 'verifier.key'), 'utf8')).toBe(privateKey);
+    expect(existsSync(join(box.etc, 'verifier.key'))).toBe(false);
     expect(readFileSync(join(box.etc, 'token'), 'utf8')).toBe('token-keep\n');
     expect(existsSync(join(box.prefix, 'node_modules/.bin/evalanche-signer'))).toBe(true);
     expect(existsSync(join(box.ephemeral, 'run'))).toBe(true);
@@ -449,6 +447,20 @@ chmod 755 "$prefix/node_modules/.bin/evalanche-signer"
     expect(log).toContain('--ignore-scripts');
     expect(log).not.toContain(' install ');
     expect(log.trim().split('\n')).toHaveLength(2);
+  });
+
+  it('refuses a verifier private key on disk', async () => {
+    const box = await provisionLayout();
+    const digest = createHash('sha256').update(readFileSync(box.tarball)).digest('hex');
+    const first = provision(box, ['provision', box.tarball, digest]);
+    expect(first.status, first.stderr).toBe(0);
+    await writeFile(join(box.durable, 'verifier.key'), 'ed25519-key-keep\n');
+    const calls = readFileSync(box.npmLog, 'utf8').trim().split('\n').length;
+    const again = provision(box, ['provision', box.tarball, digest]);
+    expect(again.status).not.toBe(0);
+    expect(again.stderr).toMatch(/OPS_VERIFIER_ED25519/);
+    expect(existsSync(join(box.etc, 'verifier.key'))).toBe(false);
+    expect(readFileSync(box.npmLog, 'utf8').trim().split('\n')).toHaveLength(calls);
   });
 
   it('rejects a bad tarball digest and a nonce path outside the durable home', async () => {
@@ -548,7 +560,6 @@ nonce='{"version":1,"startedAt":1,"wallets":{"0xf39fd6e51aad88f6f4ce6ab8827279cf
 printf '%s\\n' "$nonce" > "$persist/state/nonces.json"
 printf '%s\\n' '{"prevHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","decision":"allow"}' > "$persist/state/audit.jsonl"
 printf '%s\\n' 'ed25519-pub-keep' > "$persist/verifier.pub"
-printf '%s\\n' 'ed25519-key-keep' > "$persist/verifier.key"
 printf '%s\\n' 'token-keep' > "$persist/token"
 chown -R 1000:1000 /home/box
 chmod 755 /home /home/box /home/box/agent-data
@@ -561,8 +572,7 @@ chmod 755 "$fake/pack/package/scripts/grok-bot-signer.sh"
 tar -czf "$tarball" -C "$fake/pack" package
 digest=$(sha256sum "$tarball" | awk 'NR==1 { print $1 }')
 "$SCRIPT" provision "$tarball" "$digest"
-test "$(stat -c %u "$persist/verifier.key")" = 0
-test "$(stat -c %a "$persist/verifier.key")" = 600
+test ! -e "$persist/verifier.key"
 test "$(stat -c %u "$persist/config.json")" = 0
 test "$(stat -c %a "$persist/config.json")" = 644
 test "$(id -u evalanche-signer)" = 960
@@ -579,7 +589,7 @@ test "$(stat -c %d:%i "$persist/state")" = "$(stat -c %d:%i /var/lib/evalanche-s
 test "$(stat -c %u /etc/evalanche-signer/verifier.pub)" = 0
 test "$(tr -d '\\n' < /etc/evalanche-signer/verifier.pub)" = ed25519-pub-keep
 grep -q '/var/lib/evalanche-signer/state/nonces.json' /etc/evalanche-signer/config.json
-chown 1000:1000 "$persist/verifier.key" "$persist/config.json" "$persist/state/nonces.json"
+chown 1000:1000 "$persist/config.json" "$persist/state/nonces.json"
 set +e
 start_out=$(EVALANCHE_SIGNER_PRIVATE_KEY=0xabc "$SCRIPT" start 2>&1)
 start_rc=$?

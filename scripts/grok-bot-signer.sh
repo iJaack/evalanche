@@ -3,7 +3,7 @@
 # No systemd unit. The wallet key stays in the environment and is never written here.
 # start is dry-run unless --live is passed. The bearer token is read from a file.
 # /etc, /opt, and /var do not survive a reset. Only /home does. Durable nonce,
-# audit, verifier, token, config, and the pinned tarball live under
+# audit, verifier pubkey, token, config, and the pinned tarball live under
 # /home/box/agent-data/evalanche-persist. A reset restores that tree as the
 # box user, so provision chowns it back and fails closed if it cannot.
 # State and log are bind-mounted onto /var/lib/evalanche-signer/{state,log}.
@@ -289,6 +289,7 @@ run_start() {
     usage
   fi
   require_root
+  refuse_verifier_private_key
   require_persistent_mounts
   assert_trusted_files
   require_layout
@@ -695,7 +696,6 @@ claim_durable_ownership() {
   claim_one "$DURABLE/bin" root root 755
   claim_one "$CONFIG_SRC" root root 644
   claim_one "$TOKEN_FILE" root "$SIGNER_GROUP" 640
-  claim_one "$VERIFIER_KEY" root root 600
   claim_one "$VERIFIER_PUB" root root 644
   claim_one "$TARBALL" root root 644
   claim_one "$DURABLE/bin/grok-bot-signer.sh" root root 755
@@ -710,9 +710,7 @@ assert_trusted_files() {
   assert_one "$CONFIG_SRC" root root 644 0
   assert_one "$CONFIG" root root 644 0
   assert_one "$TOKEN_FILE" root "$SIGNER_GROUP" 640 0
-  assert_one "$VERIFIER_KEY" root root 600 1
   assert_one "$VERIFIER_PUB" root root 644 1
-  assert_one "$ETC/verifier.key" root root 600 1
   assert_one "$ETC/verifier.pub" root root 644 1
   assert_one "$ETC/token" root "$SIGNER_GROUP" 640 1
   assert_one "$STATE_SRC" "$SIGNER_USER" "$SIGNER_GROUP" 700 0
@@ -966,14 +964,12 @@ restore_etc_file() {
 restore_etc() {
   make_dir "$ETC" root root 0755
   restore_etc_file "$CONFIG_SRC" "$ETC/config.json" 0644 root
-  restore_etc_file "$VERIFIER_KEY" "$ETC/verifier.key" 0600 root
   restore_etc_file "$VERIFIER_PUB" "$ETC/verifier.pub" 0644 root
   restore_etc_file "$TOKEN_FILE" "$ETC/token" 0640 "$SIGNER_GROUP"
   if [ "$SKIP_ROOT" = 1 ]; then
     return 0
   fi
   assert_one "$ETC/config.json" root root 644 1
-  assert_one "$ETC/verifier.key" root root 600 1
   assert_one "$ETC/verifier.pub" root root 644 1
   assert_one "$ETC/token" root "$SIGNER_GROUP" 640 1
 }
@@ -999,8 +995,20 @@ pin_verified_tarball() {
   mv -f "$TARBALL.new" "$TARBALL"
 }
 
+# The approval private key is OPS_VERIFIER_ED25519 on the bot. The signer
+# reads only verifier.pub. A key file on disk is refused.
+refuse_verifier_private_key() {
+  for path in "$DURABLE/verifier.key" "$ETC/verifier.key" "$VERIFIER_KEY"; do
+    [ -n "$path" ] || continue
+    if [ -e "$path" ] || [ -L "$path" ]; then
+      echo "verifier private key must not live on disk ($path); remove it and set OPS_VERIFIER_ED25519" >&2
+      exit 1
+    fi
+  done
+}
+
 # Idempotent. Recreates the user, /opt, and /etc from the persistent directory.
-# Does not regenerate verifier keys, rewrite the token, or reset nonce or audit files.
+# Does not generate a verifier key, rewrite the token, or reset nonce or audit files.
 provision_signer() {
   src=${1:-}
   digest=${2:-}
@@ -1011,6 +1019,7 @@ provision_signer() {
     src=$TARBALL
   fi
   require_root
+  refuse_verifier_private_key
   if [ "$SKIP_ROOT" != 1 ]; then
     case "$DURABLE" in
       /home/*) ;;
@@ -1026,7 +1035,6 @@ provision_signer() {
   assert_under_durable "state directory" "$STATE_SRC"
   assert_under_durable "log directory" "$LOG_SRC"
   assert_under_durable "token file" "$TOKEN_FILE"
-  assert_under_durable "verifier key" "$VERIFIER_KEY"
   assert_under_durable "verifier pubkey" "$VERIFIER_PUB"
   assert_under_durable "pinned tarball" "$TARBALL"
   case "$CONFIG" in
