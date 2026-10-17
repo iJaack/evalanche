@@ -27,6 +27,7 @@ An agent can run Evalanche with no private key in its process. A separate signer
 - Close the start lock before the sudo launcher. The launch closes fd 9 before sudo and before the daemon, so a second start refuses while a signer is running instead of blocking on the flock.
 - Build a single-step Kyber Li.Fi route. The proposer fetches the KyberSwap aggregator route and build, with the diamond as sender and recipient, and wraps one `0x4666fc80` call. `quotedAmountOut` is Kyber's amountOut and minOut applies the bought-token class cap. The Li.Fi fixed-fee step stays off the allowlist.
 - Remount signer state mounts nosuid nodev noexec. `provision` remounts the state and log binds with those flags. `start` fails closed when any flag is missing.
+- Set example slippage caps to the Avalanche classes. The example config and the config `provision` writes use 50 bps for USDC and USDt, 200 bps for WAVAX, BTC.b, WETH.e, and sAVAX, and 300 bps for every other token.
 - Reuse the existing evalanche-signer group gid. `provision` does not hardcode gid 960. A group that already exists, including gid 996, is kept, and the signer user's primary gid is checked against it.
 - Apply Avalanche slippage classes to USDC and sAVAX. USDC is 50 bps. WAVAX, BTC.b, WETH.e, and sAVAX are 200 bps. Those addresses apply without a config list. Every other token stays at 300 bps.
 - Reject trailing bytes on outer Li.Fi V3 calldata. `0x4666fc80` and `0x5fd9ae2e` must re-encode to the same bytes. Extra bytes after the ABI payload are denied.

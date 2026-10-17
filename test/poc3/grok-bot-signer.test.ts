@@ -478,6 +478,29 @@ chmod 755 "$prefix/node_modules/.bin/evalanche-signer"
     return { status: result.status, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
   }
 
+  it('writes Avalanche slippage caps into the default config', async () => {
+    const box = await provisionLayout();
+    const digest = createHash('sha256').update(readFileSync(box.tarball)).digest('hex');
+    const ready = provision(box, ['provision', box.tarball, digest]);
+    expect(ready.status, ready.stderr).toBe(0);
+    const config = JSON.parse(readFileSync(join(box.durable, 'config.json'), 'utf8')) as {
+      slippageCaps: { stableBps: number; topBps: number; otherBps: number; stables: string[]; top: string[] };
+    };
+    expect(config.slippageCaps.stableBps).toBe(50);
+    expect(config.slippageCaps.topBps).toBe(200);
+    expect(config.slippageCaps.otherBps).toBe(300);
+    expect(config.slippageCaps.stables.map((item) => item.toLowerCase())).toEqual([
+      '0xb97ef9ef8734c71904d8002f8b6bc66dd9c48a6e',
+      '0x9702230a8ea53601f5cd2dc00fdbc13d4df4a8c7',
+    ]);
+    expect(config.slippageCaps.top.map((item) => item.toLowerCase())).toEqual([
+      '0xb31f66aa3c1e785363f0875a1b74e27b85fd66c7',
+      '0x152b9d0fdc40c096757f570a51e494bd4b943e50',
+      '0x49d5c2bdffac6ce2bfdb6640f4f80f226bc10bab',
+      '0x2b2c81e08f1af8835a78bb2a90ae924ace0ea4be',
+    ]);
+  });
+
   it('reuses the nonce high-water mark, audit chain head, and verifier pubkey across reinstall', async () => {
     const box = await provisionLayout();
     const digest = createHash('sha256').update(readFileSync(box.tarball)).digest('hex');
