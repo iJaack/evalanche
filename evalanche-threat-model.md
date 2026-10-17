@@ -176,7 +176,7 @@ The real condition is the shared uid 1000 with passwordless sudo. `/proc/<pid>/e
 
 In this deployment, the signer's job is to enforce policy against mistakes, confused agents, and bad inputs: the allowlist and roles, caps, decode checks, nonce, expiry, and the verifier's Ed25519 approval. It is not a security boundary against root.
 
-On 16 Oct 2026 the owner decided the verifier's Ed25519 approval key is generated on the box (mode 0600, owner root). It is not an environment secret. The public key is mode 0644. The approval step reads the private key with `sudo -n cat` of that file. The key is not passed in the environment or in argv. A reboot of the box wipes `/etc` and `/var`, so the key, the config, the audit log, and the nonce store live under `/home/evalanche-signer` and `provision` recreates the signer user at the same uid. Nonces must still be there after the reboot.
+On 16 Oct 2026 the owner decided the verifier's Ed25519 approval key is generated on the box (mode 0600, owner root). It is not an environment secret. The public key is mode 0644. The approval step reads the private key with `sudo -n cat` of that file. The key is not passed in the environment or in argv. A reset of the box wipes `/etc`, `/opt`, and `/var`, so the key, the token, the config, the audit log, the nonce store, and the pinned tarball live under `/home/box/agent-data/evalanche-persist`. `provision` recreates the signer user at the same uid and copies the key into `/etc` without generating a new one. Nonces must still be there after the reset. There is no boot hook.
 
 Exit triggers (PROPOSED, pending owner confirmation; the 2027-01-16 review stays pending confirmation):
 

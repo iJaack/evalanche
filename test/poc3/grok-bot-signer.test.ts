@@ -324,8 +324,9 @@ describe.skipIf(!linux)('grok-bot signer provision', () => {
   async function provisionLayout() {
     const root = await mkdtemp(join(tmpdir(), 'gbs-prov-'));
     roots.push(root);
-    const durable = join(root, 'home', 'evalanche-signer');
+    const durable = join(root, 'home', 'box', 'agent-data', 'evalanche-persist');
     const prefix = join(root, 'opt', 'evalanche-signer');
+    const etc = join(root, 'etc', 'evalanche-signer');
     const ephemeral = join(root, 'var', 'evalanche-signer');
     const fakebin = join(root, 'fakebin');
     await mkdir(fakebin, { recursive: true });
@@ -358,21 +359,25 @@ chmod 755 "$prefix/node_modules/evalanche/scripts/grok-bot-signer.sh"
       EVALANCHE_BOX_SKIP_ROOT: '1',
       EVALANCHE_BOX_DURABLE: durable,
       EVALANCHE_BOX_PREFIX: prefix,
+      EVALANCHE_BOX_ETC: etc,
       EVALANCHE_BOX_EPHEMERAL: ephemeral,
-      EVALANCHE_BOX_CONFIG: join(durable, 'etc/config.json'),
+      EVALANCHE_BOX_CONFIG: join(durable, 'config.json'),
       EVALANCHE_BOX_STATE: join(durable, 'state'),
+      EVALANCHE_BOX_NONCE: join(durable, 'state/nonces.json'),
+      EVALANCHE_BOX_AUDIT: join(durable, 'state/audit.jsonl'),
+      EVALANCHE_BOX_TARBALL: join(durable, 'evalanche-1.15.0.tgz'),
       EVALANCHE_BOX_LOG_DIR: join(ephemeral, 'log'),
       EVALANCHE_BOX_SOCKET_DIR: join(ephemeral, 'run'),
       EVALANCHE_BOX_SOCKET: join(ephemeral, 'run/signer.sock'),
       EVALANCHE_BOX_PIDFILE: join(durable, 'state/signer.pid'),
       EVALANCHE_BOX_LOG: join(ephemeral, 'log/signer.log'),
       EVALANCHE_BOX_USER: drop?.name ?? userInfo().username,
-      EVALANCHE_BOX_TOKEN_FILE: join(durable, 'etc/token'),
-      EVALANCHE_BOX_VERIFIER_KEY: join(durable, 'etc/verifier.key'),
-      EVALANCHE_BOX_VERIFIER_PUB: join(durable, 'etc/verifier.pub'),
+      EVALANCHE_BOX_TOKEN_FILE: join(durable, 'token'),
+      EVALANCHE_BOX_VERIFIER_KEY: join(durable, 'verifier.key'),
+      EVALANCHE_BOX_VERIFIER_PUB: join(durable, 'verifier.pub'),
       EVALANCHE_BOX_LOCK: join(durable, 'state/start.lock'),
     };
-    const box = { root, durable, prefix, ephemeral, tarball, npmLog, env, drop };
+    const box = { root, durable, prefix, etc, ephemeral, tarball, npmLog, env, drop };
     return box;
   }
 
@@ -387,7 +392,7 @@ chmod 755 "$prefix/node_modules/evalanche/scripts/grok-bot-signer.sh"
     return { status: result.status, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
   }
 
-  it('recreates the install and keeps the nonce file across a wiped ephemeral tree', async () => {
+  it('reuses the nonce high-water mark, audit chain head, and verifier pubkey across reinstall', async () => {
     const box = await provisionLayout();
     const digest = createHash('sha256').update(readFileSync(box.tarball)).digest('hex');
     const first = provision(box, ['provision', box.tarball, digest]);
@@ -395,23 +400,45 @@ chmod 755 "$prefix/node_modules/evalanche/scripts/grok-bot-signer.sh"
     expect(statSync(join(box.durable, 'state')).mode & 0o777).toBe(0o700);
     expect(statSync(join(box.ephemeral, 'run')).mode & 0o777).toBe(0o750);
     expect(statSync(box.durable).mode & 0o777).toBe(0o755);
+
+    const wallet = '0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266';
     const noncePath = join(box.durable, 'state/nonces.json');
-    const nonce = '{"version":1,"keep":true}\n';
+    const nonce = `${JSON.stringify({
+      version: 1,
+      startedAt: 1,
+      wallets: { [wallet]: { lastNonce: '42', used: ['7', '42'] } },
+    })}\n`;
     await writeFile(noncePath, nonce);
-    const configPath = join(box.durable, 'etc/config.json');
-    const config = JSON.parse(readFileSync(configPath, 'utf8')) as { nonceStorePath: string; marker?: string };
-    expect(config.nonceStorePath).toBe(noncePath);
-    config.marker = 'keep';
-    await writeFile(configPath, `${JSON.stringify(config)}\n`);
+    const auditPath = join(box.durable, 'state/audit.jsonl');
+    const firstRecord = JSON.stringify({ prevHash: 'a'.repeat(64), decision: 'allow' });
+    const headRecord = JSON.stringify({ prevHash: createHash('sha256').update(firstRecord).digest('hex'), decision: 'dry_run' });
+    const audit = `${firstRecord}\n${headRecord}\n`;
+    const chainHead = createHash('sha256').update(headRecord).digest('hex');
+    await writeFile(auditPath, audit);
+    const pubkey = 'ed25519-pub-keep\n';
+    const privateKey = 'ed25519-key-keep\n';
+    await writeFile(join(box.durable, 'verifier.pub'), pubkey);
+    await writeFile(join(box.durable, 'verifier.key'), privateKey);
+    await writeFile(join(box.durable, 'token'), 'token-keep\n');
+
     await rm(box.prefix, { recursive: true, force: true });
     await rm(box.ephemeral, { recursive: true, force: true });
-    const second = provision(box, ['provision', box.tarball, digest]);
+    await rm(box.etc, { recursive: true, force: true });
+    const second = provision(box, ['provision']);
     expect(second.status, second.stderr + second.stdout).toBe(0);
-    expect(readFileSync(noncePath, 'utf8')).toBe(nonce);
-    expect(JSON.parse(readFileSync(configPath, 'utf8')).marker).toBe('keep');
+
+    const reused = JSON.parse(readFileSync(noncePath, 'utf8')) as { wallets: Record<string, { lastNonce: string }> };
+    expect(reused.wallets[wallet].lastNonce).toBe('42');
+    expect(readFileSync(auditPath, 'utf8')).toBe(audit);
+    const lines = readFileSync(auditPath, 'utf8').trim().split('\n');
+    expect(createHash('sha256').update(lines[lines.length - 1]).digest('hex')).toBe(chainHead);
+    expect(readFileSync(join(box.durable, 'verifier.pub'), 'utf8')).toBe(pubkey);
+    expect(readFileSync(join(box.durable, 'verifier.key'), 'utf8')).toBe(privateKey);
+    expect(readFileSync(join(box.etc, 'verifier.pub'), 'utf8')).toBe(pubkey);
+    expect(readFileSync(join(box.etc, 'verifier.key'), 'utf8')).toBe(privateKey);
+    expect(readFileSync(join(box.etc, 'token'), 'utf8')).toBe('token-keep\n');
     expect(existsSync(join(box.prefix, 'node_modules/.bin/evalanche-signer'))).toBe(true);
     expect(existsSync(join(box.ephemeral, 'run'))).toBe(true);
-    expect(existsSync(join(box.durable, 'bin/grok-bot-signer.sh'))).toBe(true);
     const log = readFileSync(box.npmLog, 'utf8');
     expect(log).toContain('--omit=dev');
     expect(log).toContain('--ignore-scripts');
@@ -436,10 +463,10 @@ chmod 755 "$prefix/node_modules/evalanche/scripts/grok-bot-signer.sh"
     const noncePath = join(box.durable, 'state/nonces.json');
     await writeFile(noncePath, 'nonce-stays\n');
     const calls = readFileSync(box.npmLog, 'utf8').trim().split('\n').length;
-    await writeFile(join(box.durable, 'etc/config.json'), `${JSON.stringify({
+    await writeFile(join(box.durable, 'config.json'), `${JSON.stringify({
       nonceStorePath: '/tmp/nonces.json',
       auditLogPath: join(box.durable, 'state/audit.jsonl'),
-      verifierPublicKeyPath: join(box.durable, 'etc/verifier.pub'),
+      verifierPublicKeyPath: join(box.durable, 'verifier.pub'),
     })}\n`);
     const denied = provision(box, ['provision', box.tarball, digest]);
     expect(denied.status).not.toBe(0);
