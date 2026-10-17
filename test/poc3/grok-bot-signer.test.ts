@@ -520,8 +520,10 @@ trap cleanup EXIT
 mkdir -p "$fake/etc" "$fake/home" "$fake/opt" "$fake/var" "$fake/bin"
 nodebin="$NODE"
 nodedir=$(dirname "$(readlink -f "$nodebin")")
+# /home, /opt, /var, and /etc are replaced below. Node on a GitHub runner
+# lives under /opt/hostedtoolcache, so keep that directory reachable.
 case "$nodebin" in
-  /home/*)
+  /home/*|/opt/*|/var/*|/etc/*)
     mkdir -p "$fake/node"
     mount --bind "$nodedir" "$fake/node"
     nodedir="$fake/node"

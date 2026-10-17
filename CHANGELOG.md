@@ -20,6 +20,7 @@
 - Leave trustAnchor unset in production. The Grok Bot bind mounts already cover nonce and audit.
 - Document approve operating rules for live swaps. Approve only right before the paired swap, for exactly fromAmount. Reset the allowance to 0 if the swap fails, and sweep diamond allowances periodically.
 - Pick a free signer group gid in the reset test when 996 is already taken.
+- Keep node visible when the reset test hides /opt.
 - Claim signer paths through a no-follow file descriptor. `provision` uses fchown and fchmod on that descriptor.
 - Reuse the existing evalanche-signer group gid instead of hardcoding gid 960. The signer user stays uid 960.
 - Apply Avalanche slippage classes to USDC and sAVAX. USDC is 50 bps. WAVAX, BTC.b, WETH.e, and sAVAX are 200 bps instead of the 300 bps default.

@@ -21,6 +21,7 @@ An agent can run Evalanche with no private key in its process. A separate signer
 - Leave trustAnchor unset in production. The bind-mount layout already places nonce and audit under root-owned parents.
 - Document approve operating rules for live swaps. Approve only right before the paired swap, for exactly fromAmount. Reset the allowance to 0 if the swap fails. Sweep diamond allowances periodically. The signer does not enforce that pairing.
 - Pick a free signer group gid in the reset test. The live box uses 996, and a runner that already has that gid still checks that provision reuses the group it finds.
+- Keep node visible when the reset test hides /opt. The runner node under /opt/hostedtoolcache stays on PATH after that mount.
 - Claim signer paths through a no-follow file descriptor. `provision` fchowns and fchmods each path it opened with O_NOFOLLOW, so a symlink swapped in after the check is not followed.
 - Reuse the existing evalanche-signer group gid. `provision` does not hardcode gid 960. A group that already exists, including gid 996, is kept, and the signer user's primary gid is checked against it.
 - Apply Avalanche slippage classes to USDC and sAVAX. USDC is 50 bps. WAVAX, BTC.b, WETH.e, and sAVAX are 200 bps. Those addresses apply without a config list. Every other token stays at 300 bps.
