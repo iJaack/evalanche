@@ -469,8 +469,9 @@ function decodeSwap(to: string, data: string, selector: string, options: DecodeO
  * nothing else. `swapSimpleMode`, `swapGeneric`, empty calldata, and any
  * other selector are denied. The payload must re-encode to the same bytes.
  * `callTarget` must be an allowed executor. `srcReceivers` must be that
- * executor or an address named in its calldata, and their amounts must sum
- * to the swap amount. Fee receivers must be empty or carry zero amounts.
+ * executor or a pool at a decoded position in its calldata, and their
+ * amounts must sum to the swap amount. Fee receivers must be empty or carry
+ * zero amounts.
  * Proceeds land on the diamond, or on an allowlisted recipient on the last hop.
  * A non-Kyber dex is not inner-decoded.
  */
@@ -576,7 +577,7 @@ function assertKyberParties(
   let sum = 0n;
   for (const amount of srcAmounts) sum += amount;
   if (sum !== BigInt(desc.amount)) fail('Kyber srcAmounts must sum to the swap amount');
-  const targetData = String(execution.targetData ?? '0x').toLowerCase();
+  const pools = kyberDecodedPools(String(execution.targetData ?? '0x'));
   for (const receiver of srcReceivers) {
     let address: string;
     try {
@@ -585,9 +586,7 @@ function assertKyberParties(
       fail('Kyber srcReceiver is not an address');
     }
     if (executors.has(address)) continue;
-    if (!targetData.includes(address.slice(2).toLowerCase())) {
-      fail('Kyber srcReceiver is not an allowed executor');
-    }
+    if (!pools.has(address)) fail('Kyber srcReceiver is not an allowed executor');
   }
   const feeReceivers = [...desc.feeReceivers];
   const feeAmounts = [...desc.feeAmounts].map((amount) => BigInt(amount));
@@ -595,6 +594,81 @@ function assertKyberParties(
   for (const amount of feeAmounts) {
     if (amount !== 0n) fail('Kyber fee amount must be zero');
   }
+}
+
+/**
+ * Pools named by the AggregationExecutor calldata. Each logical word stores a
+ * uint160 in its first 20 bytes. A swap array is a count word, then that many
+ * byte offsets, then fixed-size elements. The pool is the last word of each
+ * element. Bytes after that array are not pools, and a match has to be that
+ * whole word, not a substring at an arbitrary offset.
+ */
+function kyberDecodedPools(targetData: string): Set<string> {
+  const hex = targetData.startsWith('0x') ? targetData.slice(2) : targetData;
+  const bytes = hex.length >= 2 && hex.length % 2 === 0 ? Buffer.from(hex, 'hex') : Buffer.alloc(0);
+  const words = Math.floor(bytes.length / 32);
+  const wordAt = (index: number) => bytes.subarray(index * 32, index * 32 + 32);
+  const high160 = (word: Buffer) => BigInt(`0x${word.subarray(0, 20).toString('hex')}`);
+  const tailClear = (word: Buffer) => word.subarray(20).every((byte) => byte === 0);
+  const pools = new Set<string>();
+  let chosenEnd = bytes.length;
+  for (let index = 0; index < words; index += 1) {
+    const header = wordAt(index);
+    const count = high160(header);
+    if (!tailClear(header) || count < 1n || count > 8n) continue;
+    const total = Number(count);
+    if (index + 1 + total >= words) continue;
+    const offsets: number[] = [];
+    let shaped = true;
+    for (let slot = 0; slot < total; slot += 1) {
+      const offsetWord = wordAt(index + 1 + slot);
+      const offset = high160(offsetWord);
+      if (!tailClear(offsetWord) || offset === 0n || offset % 32n !== 0n) {
+        shaped = false;
+        break;
+      }
+      offsets.push(Number(offset));
+    }
+    if (!shaped) continue;
+    for (let slot = 1; slot < offsets.length; slot += 1) {
+      if (offsets[slot] <= offsets[slot - 1]) shaped = false;
+    }
+    if (!shaped) continue;
+    const base = (index + 1) * 32;
+    if (base >= chosenEnd) continue;
+    const sizes: number[] = [];
+    for (let slot = 1; slot < offsets.length; slot += 1) sizes.push(offsets[slot] - offsets[slot - 1]);
+    const size = sizes[0] ?? 192;
+    if (sizes.some((item) => item !== size) || size < 32 || size % 32 !== 0) continue;
+    const found: string[] = [];
+    let fit = true;
+    for (const offset of offsets) {
+      const start = base + offset;
+      if (start < base || start + size > bytes.length) {
+        fit = false;
+        break;
+      }
+      const poolWord = bytes.subarray(start + size - 32, start + size);
+      let address: string;
+      try {
+        address = getAddress(`0x${poolWord.subarray(0, 20).toString('hex')}`);
+      } catch {
+        fit = false;
+        break;
+      }
+      if (address === getAddress(NATIVE_ADDRESS)) {
+        fit = false;
+        break;
+      }
+      found.push(address);
+    }
+    if (!fit || found.length !== total) continue;
+    const end = base + offsets[offsets.length - 1] + size;
+    if (end > chosenEnd) continue;
+    for (const address of found) pools.add(address);
+    chosenEnd = end;
+  }
+  return pools;
 }
 
 function fail(message: string): never {
