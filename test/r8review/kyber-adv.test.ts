@@ -82,10 +82,10 @@ describe('R8 review: minOut floor', () => {
   it('S1 denies a V3 swap with no quotedAmountOut', async () => {
     await expect(sign(data(1n), [l], wallet, { minAmountOut: '1', quotedAmountOut: undefined })).rejects.toThrow(/quotedAmountOut/);
   });
-  it('S2 quote present: minOut below 300bps floor denied, at floor allowed', async () => {
+  it('S2 USDC quote uses the 50 bps stable floor', async () => {
     const q = 1_000_000n;
-    await expect(sign(data(969_999n), [l], wallet, { minAmountOut: '1', quotedAmountOut: q.toString() })).rejects.toThrow(/floor/);
-    const ok = await sign(data(970_000n), [l], wallet, { minAmountOut: '1', quotedAmountOut: q.toString() });
+    await expect(sign(data(994_999n), [l], wallet, { minAmountOut: '1', quotedAmountOut: q.toString() })).rejects.toThrow(/floor/);
+    const ok = await sign(data(995_000n), [l], wallet, { minAmountOut: '1', quotedAmountOut: q.toString() });
     expect(ok.signedTransaction).toMatch(/^0x/);
   });
   it('S3 maxSlippageBps above class cap denied; stable class uses 50', async () => {

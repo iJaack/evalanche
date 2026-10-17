@@ -13,6 +13,7 @@ import {
   signVerifierApproval,
   startSignerServer,
 } from '../../src/index';
+import { tokenClassBps } from '../../src/signer/server';
 import {
   LIFI_DIAMOND,
   LIFI_GENERIC_SWAP_FACET_V3,
@@ -381,6 +382,19 @@ describe('Li.Fi V3 slippage floor', () => {
     return sign(single, data, allow, extra, { minAmountOut: minOut.toString(), ...overrides });
   }
 
+  it('classifies USDC at 50 bps and WAVAX, BTC.b, WETH.e, and sAVAX at 200', () => {
+    expect(tokenClassBps(undefined, '0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E')).toBe(50);
+    for (const address of [
+      '0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7',
+      '0x152b9d0FdC40C096757F570A51E494bd4b943E50',
+      '0x49D5c2BdFfac6CE2BFdB6640F4F80f226bc10bAB',
+      '0x2b2C81e08f1Af8835a78Bb2A90AE924ACE0eA4bE',
+    ]) {
+      expect(tokenClassBps(undefined, address)).toBe(200);
+    }
+    expect(tokenClassBps(undefined, '0x000000000000000000000000000000000000bEEF')).toBe(300);
+  });
+
   it('rejects a V3 minAmountOut of zero', async () => {
     await expect(signOut(0n)).rejects.toThrow(/greater than zero/i);
   });
@@ -396,30 +410,29 @@ describe('Li.Fi V3 slippage floor', () => {
     }, { quotedAmountOut: '2' })).rejects.toThrow(/token cap/);
   });
 
-  it('rejects maxSlippageBps above the class cap', async () => {
+  it('rejects maxSlippageBps above the USDC class cap', async () => {
     const data = encode(single, { receiver: wallet });
     const allow = allowFor(single, [{ address: wallet, selectors: [], roles: ['recipient'] }]);
-    await expect(sign(single, data, allow, {}, { maxSlippageBps: 301 })).rejects.toThrow(/slippage cap/i);
-    const signed = await sign(single, data, allow, {}, { maxSlippageBps: 300 });
+    await expect(sign(single, data, allow, {}, { maxSlippageBps: 51 })).rejects.toThrow(/50 bps/);
+    const signed = await sign(single, data, allow, {}, { maxSlippageBps: 50 });
     expect(signed.signedTransaction).toMatch(/^0x/);
   });
 
   it('uses the bought token for the class cap', async () => {
     const data = encode(single, { receiver: wallet });
     const allow = allowFor(single, [{ address: wallet, selectors: [], roles: ['recipient'] }]);
-    const caps = { slippageCaps: { stables: [sold()], top: [bought()] } };
-    await expect(sign(single, data, allow, caps, { maxSlippageBps: 201 })).rejects.toThrow(/200 bps/);
-    const signed = await sign(single, data, allow, caps, { maxSlippageBps: 200 });
+    const caps = { slippageCaps: { top: [bought()], stables: [sold()] } };
+    await expect(sign(single, data, allow, caps, { maxSlippageBps: 51 })).rejects.toThrow(/50 bps/);
+    const signed = await sign(single, data, allow, caps, { maxSlippageBps: 50 });
     expect(signed.signedTransaction).toMatch(/^0x/);
   });
 
-  it('caps a configured stable at 50 bps and a configured top asset at 200 bps', async () => {
+  it('keeps a default stable at 50 bps when config also lists it as top', async () => {
     const data = encode(single, { receiver: wallet });
     const allow = allowFor(single, [{ address: wallet, selectors: [], roles: ['recipient'] }]);
-    await expect(sign(single, data, allow, { slippageCaps: { stables: [bought()] } }, { maxSlippageBps: 51 })).rejects.toThrow(/50 bps/);
-    const stable = await sign(single, data, allow, { slippageCaps: { stables: [bought()] } }, { maxSlippageBps: 50 });
+    await expect(sign(single, data, allow, { slippageCaps: { top: [bought()] } }, { maxSlippageBps: 51 })).rejects.toThrow(/50 bps/);
+    const stable = await sign(single, data, allow, {}, { maxSlippageBps: 50 });
     expect(stable.signedTransaction).toMatch(/^0x/);
-    await expect(sign(single, data, allow, { slippageCaps: { top: [bought()] } }, { maxSlippageBps: 201 })).rejects.toThrow(/200 bps/);
   });
 
   it('rejects minOut below quotedOut times one minus the slippage', async () => {
@@ -430,12 +443,10 @@ describe('Li.Fi V3 slippage floor', () => {
     expect(signed.signedTransaction).toMatch(/^0x/);
   });
 
-  it('applies the class cap when the quote is set and maxSlippageBps is not', async () => {
-    const stable = { slippageCaps: { stables: [bought()] } };
-    await expect(signOut(994_999n, stable, { quotedAmountOut: '1000000' })).rejects.toThrow(/slippage floor/i);
-    const otherFloor = await signOut(970_000n, {}, { quotedAmountOut: '1000000' });
-    expect(otherFloor.signedTransaction).toMatch(/^0x/);
-    await expect(signOut(969_999n, {}, { quotedAmountOut: '1000000' })).rejects.toThrow(/slippage floor/i);
+  it('applies the USDC class cap when the quote is set and maxSlippageBps is not', async () => {
+    await expect(signOut(994_999n, {}, { quotedAmountOut: '1000000' })).rejects.toThrow(/slippage floor/i);
+    const stableFloor = await signOut(995_000n, {}, { quotedAmountOut: '1000000' });
+    expect(stableFloor.signedTransaction).toMatch(/^0x/);
   });
 
   it('rejects a zero quote and a slippage cap outside 0 to 10000', async () => {

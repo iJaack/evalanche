@@ -107,9 +107,25 @@ export const DEFAULT_STABLE_SLIPPAGE_BPS = 50;
 export const DEFAULT_TOP_SLIPPAGE_BPS = 200;
 export const DEFAULT_OTHER_SLIPPAGE_BPS = 300;
 
+/** Avalanche stables. USDC is 50 bps. USDT and USDC.e are the same class. */
+export const DEFAULT_AVALANCHE_STABLES = [
+  '0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E',
+  '0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7',
+  '0xc7198437980c041c805A1EDcbA50c1Ce5db95118',
+];
+
+/** Avalanche top assets: WAVAX, BTC.b, WETH.e, and sAVAX. Each is 200 bps. */
+export const DEFAULT_AVALANCHE_TOP = [
+  '0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7',
+  '0x152b9d0FdC40C096757F570A51E494bd4b943E50',
+  '0x49D5c2BdFfac6CE2BFdB6640F4F80f226bc10bAB',
+  '0x2b2C81e08f1Af8835a78Bb2A90AE924ACE0eA4bE',
+];
+
 /**
- * Bought-token classes for a Li.Fi V3 quote floor. Address lists default to
- * empty, so an unlisted token uses `otherBps` until config names it.
+ * Bought-token classes for a Li.Fi V3 quote floor. The Avalanche stables and
+ * top assets above apply even when config lists are empty. Config lists add
+ * addresses. An unlisted token uses `otherBps`.
  */
 export interface SlippageCaps {
   /** Bought tokens capped at `stableBps` (default 50). */
@@ -1229,7 +1245,7 @@ function addressInList(list: string[] | undefined, address: string): boolean {
 }
 
 /** Bought-token class cap. Stables win over top. Unlisted tokens use the other cap. */
-function tokenClassBps(caps: SlippageCaps | undefined, tokenOut: string | undefined): number {
+export function tokenClassBps(caps: SlippageCaps | undefined, tokenOut: string | undefined): number {
   const stable = caps?.stableBps ?? DEFAULT_STABLE_SLIPPAGE_BPS;
   const top = caps?.topBps ?? DEFAULT_TOP_SLIPPAGE_BPS;
   const other = caps?.otherBps ?? DEFAULT_OTHER_SLIPPAGE_BPS;
@@ -1240,8 +1256,8 @@ function tokenClassBps(caps: SlippageCaps | undefined, tokenOut: string | undefi
   } catch {
     return other;
   }
-  if (addressInList(caps?.stables, address)) return stable;
-  if (addressInList(caps?.top, address)) return top;
+  if (addressInList(DEFAULT_AVALANCHE_STABLES, address) || addressInList(caps?.stables, address)) return stable;
+  if (addressInList(DEFAULT_AVALANCHE_TOP, address) || addressInList(caps?.top, address)) return top;
   return other;
 }
 

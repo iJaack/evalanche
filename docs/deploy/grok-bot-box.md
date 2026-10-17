@@ -392,7 +392,7 @@ A V3 swap with `minAmountOut` of zero is rejected. The intent may carry `quotedA
 - top, default 200 bps
 - every other token, default 300 bps
 
-Address lists default to empty, so an unlisted bought token uses the other cap until the signer config names it. The signer does not ship a hardcoded top-10. An address listed as both stable and top is a stable. `stableBps`, `topBps`, and `otherBps` are optional integers from 0 to 10000. On this box, name the Avalanche stables and the assets treated as top:
+The signer ships the Avalanche book below, so those addresses use 50 or 200 bps even when `slippageCaps` is omitted. Config lists add addresses; they do not replace the defaults. An address listed as both stable and top is a stable. An unlisted bought token uses the other cap. `stableBps`, `topBps`, and `otherBps` are optional integers from 0 to 10000. The built-in lists are:
 
 ```json
 "slippageCaps": {
@@ -404,12 +404,13 @@ Address lists default to empty, so an unlisted bought token uses the other cap u
   "top": [
     "0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7",
     "0x152b9d0FdC40C096757F570A51E494bd4b943E50",
-    "0x49D5c2BdFfac6CE2BFdB6640F4F80f226bc10bAB"
+    "0x49D5c2BdFfac6CE2BFdB6640F4F80f226bc10bAB",
+    "0x2b2C81e08f1Af8835a78Bb2A90AE924ACE0eA4bE"
   ]
 }
 ```
 
-Those stables are native USDC, USDT, and USDC.e. The top list is WAVAX, BTC.b, and WETH.e. Change the lists in the signer config when the book changes. A V3 intent must set `quotedAmountOut` from the Li.Fi quote. The signer denies the swap when that field is missing. It also denies a quote that integer-divides to a zero token-unit floor, so a quote of 1 with minOut 1 does not sign. When `tokenCaps` names the bought token, `quotedAmountOut` must be within that cap.
+Those stables are native USDC, USDT, and USDC.e. The top list is WAVAX, BTC.b, WETH.e, and sAVAX. USDC is 50 bps. WAVAX, BTC.b, WETH.e, and sAVAX are 200 bps. Add a new asset in the signer config when the book changes. The example above is already the default. A V3 intent must set `quotedAmountOut` from the Li.Fi quote. The signer denies the swap when that field is missing. It also denies a quote that integer-divides to a zero token-unit floor, so a quote of 1 with minOut 1 does not sign. When `tokenCaps` names the bought token, `quotedAmountOut` must be within that cap.
 
 ## Kyber receivers inside a V3 leg
 
