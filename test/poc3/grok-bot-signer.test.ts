@@ -6,7 +6,7 @@
 import { createHash } from 'node:crypto';
 import { spawn, spawnSync, type SpawnOptions, type SpawnSyncOptions } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { chmod, mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { chmod, copyFile, mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { userInfo, platform, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -492,10 +492,20 @@ cleanup() {
   umount /var/lib/evalanche-signer/state 2>/dev/null || true
   umount /var/lib/evalanche-signer/log 2>/dev/null || true
   umount /var /home /opt /etc 2>/dev/null || true
+  umount "$fake/node" 2>/dev/null || true
   rm -rf "$fake"
 }
 trap cleanup EXIT
 mkdir -p "$fake/etc" "$fake/home" "$fake/opt" "$fake/var" "$fake/bin"
+nodebin=$(command -v node || true)
+case "$nodebin" in
+  /home/*)
+    realdir=$(dirname "$(readlink -f "$nodebin")")
+    mkdir -p "$fake/node"
+    mount --bind "$realdir" "$fake/node"
+    export PATH="$fake/node:$PATH"
+    ;;
+esac
 cp -a /etc/. "$fake/etc/"
 mount --bind "$fake/etc" /etc
 mount --bind "$fake/home" /home
@@ -577,14 +587,18 @@ test "$before" = "$after"
 printf '%s\\n' 'reset-ownership-ok'
 `;
     const file = join(tmpdir(), `gbs-reset-${process.pid}.sh`);
-    await writeFile(file, scriptBody.replaceAll('$SCRIPT', script), { mode: 0o755 });
+    const signerCopy = join(tmpdir(), `grok-bot-signer-${process.pid}.sh`);
+    await copyFile(script, signerCopy);
+    await chmod(signerCopy, 0o755);
+    await writeFile(file, scriptBody.replaceAll('$SCRIPT', signerCopy), { mode: 0o755 });
     const cmd = (process.getuid?.() ?? -1) === 0
       ? ['unshare', '--mount', 'bash', file]
       : ['sudo', '-n', 'unshare', '--mount', 'bash', file];
     const result = spawnSync(cmd[0]!, cmd.slice(1), { encoding: 'utf8', timeout: 60_000 });
     expect(`${result.stdout}\n${result.stderr}`, result.stderr).toContain('reset-ownership-ok');
-    expect(result.status).toBe(0);
+    expect(result.status, result.stderr).toBe(0);
     await rm(file, { force: true });
+    await rm(signerCopy, { force: true });
   }, 60_000);
 });
 
@@ -595,6 +609,6 @@ describe.skipIf(!linux || (process.getuid?.() ?? 0) !== 0)('grok-bot signer root
     const result = spawnSync(script, ['start'], { env: box.env, encoding: 'utf8', timeout: 15_000 });
     expect(result.status).not.toBe(0);
     expect(existsSync(box.argv)).toBe(false);
-    expect(`${result.stderr ?? ''}${result.stdout ?? ''}`).toMatch(/missing user evalanche-signer|missing \/opt\/evalanche-signer/);
+    expect(`${result.stderr ?? ''}${result.stdout ?? ''}`).toMatch(/missing user evalanche-signer|missing \/opt\/evalanche-signer|\/var\/lib\/evalanche-signer\/state is not a bind mount/);
   });
 });
