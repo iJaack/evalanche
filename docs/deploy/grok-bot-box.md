@@ -420,6 +420,8 @@ The source token must be the leg's sending asset and the destination token must 
 
 The signer does not require the approve and the swap in one request, and it does not deny an approve whose spender also has the `dex` role. Approve and swap are separate transactions. Requiring both in one signing request would reject the normal two-step flow and would also reject a later reset. The wallet approves the Li.Fi diamond, which is the top-level spender. Kyber's `spender` role is what lets a decoded leg name the router as `approveTo`. Roles are additive, so an address can be `dex` and `spender` together. Denying that combination would reject the Kyber router and would block an allowance reset to the same spender.
 
+These operating rules stay outside the signer. Approve only right before its paired swap, for exactly `fromAmount`. Reset that allowance to 0 if the swap fails. Sweep diamond allowances periodically.
+
 ### Dry-run week
 
 `grok-bot-signer.sh start` is dry-run. The verifier signs `mode: 'dry-run'`. The signer answers `{"requestId":"...","dryRun":true,"decision":"allow"}` and does not return a signed transaction. The SDK client treats a missing signature as a rejection, so the dry-run check is a direct socket call:
