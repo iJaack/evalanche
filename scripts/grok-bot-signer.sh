@@ -557,8 +557,10 @@ normalize_mode() {
   fi
 }
 
-# Chown and chmod one existing path, then read the result back. A symlink is
-# refused. A chown that does not stick is a failure: do not trust the file.
+# Chown and chmod one existing path through a descriptor opened with
+# O_NOFOLLOW, then read the result back. A symlink is refused. fchown does
+# not follow a name swapped in after the check. A chown that does not stick
+# is a failure: do not trust the file.
 claim_one() {
   path=$1
   uid=$2
@@ -571,14 +573,44 @@ claim_one() {
   if [ ! -e "$path" ]; then
     return 0
   fi
-  chown "$uid:$group" "$path" || {
-    echo "cannot take ownership of $path" >&2
+  uid_n=$(resolve_id "$uid")
+  gid_n=$(resolve_gid "$group")
+  if [ -z "$uid_n" ] || [ -z "$gid_n" ]; then
+    echo "cannot resolve owner $uid:$group for $path" >&2
     exit 1
-  }
-  chmod "$mode" "$path" || {
-    echo "cannot set mode $mode on $path" >&2
-    exit 1
-  }
+  fi
+  node -e '
+    const fs = require("node:fs");
+    const target = process.argv[1];
+    const uid = Number(process.argv[2]);
+    const gid = Number(process.argv[3]);
+    const mode = Number.parseInt(process.argv[4], 8);
+    const flags = fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW;
+    let fd;
+    try {
+      fd = fs.openSync(target, flags | fs.constants.O_DIRECTORY);
+    } catch (error) {
+      if (!error || error.code !== "ENOTDIR") {
+        console.error("cannot take ownership of " + target);
+        process.exit(1);
+      }
+      try {
+        fd = fs.openSync(target, flags);
+      } catch {
+        console.error("cannot take ownership of " + target);
+        process.exit(1);
+      }
+    }
+    try {
+      fs.fchownSync(fd, uid, gid);
+      fs.fchmodSync(fd, mode);
+    } catch {
+      console.error("cannot take ownership of " + target);
+      process.exit(1);
+    } finally {
+      fs.closeSync(fd);
+    }
+  ' "$path" "$uid_n" "$gid_n" "$mode" || exit 1
   assert_one "$path" "$uid" "$group" "$mode" 0
 }
 

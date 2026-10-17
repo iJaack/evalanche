@@ -506,13 +506,13 @@ cleanup() {
 }
 trap cleanup EXIT
 mkdir -p "$fake/etc" "$fake/home" "$fake/opt" "$fake/var" "$fake/bin"
-nodebin=$(command -v node || true)
+nodebin="$NODE"
+nodedir=$(dirname "$(readlink -f "$nodebin")")
 case "$nodebin" in
   /home/*)
-    realdir=$(dirname "$(readlink -f "$nodebin")")
     mkdir -p "$fake/node"
-    mount --bind "$realdir" "$fake/node"
-    export PATH="$fake/node:$PATH"
+    mount --bind "$nodedir" "$fake/node"
+    nodedir="$fake/node"
     ;;
 esac
 cp -a /etc/. "$fake/etc/"
@@ -520,7 +520,7 @@ mount --bind "$fake/etc" /etc
 mount --bind "$fake/home" /home
 mount --bind "$fake/opt" /opt
 mount --bind "$fake/var" /var
-export PATH="/usr/sbin:/usr/bin:/sbin:/bin:$fake/bin"
+export PATH="/usr/sbin:/usr/bin:/sbin:/bin:$fake/bin:$nodedir"
 if id evalanche-signer >/dev/null 2>&1; then
   userdel evalanche-signer || true
 fi
@@ -606,7 +606,7 @@ printf '%s\\n' 'reset-ownership-ok'
     const signerCopy = join(tmpdir(), `grok-bot-signer-${process.pid}.sh`);
     await copyFile(script, signerCopy);
     await chmod(signerCopy, 0o755);
-    await writeFile(file, scriptBody.replaceAll('$SCRIPT', signerCopy), { mode: 0o755 });
+    await writeFile(file, scriptBody.replaceAll('$SCRIPT', signerCopy).replaceAll('$NODE', process.execPath), { mode: 0o755 });
     const cmd = (process.getuid?.() ?? -1) === 0
       ? ['unshare', '--mount', 'bash', file]
       : ['sudo', '-n', 'unshare', '--mount', 'bash', file];
