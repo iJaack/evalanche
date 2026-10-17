@@ -3,8 +3,9 @@
  * A stale socket is removed, a second start fails while a signer is live,
  * and stop refuses a pid that is not the signer.
  */
+import { createHash } from 'node:crypto';
 import { spawn, spawnSync, type SpawnOptions, type SpawnSyncOptions } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { chmod, mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { userInfo, platform, tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -317,6 +318,135 @@ describe.skipIf(!linux)('grok-bot signer start and stop', () => {
     const environ = readEnviron(pid, box);
     expect(environ).toContain('EVALANCHE_SIGNER_START_MARK=');
   }, 20_000);
+});
+
+describe.skipIf(!linux)('grok-bot signer provision', () => {
+  async function provisionLayout() {
+    const root = await mkdtemp(join(tmpdir(), 'gbs-prov-'));
+    roots.push(root);
+    const durable = join(root, 'home', 'evalanche-signer');
+    const prefix = join(root, 'opt', 'evalanche-signer');
+    const ephemeral = join(root, 'var', 'evalanche-signer');
+    const fakebin = join(root, 'fakebin');
+    await mkdir(fakebin, { recursive: true });
+    const tarball = join(root, 'evalanche-1.15.0.tgz');
+    await writeFile(tarball, 'pinned-tarball\n');
+    const npmLog = join(root, 'npm.log');
+    const npm = `#!/bin/sh
+printf '%s\\n' "$*" >> ${JSON.stringify(npmLog)}
+prefix=""
+prev=""
+for arg in "$@"; do
+  if [ "$prev" = "--prefix" ]; then prefix=$arg; fi
+  prev=$arg
+done
+mkdir -p "$prefix/node_modules/evalanche/scripts" "$prefix/node_modules/.bin"
+printf '%s\\n' '#!/bin/sh' 'exit 0' > "$prefix/node_modules/.bin/evalanche-signer"
+chmod 755 "$prefix/node_modules/.bin/evalanche-signer"
+printf '%s\\n' '#!/bin/sh' 'echo packaged' > "$prefix/node_modules/evalanche/scripts/grok-bot-signer.sh"
+chmod 755 "$prefix/node_modules/evalanche/scripts/grok-bot-signer.sh"
+`;
+    await writeFile(join(fakebin, 'npm'), npm, { mode: 0o755 });
+    const drop = dropIdentity();
+    if (drop) {
+      const chowned = spawnSync('chown', ['-R', `${drop.uid}:${drop.gid}`, root]);
+      if (chowned.status !== 0) throw new Error(chowned.stderr?.toString() || 'chown failed');
+    }
+    const env = {
+      ...process.env,
+      PATH: `${fakebin}:${process.env.PATH ?? ''}`,
+      EVALANCHE_BOX_SKIP_ROOT: '1',
+      EVALANCHE_BOX_DURABLE: durable,
+      EVALANCHE_BOX_PREFIX: prefix,
+      EVALANCHE_BOX_EPHEMERAL: ephemeral,
+      EVALANCHE_BOX_CONFIG: join(durable, 'etc/config.json'),
+      EVALANCHE_BOX_STATE: join(durable, 'state'),
+      EVALANCHE_BOX_LOG_DIR: join(ephemeral, 'log'),
+      EVALANCHE_BOX_SOCKET_DIR: join(ephemeral, 'run'),
+      EVALANCHE_BOX_SOCKET: join(ephemeral, 'run/signer.sock'),
+      EVALANCHE_BOX_PIDFILE: join(durable, 'state/signer.pid'),
+      EVALANCHE_BOX_LOG: join(ephemeral, 'log/signer.log'),
+      EVALANCHE_BOX_USER: drop?.name ?? userInfo().username,
+      EVALANCHE_BOX_TOKEN_FILE: join(durable, 'etc/token'),
+      EVALANCHE_BOX_VERIFIER_KEY: join(durable, 'etc/verifier.key'),
+      EVALANCHE_BOX_VERIFIER_PUB: join(durable, 'etc/verifier.pub'),
+      EVALANCHE_BOX_LOCK: join(durable, 'state/start.lock'),
+    };
+    const box = { root, durable, prefix, ephemeral, tarball, npmLog, env, drop };
+    return box;
+  }
+
+  function provision(box: Awaited<ReturnType<typeof provisionLayout>>, args: string[]) {
+    const options: SpawnSyncOptions = {
+      env: box.env,
+      encoding: 'utf8',
+      timeout: 20_000,
+      ...(box.drop ? { uid: box.drop.uid, gid: box.drop.gid } : {}),
+    };
+    const result = spawnSync(script, args, options);
+    return { status: result.status, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
+  }
+
+  it('recreates the install and keeps the nonce file across a wiped ephemeral tree', async () => {
+    const box = await provisionLayout();
+    const digest = createHash('sha256').update(readFileSync(box.tarball)).digest('hex');
+    const first = provision(box, ['provision', box.tarball, digest]);
+    expect(first.status, first.stderr + first.stdout).toBe(0);
+    expect(statSync(join(box.durable, 'state')).mode & 0o777).toBe(0o700);
+    expect(statSync(join(box.ephemeral, 'run')).mode & 0o777).toBe(0o750);
+    expect(statSync(box.durable).mode & 0o777).toBe(0o755);
+    const noncePath = join(box.durable, 'state/nonces.json');
+    const nonce = '{"version":1,"keep":true}\n';
+    await writeFile(noncePath, nonce);
+    const configPath = join(box.durable, 'etc/config.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf8')) as { nonceStorePath: string; marker?: string };
+    expect(config.nonceStorePath).toBe(noncePath);
+    config.marker = 'keep';
+    await writeFile(configPath, `${JSON.stringify(config)}\n`);
+    await rm(box.prefix, { recursive: true, force: true });
+    await rm(box.ephemeral, { recursive: true, force: true });
+    const second = provision(box, ['provision', box.tarball, digest]);
+    expect(second.status, second.stderr + second.stdout).toBe(0);
+    expect(readFileSync(noncePath, 'utf8')).toBe(nonce);
+    expect(JSON.parse(readFileSync(configPath, 'utf8')).marker).toBe('keep');
+    expect(existsSync(join(box.prefix, 'node_modules/.bin/evalanche-signer'))).toBe(true);
+    expect(existsSync(join(box.ephemeral, 'run'))).toBe(true);
+    expect(existsSync(join(box.durable, 'bin/grok-bot-signer.sh'))).toBe(true);
+    const log = readFileSync(box.npmLog, 'utf8');
+    expect(log).toContain('--omit=dev');
+    expect(log).toContain('--ignore-scripts');
+    expect(log.trim().split('\n')).toHaveLength(2);
+  });
+
+  it('rejects a bad tarball digest and a nonce path outside the durable home', async () => {
+    const box = await provisionLayout();
+    const missing = provision(box, ['provision']);
+    expect(missing.status).not.toBe(0);
+    expect(missing.stderr).toMatch(/tarball/);
+    expect(existsSync(box.npmLog)).toBe(false);
+
+    const mismatch = provision(box, ['provision', box.tarball, 'ab'.repeat(32)]);
+    expect(mismatch.status).not.toBe(0);
+    expect(mismatch.stderr).toMatch(/sha256/);
+    expect(existsSync(box.npmLog)).toBe(false);
+
+    const digest = createHash('sha256').update(readFileSync(box.tarball)).digest('hex');
+    const ready = provision(box, ['provision', box.tarball, digest]);
+    expect(ready.status, ready.stderr).toBe(0);
+    const noncePath = join(box.durable, 'state/nonces.json');
+    await writeFile(noncePath, 'nonce-stays\n');
+    const calls = readFileSync(box.npmLog, 'utf8').trim().split('\n').length;
+    await writeFile(join(box.durable, 'etc/config.json'), `${JSON.stringify({
+      nonceStorePath: '/tmp/nonces.json',
+      auditLogPath: join(box.durable, 'state/audit.jsonl'),
+      verifierPublicKeyPath: join(box.durable, 'etc/verifier.pub'),
+    })}\n`);
+    const denied = provision(box, ['provision', box.tarball, digest]);
+    expect(denied.status).not.toBe(0);
+    expect(denied.stderr).toMatch(/nonceStorePath/);
+    expect(readFileSync(noncePath, 'utf8')).toBe('nonce-stays\n');
+    expect(readFileSync(box.npmLog, 'utf8').trim().split('\n')).toHaveLength(calls);
+  });
 });
 
 describe.skipIf(!linux || (process.getuid?.() ?? 0) !== 0)('grok-bot signer root overrides', () => {

@@ -1,43 +1,59 @@
 #!/bin/sh
-# Start, stop, and health-check evalanche-signer on the Grok Bot box.
+# Start, stop, health-check, and provision evalanche-signer on the Grok Bot box.
 # No systemd unit. The wallet key stays in the environment and is never written here.
 # start is dry-run unless --live is passed. The bearer token is read from a file.
+# A reboot wipes every path outside /home and /workspace. Durable nonce, audit,
+# verifier, token, and config files live under /home/evalanche-signer.
 # As root, EVALANCHE_BOX_* overrides are ignored and the production paths are used.
 set -eu
 
+# Pinned so a recreated user still owns the nonce files that survived the reboot.
+SIGNER_UID_PIN=960
+SIGNER_GID_PIN=960
+SIGNER_GROUP=evalanche-signer
+
 if [ "$(id -u)" -eq 0 ]; then
   PREFIX=/opt/evalanche-signer
-  CONFIG=/etc/evalanche-signer/config.json
-  STATE=/var/lib/evalanche-signer/state
-  LOG_DIR=/var/lib/evalanche-signer/log
-  SOCKET_DIR=/var/lib/evalanche-signer/run
+  DURABLE=/home/evalanche-signer
+  EPHEMERAL=/var/lib/evalanche-signer
+  CONFIG=$DURABLE/etc/config.json
+  STATE=$DURABLE/state
+  LOG_DIR=$EPHEMERAL/log
+  SOCKET_DIR=$EPHEMERAL/run
   SOCKET=$SOCKET_DIR/signer.sock
   PIDFILE=$STATE/signer.pid
   LOG=$LOG_DIR/signer.log
   SIGNER_USER=evalanche-signer
   BIN=$PREFIX/node_modules/.bin/evalanche-signer
-  TOKEN_FILE=/etc/evalanche-signer/token
+  TOKEN_FILE=$DURABLE/etc/token
+  VERIFIER_KEY=$DURABLE/etc/verifier.key
+  VERIFIER_PUB=$DURABLE/etc/verifier.pub
   LOCK=$STATE/start.lock
   SKIP_ROOT=0
 else
   PREFIX=${EVALANCHE_BOX_PREFIX:-/opt/evalanche-signer}
-  CONFIG=${EVALANCHE_BOX_CONFIG:-/etc/evalanche-signer/config.json}
-  STATE=${EVALANCHE_BOX_STATE:-/var/lib/evalanche-signer/state}
-  LOG_DIR=${EVALANCHE_BOX_LOG_DIR:-/var/lib/evalanche-signer/log}
-  SOCKET_DIR=${EVALANCHE_BOX_SOCKET_DIR:-/var/lib/evalanche-signer/run}
+  DURABLE=${EVALANCHE_BOX_DURABLE:-/home/evalanche-signer}
+  EPHEMERAL=${EVALANCHE_BOX_EPHEMERAL:-/var/lib/evalanche-signer}
+  CONFIG=${EVALANCHE_BOX_CONFIG:-$DURABLE/etc/config.json}
+  STATE=${EVALANCHE_BOX_STATE:-$DURABLE/state}
+  LOG_DIR=${EVALANCHE_BOX_LOG_DIR:-$EPHEMERAL/log}
+  SOCKET_DIR=${EVALANCHE_BOX_SOCKET_DIR:-$EPHEMERAL/run}
   SOCKET=${EVALANCHE_BOX_SOCKET:-$SOCKET_DIR/signer.sock}
   PIDFILE=${EVALANCHE_BOX_PIDFILE:-$STATE/signer.pid}
   LOG=${EVALANCHE_BOX_LOG:-$LOG_DIR/signer.log}
   SIGNER_USER=${EVALANCHE_BOX_USER:-evalanche-signer}
   BIN=${EVALANCHE_BOX_BIN:-$PREFIX/node_modules/.bin/evalanche-signer}
-  TOKEN_FILE=${EVALANCHE_BOX_TOKEN_FILE:-/etc/evalanche-signer/token}
+  TOKEN_FILE=${EVALANCHE_BOX_TOKEN_FILE:-$DURABLE/etc/token}
+  VERIFIER_KEY=${EVALANCHE_BOX_VERIFIER_KEY:-$DURABLE/etc/verifier.key}
+  VERIFIER_PUB=${EVALANCHE_BOX_VERIFIER_PUB:-$DURABLE/etc/verifier.pub}
   LOCK=${EVALANCHE_BOX_LOCK:-$STATE/start.lock}
   SKIP_ROOT=${EVALANCHE_BOX_SKIP_ROOT:-0}
 fi
 
 usage() {
-  echo "usage: grok-bot-signer.sh start [--live] | init [--live] | stop | health" >&2
+  echo "usage: grok-bot-signer.sh start [--live] | init [--live] | stop | health | provision <tarball> [sha256]" >&2
   echo "start and init are dry-run unless --live is passed. init also passes --init-nonces." >&2
+  echo "provision recreates the user and install. It does not replace the nonce store." >&2
   exit 2
 }
 
@@ -414,6 +430,201 @@ health_signer() {
   probe_health
 }
 
+make_dir() {
+  path=$1
+  owner=$2
+  group=$3
+  mode=$4
+  if [ "$SKIP_ROOT" = 1 ]; then
+    mkdir -p "$path"
+    chmod "$mode" "$path"
+    return 0
+  fi
+  install -d -o "$owner" -g "$group" -m "$mode" "$path"
+}
+
+# Recreate the account at the pinned ids. A new uid would orphan the nonce files.
+ensure_signer_account() {
+  if [ "$SKIP_ROOT" = 1 ]; then
+    return 0
+  fi
+  taken=$(getent group "$SIGNER_GID_PIN" | cut -d: -f1 || true)
+  if [ -n "$taken" ] && [ "$taken" != "$SIGNER_GROUP" ]; then
+    echo "gid $SIGNER_GID_PIN is already used by group $taken" >&2
+    exit 1
+  fi
+  if getent group "$SIGNER_GROUP" >/dev/null 2>&1; then
+    gid=$(getent group "$SIGNER_GROUP" | cut -d: -f3)
+    if [ "$gid" != "$SIGNER_GID_PIN" ]; then
+      echo "group $SIGNER_GROUP exists with gid $gid, expected $SIGNER_GID_PIN" >&2
+      exit 1
+    fi
+  else
+    groupadd --system --gid "$SIGNER_GID_PIN" "$SIGNER_GROUP"
+  fi
+  taken=$(getent passwd "$SIGNER_UID_PIN" | cut -d: -f1 || true)
+  if [ -n "$taken" ] && [ "$taken" != "$SIGNER_USER" ]; then
+    echo "uid $SIGNER_UID_PIN is already used by user $taken" >&2
+    exit 1
+  fi
+  if id "$SIGNER_USER" >/dev/null 2>&1; then
+    uid=$(id -u "$SIGNER_USER")
+    gid=$(id -g "$SIGNER_USER")
+    if [ "$uid" != "$SIGNER_UID_PIN" ] || [ "$gid" != "$SIGNER_GID_PIN" ]; then
+      echo "user $SIGNER_USER exists as $uid:$gid, expected $SIGNER_UID_PIN:$SIGNER_GID_PIN" >&2
+      exit 1
+    fi
+  else
+    useradd --system --uid "$SIGNER_UID_PIN" --gid "$SIGNER_GID_PIN" \
+      --no-create-home --home-dir "$EPHEMERAL" --shell /bin/false "$SIGNER_USER"
+  fi
+  if id box >/dev/null 2>&1; then
+    usermod -aG "$SIGNER_GROUP" box
+  fi
+}
+
+assert_under_durable() {
+  label=$1
+  path=$2
+  case "$path" in
+    "$DURABLE"/*) ;;
+    *)
+      echo "$label must stay under $DURABLE" >&2
+      exit 1
+      ;;
+  esac
+}
+
+assert_config_paths() {
+  node -e '
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const cfg = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    const durable = path.resolve(process.argv[2]);
+    for (const key of ["nonceStorePath", "auditLogPath", "verifierPublicKeyPath"]) {
+      const value = cfg[key];
+      if (typeof value !== "string") {
+        console.error(key + " must be a path under " + durable);
+        process.exit(1);
+      }
+      const resolved = path.resolve(value);
+      if (resolved !== durable && !resolved.startsWith(durable + path.sep)) {
+        console.error(key + " must stay under " + durable);
+        process.exit(1);
+      }
+    }
+  ' "$CONFIG" "$DURABLE"
+}
+
+write_config_template() {
+  cat > "$CONFIG.tmp" <<EOF
+{
+  "chainId": 43114,
+  "socketPath": "$SOCKET",
+  "auditLogPath": "$STATE/audit.jsonl",
+  "nonceStorePath": "$STATE/nonces.json",
+  "verifierPublicKeyPath": "$VERIFIER_PUB",
+  "allow": {
+    "43114": [
+      { "address": "0x0000000000000000000000000000000000000001", "selectors": ["0x"], "roles": ["recipient"] }
+    ]
+  }
+}
+EOF
+  chmod 0644 "$CONFIG.tmp"
+  if [ "$SKIP_ROOT" != 1 ]; then
+    chown root:root "$CONFIG.tmp"
+  fi
+  mv "$CONFIG.tmp" "$CONFIG"
+}
+
+install_pinned_tarball() {
+  tarball=$1
+  if ! command -v npm >/dev/null 2>&1; then
+    echo "npm is required to install the pinned tarball" >&2
+    exit 1
+  fi
+  npm install --prefix "$PREFIX" --omit=dev --ignore-scripts "$tarball"
+  if [ "$SKIP_ROOT" != 1 ]; then
+    chown -R root:root "$PREFIX"
+  fi
+  chmod -R u+rwX,go+rX,go-w "$PREFIX"
+  packaged=$PREFIX/node_modules/evalanche/scripts/grok-bot-signer.sh
+  if [ ! -f "$packaged" ] || [ -L "$packaged" ]; then
+    echo "tarball did not install grok-bot-signer.sh" >&2
+    exit 1
+  fi
+  if [ "$SKIP_ROOT" = 1 ]; then
+    mkdir -p "$PREFIX/bin" "$DURABLE/bin"
+    cp "$packaged" "$PREFIX/bin/grok-bot-signer.sh"
+    cp "$packaged" "$DURABLE/bin/grok-bot-signer.sh"
+    chmod 0755 "$PREFIX/bin/grok-bot-signer.sh" "$DURABLE/bin/grok-bot-signer.sh"
+  else
+    install -D -o root -g root -m 0755 "$packaged" "$PREFIX/bin/grok-bot-signer.sh"
+    install -D -o root -g root -m 0755 "$packaged" "$DURABLE/bin/grok-bot-signer.sh"
+  fi
+}
+
+# Idempotent. Recreates the user, group, ephemeral dirs, and the install.
+# Never deletes or rewrites the nonce store, audit log, verifier keys, token, or an existing config.
+provision_signer() {
+  tarball=${1:-}
+  digest=${2:-}
+  if [ -n "${3:-}" ]; then
+    usage
+  fi
+  if [ -z "$tarball" ] || [ ! -f "$tarball" ] || [ -L "$tarball" ]; then
+    echo "provision requires the pinned tarball" >&2
+    exit 1
+  fi
+  require_root
+  if [ "$SKIP_ROOT" != 1 ]; then
+    case "$DURABLE" in
+      /home/*) ;;
+      *)
+        echo "durable signer state must live under /home" >&2
+        exit 1
+        ;;
+    esac
+  fi
+  assert_under_durable "nonce state" "$STATE"
+  assert_under_durable "config" "$CONFIG"
+  assert_under_durable "token file" "$TOKEN_FILE"
+  assert_under_durable "verifier key" "$VERIFIER_KEY"
+  assert_under_durable "verifier pubkey" "$VERIFIER_PUB"
+  if [ -n "$digest" ]; then
+    if ! printf '%s' "$digest" | grep -E -q '^[0-9a-f]{64}$'; then
+      echo "tarball sha256 must be 64 hex characters" >&2
+      exit 1
+    fi
+    actual=$(sha256sum "$tarball" | awk 'NR==1 { print $1 }')
+    if [ "$actual" != "$digest" ]; then
+      echo "tarball sha256 does not match" >&2
+      exit 1
+    fi
+  fi
+  if [ -L "$CONFIG" ] || [ -L "$STATE" ] || [ -L "$DURABLE" ]; then
+    echo "durable signer paths must not be symlinks" >&2
+    exit 1
+  fi
+  ensure_signer_account
+  make_dir "$DURABLE" root root 0755
+  make_dir "$DURABLE/etc" root root 0755
+  make_dir "$DURABLE/bin" root root 0755
+  make_dir "$STATE" "$SIGNER_USER" "$SIGNER_GROUP" 0700
+  make_dir "$EPHEMERAL" root root 0755
+  make_dir "$PREFIX" root root 0755
+  make_dir "$LOG_DIR" "$SIGNER_USER" "$SIGNER_GROUP" 0700
+  make_dir "$SOCKET_DIR" "$SIGNER_USER" "$SIGNER_GROUP" 0750
+  if [ -f "$CONFIG" ]; then
+    assert_config_paths
+  else
+    write_config_template
+  fi
+  install_pinned_tarball "$tarball"
+  echo "signer provisioned"
+}
+
 cmd=${1:-}
 shift || true
 case "$cmd" in
@@ -421,5 +632,6 @@ case "$cmd" in
   init) run_start 1 "$@" ;;
   stop) stop_signer ;;
   health) health_signer ;;
+  provision) provision_signer "$@" ;;
   *) usage ;;
 esac
