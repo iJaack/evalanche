@@ -413,7 +413,11 @@ Those stables are native USDC, USDT, and USDC.e. The top list is WAVAX, BTC.b, a
 
 ## Kyber receivers inside a V3 leg
 
-The production allowlist marks KyberSwap MetaAggregationRouterV2 `0x6131B5fae19EA4f9D964eAc0408E4408b66337b5` as `dex` and `spender`, with no selectors. A direct call to the router is denied. When a Li.Fi V3 leg's `callData` starts with Kyber `swap` (`0xe21fd0e9`), the signer decodes that payload. The source token must be the leg's sending asset and the destination token must be the leg's receiving asset. On every leg except the last, `dstReceiver` must be the Li.Fi diamond `0x1231DEB6f5749EF6cE6943a275A1D3E7486F4EaE`. On the last leg it must be that diamond or an address with the `recipient` role. Real Li.Fi routes set `dstReceiver` to the diamond, including the last hop. A `0xe21fd0e9` payload that does not decode is denied. Other inner selectors are not Kyber and stay on the existing leg checks.
+The production allowlist marks KyberSwap MetaAggregationRouterV2 `0x6131B5fae19EA4f9D964eAc0408E4408b66337b5` as `dex` and `spender`, with no selectors. A direct call to the router is denied. A Li.Fi V3 leg whose `callTo` is that router must use `swap` (`0xe21fd0e9`). `swapSimpleMode`, `swapGeneric`, empty calldata, and any other selector are denied. The decoded payload must re-encode to the same bytes, so trailing junk is denied.
+
+`callTarget` must be in `kyberExecutors`. The default is the Avalanche AggregationExecutorProxy `0x8F10B468b06c6FD214B65F87778827F7D113f996`. An empty list allows none. `approveTarget` must be the zero address, the router, or that same set. `srcReceivers` must be an allowed executor, or an address that appears in the executor `targetData` (the pool a real Kyber quote names). Their amounts must sum to the swap amount. `feeReceivers` must be empty or every fee amount must be zero. A positive fee is denied.
+
+The source token must be the leg's sending asset and the destination token must be the leg's receiving asset. On every leg except the last, `dstReceiver` must be the Li.Fi diamond `0x1231DEB6f5749EF6cE6943a275A1D3E7486F4EaE`. On the last leg it must be that diamond or an address with the `recipient` role. Real Li.Fi routes set `dstReceiver` to the diamond, including the last hop. The inner Kyber `minReturnAmount` is not a second floor. The V3 `minAmountOut` is the bound. A `0xe21fd0e9` payload that does not decode is denied. A leg whose `callTo` is not this router is not inner-decoded.
 
 ## Allowance reset
 

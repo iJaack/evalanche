@@ -172,6 +172,11 @@ export interface SignerServerOptions {
    * `stables`, 200 for `top`, and 300 for every other token.
    */
   slippageCaps?: SlippageCaps;
+  /**
+   * Kyber AggregationExecutor addresses a V3 leg may name as `callTarget`.
+   * Defaults to the Avalanche executor proxy. An empty list allows none.
+   */
+  kyberExecutors?: string[];
   messageAllowlist?: string[];
   typedDataAllow?: TypedDataAllow[];
   explicitAllows?: ExplicitAllow[];
@@ -716,6 +721,7 @@ export class EvalancheSignerServer {
           const entry = this.allowEntry(chainId, to);
           return Boolean(entry?.selectors.includes(selector.toLowerCase()));
         },
+        kyberExecutors: this.options.kyberExecutors,
         underlyingOf: (vault) => this.allowEntry(chainId, vault)?.underlying,
       });
     } catch (error) {
@@ -1162,6 +1168,21 @@ function assertStartup(options: SignerServerOptions): void {
     );
   }
   assertSlippageCaps(options.slippageCaps);
+  assertKyberExecutors(options.kyberExecutors);
+}
+
+function assertKyberExecutors(list: string[] | undefined): void {
+  if (list === undefined) return;
+  if (!Array.isArray(list)) {
+    throw new EvalancheError('kyberExecutors must be an address list', EvalancheErrorCode.INVALID_CONFIG);
+  }
+  for (const address of list) {
+    try {
+      getAddress(address);
+    } catch {
+      throw new EvalancheError('kyberExecutors has an invalid address', EvalancheErrorCode.INVALID_CONFIG);
+    }
+  }
 }
 
 function assertSlippageCaps(caps: SlippageCaps | undefined): void {

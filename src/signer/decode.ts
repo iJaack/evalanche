@@ -29,8 +29,14 @@ export const LIFI_GENERIC_SWAP_FACET_V3 = '0x31a9b1835864706Af10103b31Ea2b79bdb9
  * calldata of a Li.Fi V3 leg, not as a transaction the signer will call directly.
  */
 export const KYBER_META_AGGREGATION_ROUTER_V2 = '0x6131B5fae19EA4f9D964eAc0408E4408b66337b5';
-/** MetaAggregationRouterV2 `swap`. */
+/** MetaAggregationRouterV2 `swap`. Every other selector on this router is denied. */
 export const KYBER_SWAP_SELECTOR = '0xe21fd0e9';
+/**
+ * Kyber AggregationExecutorProxy on Avalanche. `callTarget` must be this
+ * address unless config replaces `kyberExecutors`. Real quotes send the
+ * input to a pool named inside that executor's calldata, not to the proxy.
+ */
+export const KYBER_AGGREGATION_EXECUTOR = '0x8F10B468b06c6FD214B65F87778827F7D113f996';
 
 /** Polymarket protocol contracts. Config cannot put these back on the allowlist. */
 export const POLYMARKET_DENY_CONTRACTS = [
@@ -149,6 +155,11 @@ export interface DecodeOptions {
   underlyingOf?: (vault: string) => string | undefined;
   /** True when `address` carries `role` on this chain's allow map. */
   allowRole: (address: string, role: AllowRole) => boolean;
+  /**
+   * Allowed Kyber `callTarget` addresses. Defaults to the Avalanche
+   * AggregationExecutorProxy. An empty list allows none.
+   */
+  kyberExecutors?: readonly string[];
 }
 
 export type AllowRole = 'dex' | 'spender' | 'recipient' | 'token' | 'vault';
@@ -454,16 +465,24 @@ function decodeSwap(to: string, data: string, selector: string, options: DecodeO
 }
 
 /**
- * A V3 leg whose calldata is Kyber `swap` must name its own tokens, and the
- * proceeds must land on the diamond (every hop Li.Fi still has to finish) or,
- * on the last hop only, on an allowlisted recipient. Other inner selectors
- * stay on the leg allowlist checks. A Kyber selector that does not decode is denied.
+ * A V3 leg that calls the Kyber router must be `swap` (`0xe21fd0e9`) and
+ * nothing else. `swapSimpleMode`, `swapGeneric`, empty calldata, and any
+ * other selector are denied. The payload must re-encode to the same bytes.
+ * `callTarget` must be an allowed executor. `srcReceivers` must be that
+ * executor or an address named in its calldata, and their amounts must sum
+ * to the swap amount. Fee receivers must be empty or carry zero amounts.
+ * Proceeds land on the diamond, or on an allowlisted recipient on the last hop.
+ * A non-Kyber dex is not inner-decoded.
  */
 function assertKyberLegs(legs: SwapLeg[], options: DecodeOptions): void {
   const diamond = getAddress(LIFI_DIAMOND);
+  const router = getAddress(KYBER_META_AGGREGATION_ROUTER_V2);
   for (let i = 0; i < legs.length; i += 1) {
     const leg = legs[i];
-    if (selectorOf(leg.callData) !== KYBER_SWAP_SELECTOR) continue;
+    if (getAddress(leg.callTo) !== router) continue;
+    if (selectorOf(leg.callData) !== KYBER_SWAP_SELECTOR) {
+      fail('Kyber router selector is not swap');
+    }
     let decoded: ReturnType<Interface['decodeFunctionData']>;
     try {
       decoded = KYBER.decodeFunctionData('swap', leg.callData);
@@ -471,13 +490,28 @@ function assertKyberLegs(legs: SwapLeg[], options: DecodeOptions): void {
       if (error instanceof EvalancheError) throw error;
       fail('Kyber swap calldata could not be decoded');
     }
-    const desc = decoded[0].desc as { srcToken: string; dstToken: string; dstReceiver: string };
+    const execution = decoded[0];
+    const again = KYBER.encodeFunctionData('swap', [execution]);
+    if (again.toLowerCase() !== leg.callData.toLowerCase()) {
+      fail('Kyber swap calldata has trailing bytes');
+    }
+    const desc = execution.desc as {
+      srcToken: string;
+      dstToken: string;
+      srcReceivers: readonly string[];
+      srcAmounts: readonly bigint[];
+      feeReceivers: readonly string[];
+      feeAmounts: readonly bigint[];
+      dstReceiver: string;
+      amount: bigint;
+    };
     if (!sameAsset(String(desc.srcToken), leg.sendingAsset)) {
       fail('Kyber srcToken does not match the swap leg sending asset');
     }
     if (!sameAsset(String(desc.dstToken), leg.receivingAsset)) {
       fail('Kyber dstToken does not match the swap leg receiving asset');
     }
+    assertKyberParties(execution as { callTarget: string; approveTarget: string; targetData: string }, desc, options);
     let dstReceiver: string;
     try {
       dstReceiver = getAddress(String(desc.dstReceiver));
@@ -492,6 +526,74 @@ function assertKyberLegs(legs: SwapLeg[], options: DecodeOptions): void {
     if (dstReceiver !== diamond && !options.allowRole(dstReceiver, 'recipient')) {
       fail('Kyber dstReceiver is not the Li.Fi diamond or an allowlisted recipient');
     }
+  }
+}
+
+function kyberExecutorSet(options: DecodeOptions): Set<string> {
+  const list = options.kyberExecutors ?? [KYBER_AGGREGATION_EXECUTOR];
+  const set = new Set<string>();
+  for (const entry of list) {
+    try {
+      set.add(getAddress(entry));
+    } catch {
+      fail('Kyber executor is not an address');
+    }
+  }
+  return set;
+}
+
+function assertKyberParties(
+  execution: { callTarget: string; approveTarget: string; targetData: string },
+  desc: {
+    srcReceivers: readonly string[];
+    srcAmounts: readonly bigint[];
+    feeReceivers: readonly string[];
+    feeAmounts: readonly bigint[];
+    amount: bigint;
+  },
+  options: DecodeOptions,
+): void {
+  const executors = kyberExecutorSet(options);
+  const router = getAddress(KYBER_META_AGGREGATION_ROUTER_V2);
+  const zero = getAddress(NATIVE_ADDRESS);
+  let callTarget: string;
+  let approveTarget: string;
+  try {
+    callTarget = getAddress(String(execution.callTarget));
+    approveTarget = getAddress(String(execution.approveTarget));
+  } catch {
+    fail('Kyber callTarget is not an address');
+  }
+  if (!executors.has(callTarget)) fail('Kyber callTarget is not an allowed executor');
+  if (approveTarget !== zero && approveTarget !== router && !executors.has(approveTarget)) {
+    fail('Kyber approveTarget is not an allowed executor');
+  }
+  const srcReceivers = [...desc.srcReceivers];
+  const srcAmounts = [...desc.srcAmounts].map((amount) => BigInt(amount));
+  if (srcReceivers.length === 0 || srcReceivers.length !== srcAmounts.length) {
+    fail('Kyber srcReceivers must name the executor or a pool in the executor calldata');
+  }
+  let sum = 0n;
+  for (const amount of srcAmounts) sum += amount;
+  if (sum !== BigInt(desc.amount)) fail('Kyber srcAmounts must sum to the swap amount');
+  const targetData = String(execution.targetData ?? '0x').toLowerCase();
+  for (const receiver of srcReceivers) {
+    let address: string;
+    try {
+      address = getAddress(String(receiver));
+    } catch {
+      fail('Kyber srcReceiver is not an address');
+    }
+    if (executors.has(address)) continue;
+    if (!targetData.includes(address.slice(2).toLowerCase())) {
+      fail('Kyber srcReceiver is not an allowed executor');
+    }
+  }
+  const feeReceivers = [...desc.feeReceivers];
+  const feeAmounts = [...desc.feeAmounts].map((amount) => BigInt(amount));
+  if (feeReceivers.length !== feeAmounts.length) fail('Kyber feeReceivers and feeAmounts differ in length');
+  for (const amount of feeAmounts) {
+    if (amount !== 0n) fail('Kyber fee amount must be zero');
   }
 }
 

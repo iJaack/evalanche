@@ -314,7 +314,10 @@ describe('Kyber swap inside a Li.Fi V3 leg', () => {
   it('signs an intermediate Kyber hop that pays the diamond', async () => {
     const wallet = new Wallet(KEY).address;
     const first = leg(fixture.calldata);
+    const other = '0x000000000000000000000000000000000000bEEF';
     const second = leg('0x', {
+      callTo: other,
+      approveTo: other,
       sendingAssetId: getAddress(fixture.dstToken),
       receivingAssetId: getAddress(fixture.srcToken),
       fromAmount: 1n,
