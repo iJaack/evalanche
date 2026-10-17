@@ -4,9 +4,12 @@
 # start is dry-run unless --live is passed. The bearer token is read from a file.
 # /etc, /opt, and /var do not survive a reset. Only /home does. Durable nonce,
 # audit, verifier, token, config, and the pinned tarball live under
-# /home/box/agent-data/evalanche-persist. provision recreates the user, /opt,
-# and /etc from that directory. It does not regenerate keys or reset nonces.
-# There is no boot hook. As root, EVALANCHE_BOX_* overrides are ignored.
+# /home/box/agent-data/evalanche-persist. A reset restores that tree as the
+# box user, so provision chowns it back and fails closed if it cannot.
+# State and log are bind-mounted onto /var/lib/evalanche-signer/{state,log}.
+# provision recreates the user, /opt, and /etc from the persistent directory.
+# It does not regenerate keys or reset nonces. There is no boot hook.
+# As root, EVALANCHE_BOX_* overrides are ignored.
 set -eu
 
 # Pinned so a recreated user still owns the nonce files that survived the reboot.
@@ -19,8 +22,11 @@ if [ "$(id -u)" -eq 0 ]; then
   DURABLE=/home/box/agent-data/evalanche-persist
   ETC=/etc/evalanche-signer
   EPHEMERAL=/var/lib/evalanche-signer
-  CONFIG=$DURABLE/config.json
-  STATE=$DURABLE/state
+  CONFIG_SRC=$DURABLE/config.json
+  CONFIG=$ETC/config.json
+  STATE_SRC=$DURABLE/state
+  LOG_SRC=$DURABLE/log
+  STATE=$EPHEMERAL/state
   NONCE_FILE=$STATE/nonces.json
   AUDIT_FILE=$STATE/audit.jsonl
   LOG_DIR=$EPHEMERAL/log
@@ -41,10 +47,13 @@ else
   DURABLE=${EVALANCHE_BOX_DURABLE:-/home/box/agent-data/evalanche-persist}
   ETC=${EVALANCHE_BOX_ETC:-/etc/evalanche-signer}
   EPHEMERAL=${EVALANCHE_BOX_EPHEMERAL:-/var/lib/evalanche-signer}
-  STATE=${EVALANCHE_BOX_STATE:-$DURABLE/state}
+  CONFIG_SRC=${EVALANCHE_BOX_CONFIG_SRC:-$DURABLE/config.json}
+  CONFIG=${EVALANCHE_BOX_CONFIG:-$ETC/config.json}
+  STATE_SRC=${EVALANCHE_BOX_STATE_SRC:-$DURABLE/state}
+  LOG_SRC=${EVALANCHE_BOX_LOG_SRC:-$DURABLE/log}
+  STATE=${EVALANCHE_BOX_STATE:-$EPHEMERAL/state}
   NONCE_FILE=${EVALANCHE_BOX_NONCE:-$STATE/nonces.json}
   AUDIT_FILE=${EVALANCHE_BOX_AUDIT:-$STATE/audit.jsonl}
-  CONFIG=${EVALANCHE_BOX_CONFIG:-$DURABLE/config.json}
   LOG_DIR=${EVALANCHE_BOX_LOG_DIR:-$EPHEMERAL/log}
   SOCKET_DIR=${EVALANCHE_BOX_SOCKET_DIR:-$EPHEMERAL/run}
   SOCKET=${EVALANCHE_BOX_SOCKET:-$SOCKET_DIR/signer.sock}
@@ -64,7 +73,7 @@ usage() {
   echo "usage: grok-bot-signer.sh start [--live] | init [--live] | stop | health | provision [tarball] [sha256]" >&2
   echo "start and init are dry-run unless --live is passed. init also passes --init-nonces." >&2
   echo "provision recreates the user, /opt, and /etc from the persistent directory." >&2
-  echo "It does not regenerate a verifier key or reset a nonce store that already exists." >&2
+  echo "It bind-mounts state and log, chowns the persistent files, and does not regenerate a key or reset a nonce store." >&2
   exit 2
 }
 
@@ -278,6 +287,8 @@ run_start() {
     usage
   fi
   require_root
+  require_persistent_mounts
+  assert_trusted_files
   require_layout
   hold_start_lock
   if [ -z "${EVALANCHE_SIGNER_PRIVATE_KEY:-}" ]; then
@@ -506,35 +517,290 @@ assert_under_durable() {
   esac
 }
 
+assert_state_path() {
+  label=$1
+  path=$2
+  case "$path" in
+    "$STATE"/*|"$STATE_SRC"/*) return 0 ;;
+  esac
+  echo "$label must stay under the persistent state directory or its bind mount" >&2
+  exit 1
+}
+
+resolve_id() {
+  if printf '%s' "$1" | grep -E -q '^[0-9]+$'; then
+    printf '%s\n' "$1"
+  else
+    id -u "$1"
+  fi
+}
+
+resolve_gid() {
+  if printf '%s' "$1" | grep -E -q '^[0-9]+$'; then
+    printf '%s\n' "$1"
+  else
+    getent group "$1" | cut -d: -f3
+  fi
+}
+
+normalize_mode() {
+  stripped=$(printf '%s' "$1" | sed 's/^0*//')
+  if [ -z "$stripped" ]; then
+    printf '0\n'
+  else
+    printf '%s\n' "$stripped"
+  fi
+}
+
+# Chown and chmod one existing path, then read the result back. A symlink is
+# refused. A chown that does not stick is a failure: do not trust the file.
+claim_one() {
+  path=$1
+  uid=$2
+  group=$3
+  mode=$4
+  if [ -L "$path" ]; then
+    echo "refusing symlink $path" >&2
+    exit 1
+  fi
+  if [ ! -e "$path" ]; then
+    return 0
+  fi
+  chown "$uid:$group" "$path" || {
+    echo "cannot take ownership of $path" >&2
+    exit 1
+  }
+  chmod "$mode" "$path" || {
+    echo "cannot set mode $mode on $path" >&2
+    exit 1
+  }
+  assert_one "$path" "$uid" "$group" "$mode" 0
+}
+
+# Stat only. Does not chown. Start uses this so a box-owned file is never
+# promoted to root just by launching the signer.
+assert_one() {
+  path=$1
+  uid=$2
+  group=$3
+  mode=$4
+  optional=$5
+  if [ ! -e "$path" ]; then
+    if [ "$optional" = 1 ]; then
+      return 0
+    fi
+    echo "missing $path" >&2
+    exit 1
+  fi
+  if [ -L "$path" ]; then
+    echo "refusing symlink $path" >&2
+    exit 1
+  fi
+  actual_uid=$(stat -c %u "$path")
+  actual_gid=$(stat -c %g "$path")
+  actual_mode=$(normalize_mode "$(stat -c %a "$path")")
+  want_uid=$(resolve_id "$uid")
+  want_gid=$(resolve_gid "$group")
+  want_mode=$(normalize_mode "$mode")
+  if [ -z "$want_uid" ] || [ -z "$want_gid" ]; then
+    echo "cannot resolve owner $uid:$group for $path" >&2
+    exit 1
+  fi
+  if [ "$actual_uid" != "$want_uid" ] || [ "$actual_gid" != "$want_gid" ] || [ "$actual_mode" != "$want_mode" ]; then
+    echo "refusing untrusted $path (owner $actual_uid:$actual_gid mode $actual_mode, expected $want_uid:$want_gid mode $want_mode)" >&2
+    exit 1
+  fi
+}
+
+claim_tree() {
+  root=$1
+  uid=$2
+  group=$3
+  dir_mode=$4
+  file_mode=$5
+  if [ -L "$root" ] || [ ! -d "$root" ]; then
+    echo "missing directory $root" >&2
+    exit 1
+  fi
+  claim_one "$root" "$uid" "$group" "$dir_mode"
+  list=$(mktemp)
+  find "$root" -mindepth 1 -xdev -print > "$list"
+  while IFS= read -r entry; do
+    [ -n "$entry" ] || continue
+    if [ -L "$entry" ]; then
+      echo "refusing symlink $entry" >&2
+      rm -f "$list"
+      exit 1
+    fi
+    base=${entry##*/}
+    if [ -d "$entry" ]; then
+      claim_one "$entry" "$uid" "$group" "$dir_mode"
+    elif [ -f "$entry" ]; then
+      if [ "$base" = "start.lock" ] || [ "$base" = "signer.pid" ]; then
+        claim_one "$entry" root root 600
+      else
+        claim_one "$entry" "$uid" "$group" "$file_mode"
+      fi
+    else
+      echo "refusing special file $entry" >&2
+      rm -f "$list"
+      exit 1
+    fi
+  done < "$list"
+  rm -f "$list"
+}
+
+claim_durable_ownership() {
+  if [ "$SKIP_ROOT" = 1 ]; then
+    return 0
+  fi
+  claim_one "$DURABLE" root root 755
+  claim_one "$DURABLE/bin" root root 755
+  claim_one "$CONFIG_SRC" root root 644
+  claim_one "$TOKEN_FILE" root "$SIGNER_GROUP" 640
+  claim_one "$VERIFIER_KEY" root root 600
+  claim_one "$VERIFIER_PUB" root root 644
+  claim_one "$TARBALL" root root 644
+  claim_one "$DURABLE/bin/grok-bot-signer.sh" root root 755
+  claim_tree "$STATE_SRC" "$SIGNER_USER" "$SIGNER_GROUP" 700 600
+  claim_tree "$LOG_SRC" "$SIGNER_USER" "$SIGNER_GROUP" 700 600
+}
+
+assert_trusted_files() {
+  if [ "$SKIP_ROOT" = 1 ]; then
+    return 0
+  fi
+  assert_one "$CONFIG_SRC" root root 644 0
+  assert_one "$CONFIG" root root 644 0
+  assert_one "$TOKEN_FILE" root "$SIGNER_GROUP" 640 0
+  assert_one "$VERIFIER_KEY" root root 600 1
+  assert_one "$VERIFIER_PUB" root root 644 1
+  assert_one "$ETC/verifier.key" root root 600 1
+  assert_one "$ETC/verifier.pub" root root 644 1
+  assert_one "$ETC/token" root "$SIGNER_GROUP" 640 1
+  assert_one "$STATE_SRC" "$SIGNER_USER" "$SIGNER_GROUP" 700 0
+  assert_one "$STATE" "$SIGNER_USER" "$SIGNER_GROUP" 700 0
+  assert_one "$NONCE_FILE" "$SIGNER_USER" "$SIGNER_GROUP" 600 1
+  assert_one "$AUDIT_FILE" "$SIGNER_USER" "$SIGNER_GROUP" 600 1
+  if [ "$STATE" != "$STATE_SRC" ]; then
+    assert_one "$STATE_SRC/nonces.json" "$SIGNER_USER" "$SIGNER_GROUP" 600 1
+    assert_one "$STATE_SRC/audit.jsonl" "$SIGNER_USER" "$SIGNER_GROUP" 600 1
+  fi
+}
+
+same_inode() {
+  [ "$(stat -c %d:%i "$1")" = "$(stat -c %d:%i "$2")" ]
+}
+
+mount_bind() {
+  src=$1
+  dest=$2
+  if [ "$src" = "$dest" ]; then
+    return 0
+  fi
+  if [ -L "$src" ] || [ -L "$dest" ]; then
+    echo "refusing to bind a symlink ($src -> $dest)" >&2
+    exit 1
+  fi
+  if [ ! -d "$src" ] || [ ! -d "$dest" ]; then
+    echo "bind mount needs directories $src and $dest" >&2
+    exit 1
+  fi
+  if mountpoint -q "$dest"; then
+    if ! same_inode "$src" "$dest"; then
+      echo "$dest is already mounted from a different directory than $src" >&2
+      exit 1
+    fi
+    return 0
+  fi
+  mount --bind "$src" "$dest" || {
+    echo "cannot bind-mount $src onto $dest" >&2
+    exit 1
+  }
+  if ! same_inode "$src" "$dest"; then
+    echo "bind mount $src onto $dest did not take effect" >&2
+    exit 1
+  fi
+}
+
+require_persistent_mounts() {
+  if [ "$SKIP_ROOT" = 1 ]; then
+    return 0
+  fi
+  if [ "$STATE" = "$STATE_SRC" ] && [ "$LOG_DIR" = "$LOG_SRC" ]; then
+    return 0
+  fi
+  if ! mountpoint -q "$STATE" || ! same_inode "$STATE_SRC" "$STATE"; then
+    echo "$STATE is not a bind mount of $STATE_SRC; run provision" >&2
+    exit 1
+  fi
+  if ! mountpoint -q "$LOG_DIR" || ! same_inode "$LOG_SRC" "$LOG_DIR"; then
+    echo "$LOG_DIR is not a bind mount of $LOG_SRC; run provision" >&2
+    exit 1
+  fi
+}
+
 assert_config_paths() {
   node -e '
     const fs = require("node:fs");
     const path = require("node:path");
     const cfg = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
     const durable = path.resolve(process.argv[2]);
-    for (const key of ["nonceStorePath", "auditLogPath", "verifierPublicKeyPath"]) {
+    const state = path.resolve(process.argv[3]);
+    const stateSrc = path.resolve(process.argv[4]);
+    const etcDir = path.resolve(process.argv[5]);
+    function under(resolved, root) {
+      return resolved === root || resolved.startsWith(root + path.sep);
+    }
+    for (const key of ["nonceStorePath", "auditLogPath"]) {
       const value = cfg[key];
       if (typeof value !== "string") {
-        console.error(key + " must be a path under " + durable);
+        console.error(key + " must be a path under the persistent state directory or its bind mount");
         process.exit(1);
       }
       const resolved = path.resolve(value);
-      if (resolved !== durable && !resolved.startsWith(durable + path.sep)) {
-        console.error(key + " must stay under " + durable);
+      if (!under(resolved, state) && !under(resolved, stateSrc) && !under(resolved, durable)) {
+        console.error(key + " must stay under the persistent state directory or its bind mount");
         process.exit(1);
       }
     }
-  ' "$CONFIG" "$DURABLE"
+    if (typeof cfg.verifierPublicKeyPath !== "string") {
+      console.error("verifierPublicKeyPath must be a path under the /etc replica or the persistent directory");
+      process.exit(1);
+    }
+    const verifier = path.resolve(cfg.verifierPublicKeyPath);
+    if (!under(verifier, etcDir) && !under(verifier, durable)) {
+      console.error("verifierPublicKeyPath must stay under the /etc replica or the persistent directory");
+      process.exit(1);
+    }
+    if (cfg.trustAnchor !== undefined && cfg.trustAnchor !== "") {
+      if (typeof cfg.trustAnchor !== "string" || !path.isAbsolute(cfg.trustAnchor)) {
+        console.error("trustAnchor must be an absolute path");
+        process.exit(1);
+      }
+      const anchor = path.resolve(cfg.trustAnchor);
+      if (!under(anchor, durable) && anchor !== durable) {
+        console.error("trustAnchor must be the persistent directory or a directory inside it");
+        process.exit(1);
+      }
+      for (const key of ["nonceStorePath", "auditLogPath"]) {
+        if (!under(path.resolve(cfg[key]), anchor)) {
+          console.error(key + " must stay under trustAnchor");
+          process.exit(1);
+        }
+      }
+    }
+  ' "$CONFIG_SRC" "$DURABLE" "$STATE" "$STATE_SRC" "$ETC"
 }
 
 write_config_template() {
-  cat > "$CONFIG.tmp" <<EOF
+  cat > "$CONFIG_SRC.tmp" <<EOF
 {
   "chainId": 43114,
   "socketPath": "$SOCKET",
   "auditLogPath": "$AUDIT_FILE",
   "nonceStorePath": "$NONCE_FILE",
-  "verifierPublicKeyPath": "$VERIFIER_PUB",
+  "verifierPublicKeyPath": "$ETC/verifier.pub",
   "allow": {
     "43114": [
       { "address": "0x0000000000000000000000000000000000000001", "selectors": ["0x"], "roles": ["recipient"] }
@@ -542,11 +808,11 @@ write_config_template() {
   }
 }
 EOF
-  chmod 0644 "$CONFIG.tmp"
+  chmod 0644 "$CONFIG_SRC.tmp"
   if [ "$SKIP_ROOT" != 1 ]; then
-    chown root:root "$CONFIG.tmp"
+    chown root:root "$CONFIG_SRC.tmp"
   fi
-  mv "$CONFIG.tmp" "$CONFIG"
+  mv "$CONFIG_SRC.tmp" "$CONFIG_SRC"
 }
 
 install_pinned_tarball() {
@@ -600,10 +866,17 @@ restore_etc_file() {
 
 restore_etc() {
   make_dir "$ETC" root root 0755
-  restore_etc_file "$CONFIG" "$ETC/config.json" 0644 root
+  restore_etc_file "$CONFIG_SRC" "$ETC/config.json" 0644 root
   restore_etc_file "$VERIFIER_KEY" "$ETC/verifier.key" 0600 root
   restore_etc_file "$VERIFIER_PUB" "$ETC/verifier.pub" 0644 root
   restore_etc_file "$TOKEN_FILE" "$ETC/token" 0640 "$SIGNER_GROUP"
+  if [ "$SKIP_ROOT" = 1 ]; then
+    return 0
+  fi
+  assert_one "$ETC/config.json" root root 644 1
+  assert_one "$ETC/verifier.key" root root 600 1
+  assert_one "$ETC/verifier.pub" root root 644 1
+  assert_one "$ETC/token" root "$SIGNER_GROUP" 640 1
 }
 
 pin_tarball() {
@@ -640,13 +913,22 @@ provision_signer() {
         ;;
     esac
   fi
-  assert_under_durable "nonce file" "$NONCE_FILE"
-  assert_under_durable "audit log" "$AUDIT_FILE"
-  assert_under_durable "config" "$CONFIG"
+  assert_state_path "nonce file" "$NONCE_FILE"
+  assert_state_path "audit log" "$AUDIT_FILE"
+  assert_under_durable "config source" "$CONFIG_SRC"
+  assert_under_durable "state directory" "$STATE_SRC"
+  assert_under_durable "log directory" "$LOG_SRC"
   assert_under_durable "token file" "$TOKEN_FILE"
   assert_under_durable "verifier key" "$VERIFIER_KEY"
   assert_under_durable "verifier pubkey" "$VERIFIER_PUB"
   assert_under_durable "pinned tarball" "$TARBALL"
+  case "$CONFIG" in
+    "$ETC"/*|"$DURABLE"/*) ;;
+    *)
+      echo "signer config must be the /etc replica or a file under $DURABLE" >&2
+      exit 1
+      ;;
+  esac
   if [ ! -f "$src" ] || [ -L "$src" ]; then
     echo "provision requires the pinned tarball at $src" >&2
     exit 1
@@ -662,19 +944,26 @@ provision_signer() {
       exit 1
     fi
   fi
-  if [ -L "$CONFIG" ] || [ -L "$STATE" ] || [ -L "$DURABLE" ] || [ -L "$NONCE_FILE" ] || [ -L "$AUDIT_FILE" ]; then
+  if [ -L "$CONFIG_SRC" ] || [ -L "$CONFIG" ] || [ -L "$STATE" ] || [ -L "$STATE_SRC" ] || [ -L "$LOG_SRC" ] || [ -L "$LOG_DIR" ] || [ -L "$DURABLE" ] || [ -L "$NONCE_FILE" ] || [ -L "$AUDIT_FILE" ] || [ -L "$ETC" ]; then
     echo "durable signer paths must not be symlinks" >&2
     exit 1
   fi
   ensure_signer_account
   make_dir "$DURABLE" root root 0755
   make_dir "$DURABLE/bin" root root 0755
-  make_dir "$STATE" "$SIGNER_USER" "$SIGNER_GROUP" 0700
+  make_dir "$STATE_SRC" "$SIGNER_USER" "$SIGNER_GROUP" 0700
+  make_dir "$LOG_SRC" "$SIGNER_USER" "$SIGNER_GROUP" 0700
   make_dir "$EPHEMERAL" root root 0755
+  if [ "$STATE" != "$STATE_SRC" ]; then
+    make_dir "$STATE" root root 0755
+  fi
+  if [ "$LOG_DIR" != "$LOG_SRC" ]; then
+    make_dir "$LOG_DIR" root root 0755
+  fi
   make_dir "$PREFIX" root root 0755
-  make_dir "$LOG_DIR" "$SIGNER_USER" "$SIGNER_GROUP" 0700
   make_dir "$SOCKET_DIR" "$SIGNER_USER" "$SIGNER_GROUP" 0750
-  if [ -f "$CONFIG" ]; then
+  claim_durable_ownership
+  if [ -f "$CONFIG_SRC" ]; then
     assert_config_paths
   else
     write_config_template
@@ -682,6 +971,12 @@ provision_signer() {
   pin_tarball "$src"
   install_pinned_tarball "$TARBALL"
   restore_etc
+  if [ "$SKIP_ROOT" != 1 ]; then
+    mount_bind "$STATE_SRC" "$STATE"
+    mount_bind "$LOG_SRC" "$LOG_DIR"
+    require_persistent_mounts
+    assert_trusted_files
+  fi
   echo "signer provisioned"
 }
 

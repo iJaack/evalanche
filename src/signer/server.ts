@@ -131,6 +131,13 @@ export interface SignerServerOptions {
   /** Path to the signer config file, checked for root ownership when set. */
   configPath?: string;
   /**
+   * Root-owned directory where state-path parent checks stop. Components
+   * above it may be owned by another user. The anchor itself must be
+   * root-owned, and a symlink anywhere in the path is refused. Config and
+   * verifier-key files still walk all the way to `/`.
+   */
+  trustAnchor?: string;
+  /**
    * Test-only escape hatch. Production startup refuses a config, keystore, or
    * verifier pubkey file that is not root-owned or is writable by group/other.
    */
@@ -1210,14 +1217,15 @@ async function assertFilePermissions(options: SignerServerOptions): Promise<stri
     await assertSecureParents(options.keystorePath);
     keystore = await readSecureFile(options.keystorePath);
   }
+  const stateOptions = options.trustAnchor ? { trustAnchor: options.trustAnchor } : undefined;
   const nonceDir = dirname(options.nonceStorePath);
-  await assertSignerStateDirectory(nonceDir);
+  await assertSignerStateDirectory(nonceDir, stateOptions);
   const auditDir = dirname(options.auditLogPath);
-  if (auditDir !== nonceDir) await assertSignerStateDirectory(auditDir);
-  await assertStateFileIfExists(options.nonceStorePath);
-  await assertStateFileIfExists(options.auditLogPath);
-  await assertStateFileIfExists(budgetPath(options.nonceStorePath));
-  await assertStateFileIfExists(`${options.nonceStorePath}.lock`);
+  if (auditDir !== nonceDir) await assertSignerStateDirectory(auditDir, stateOptions);
+  await assertStateFileIfExists(options.nonceStorePath, stateOptions);
+  await assertStateFileIfExists(options.auditLogPath, stateOptions);
+  await assertStateFileIfExists(budgetPath(options.nonceStorePath), stateOptions);
+  await assertStateFileIfExists(`${options.nonceStorePath}.lock`, stateOptions);
   if (options.socketPath) await assertSocketDirectory(dirname(options.socketPath));
   return keystore;
 }

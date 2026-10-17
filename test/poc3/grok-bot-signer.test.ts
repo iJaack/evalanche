@@ -476,6 +476,118 @@ chmod 755 "$prefix/node_modules/evalanche/scripts/grok-bot-signer.sh"
   });
 });
 
+function canEnterMountNamespace(): boolean {
+  if (!linux) return false;
+  if ((process.getuid?.() ?? -1) === 0) return spawnSync('unshare', ['--mount', 'true']).status === 0;
+  return spawnSync('sudo', ['-n', 'unshare', '--mount', 'true']).status === 0;
+}
+
+describe.skipIf(!canEnterMountNamespace())('grok-bot signer reset ownership', () => {
+  it('chowns uid 1000 state back to root and refuses to start when it cannot', async () => {
+    const scriptBody = `#!/bin/bash
+set -eu
+fake=$(mktemp -d)
+cleanup() {
+  chattr -i "$fake/home/box/agent-data/evalanche-persist/state/nonces.json" 2>/dev/null || true
+  umount /var/lib/evalanche-signer/state 2>/dev/null || true
+  umount /var/lib/evalanche-signer/log 2>/dev/null || true
+  umount /var /home /opt /etc 2>/dev/null || true
+  rm -rf "$fake"
+}
+trap cleanup EXIT
+mkdir -p "$fake/etc" "$fake/home" "$fake/opt" "$fake/var" "$fake/bin"
+cp -a /etc/. "$fake/etc/"
+mount --bind "$fake/etc" /etc
+mount --bind "$fake/home" /home
+mount --bind "$fake/opt" /opt
+mount --bind "$fake/var" /var
+export PATH="/usr/sbin:/usr/bin:/sbin:/bin:$fake/bin"
+if id evalanche-signer >/dev/null 2>&1; then
+  userdel evalanche-signer || true
+fi
+if getent group evalanche-signer >/dev/null 2>&1; then
+  groupdel evalanche-signer || true
+fi
+cat > "$fake/bin/npm" << EOF
+#!/bin/sh
+printf '%s\\\\n' "\\$*" >> "$fake/npm.log"
+prefix=""
+prev=""
+for arg in "\\$@"; do
+  if [ "\\$prev" = "--prefix" ]; then prefix=\\$arg; fi
+  prev=\\$arg
+done
+mkdir -p "\\$prefix/node_modules/evalanche/scripts" "\\$prefix/node_modules/.bin"
+printf '%s\\\\n' '#!/bin/sh' 'exit 0' > "\\$prefix/node_modules/.bin/evalanche-signer"
+chmod 755 "\\$prefix/node_modules/.bin/evalanche-signer"
+printf '%s\\\\n' '#!/bin/sh' 'echo packaged' > "\\$prefix/node_modules/evalanche/scripts/grok-bot-signer.sh"
+chmod 755 "\\$prefix/node_modules/evalanche/scripts/grok-bot-signer.sh"
+EOF
+chmod 755 "$fake/bin/npm"
+persist=/home/box/agent-data/evalanche-persist
+mkdir -p "$persist/state" "$persist/log" /home/box/agent-data
+nonce='{"version":1,"startedAt":1,"wallets":{"0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266":{"lastNonce":"42","used":["42"]}}}'
+printf '%s\\n' "$nonce" > "$persist/state/nonces.json"
+printf '%s\\n' '{"prevHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","decision":"allow"}' > "$persist/state/audit.jsonl"
+printf '%s\\n' 'ed25519-pub-keep' > "$persist/verifier.pub"
+printf '%s\\n' 'ed25519-key-keep' > "$persist/verifier.key"
+printf '%s\\n' 'token-keep' > "$persist/token"
+chown -R 1000:1000 /home/box
+chmod 755 /home /home/box /home/box/agent-data
+tarball=$fake/evalanche-1.15.0.tgz
+printf '%s\\n' 'pinned-tarball' > "$tarball"
+digest=$(sha256sum "$tarball" | awk 'NR==1 { print $1 }')
+"$SCRIPT" provision "$tarball" "$digest"
+test "$(stat -c %u "$persist/verifier.key")" = 0
+test "$(stat -c %a "$persist/verifier.key")" = 600
+test "$(stat -c %u "$persist/config.json")" = 0
+test "$(stat -c %a "$persist/config.json")" = 644
+test "$(stat -c %u "$persist/state/nonces.json")" = 960
+test "$(stat -c %a "$persist/state/nonces.json")" = 600
+test "$(stat -c %u "$persist/verifier.pub")" = 0
+grep -q '"lastNonce":"42"' "$persist/state/nonces.json"
+test "$(tr -d '\\n' < "$persist/verifier.pub")" = ed25519-pub-keep
+mountpoint -q /var/lib/evalanche-signer/state
+mountpoint -q /var/lib/evalanche-signer/log
+test "$(stat -c %d:%i "$persist/state")" = "$(stat -c %d:%i /var/lib/evalanche-signer/state)"
+test "$(stat -c %u /etc/evalanche-signer/verifier.pub)" = 0
+test "$(tr -d '\\n' < /etc/evalanche-signer/verifier.pub)" = ed25519-pub-keep
+grep -q '/var/lib/evalanche-signer/state/nonces.json' /etc/evalanche-signer/config.json
+chown 1000:1000 "$persist/verifier.key" "$persist/config.json" "$persist/state/nonces.json"
+set +e
+start_out=$(EVALANCHE_SIGNER_PRIVATE_KEY=0xabc "$SCRIPT" start 2>&1)
+start_rc=$?
+set -e
+test "$start_rc" -ne 0
+printf '%s\\n' "$start_out" | grep -q 'refusing untrusted'
+chown 1000:1000 "$persist/state/nonces.json"
+chattr +i "$persist/state/nonces.json"
+before=$(wc -l < "$fake/npm.log")
+set +e
+again_out=$("$SCRIPT" provision 2>&1)
+again_rc=$?
+set -e
+chattr -i "$persist/state/nonces.json"
+test "$again_rc" -ne 0
+printf '%s\\n' "$again_out" | grep -q 'cannot take ownership'
+test "$(stat -c %u "$persist/state/nonces.json")" = 1000
+grep -q '"lastNonce":"42"' "$persist/state/nonces.json"
+after=$(wc -l < "$fake/npm.log")
+test "$before" = "$after"
+printf '%s\\n' 'reset-ownership-ok'
+`;
+    const file = join(tmpdir(), `gbs-reset-${process.pid}.sh`);
+    await writeFile(file, scriptBody.replaceAll('$SCRIPT', script), { mode: 0o755 });
+    const cmd = (process.getuid?.() ?? -1) === 0
+      ? ['unshare', '--mount', 'bash', file]
+      : ['sudo', '-n', 'unshare', '--mount', 'bash', file];
+    const result = spawnSync(cmd[0]!, cmd.slice(1), { encoding: 'utf8', timeout: 60_000 });
+    expect(`${result.stdout}\n${result.stderr}`, result.stderr).toContain('reset-ownership-ok');
+    expect(result.status).toBe(0);
+    await rm(file, { force: true });
+  }, 60_000);
+});
+
 describe.skipIf(!linux || (process.getuid?.() ?? 0) !== 0)('grok-bot signer root overrides', () => {
   it('ignores EVALANCHE_BOX overrides when running as root', async () => {
     if (existsSync('/opt/evalanche-signer/node_modules/.bin/evalanche-signer')) return;
