@@ -118,26 +118,26 @@ npm pack
 sha256sum evalanche-1.15.0.tgz
 ```
 
-Record that digest with the release. On the box, as root, `provision` recreates the user, group, `/opt`, and `/etc` from the persistent directory. It is safe to run again. It does not delete or rewrite `nonces.json`, `audit.jsonl`, the verifier key, the bearer token, or an existing `config.json`. A digest that does not match fails before `npm` and before the pinned copy is replaced.
+Record that digest with the release or the CI pack artifact. On the box, pass that recorded digest. Do not hash the file you are about to install: a copy under `/home` can be replaced before `provision` reads it. `provision` copies the tarball into `/var/lib/evalanche-signer/evalanche-1.15.0.tgz`, which is root-owned, hashes that copy, and installs those same bytes. The sha256 argument is required. A digest that does not match fails before `npm` and before the pinned copy is replaced.
 
 ```sh
 id box
 getent group sudo | grep -E '(^|:)box($|,)' || true
 sudo -u box sudo -n true
 
-# First install can use the script from this repo. It copies the tarball into the persistent directory.
+# EVALANCHE_TARBALL_SHA256 is the digest published with the release, not a hash of the local file.
 sudo /workspace/scripts/grok-bot-signer.sh provision \
   /workspace/evalanche-1.15.0.tgz \
-  "$(sha256sum /workspace/evalanche-1.15.0.tgz | awk '{print $1}')"
+  "$EVALANCHE_TARBALL_SHA256"
 ```
 
-`provision` creates group and user `evalanche-signer` at gid `960` and uid `960`, adds `box` to that group when the account exists, and installs the pinned tarball with `npm install --prefix /opt/evalanche-signer --omit=dev --ignore-scripts`. It refuses a uid or gid `960` that already belongs to a different name. Restart both agents after the group change. A running process keeps its old groups.
+`provision` creates group and user `evalanche-signer` at gid `960` and uid `960`, adds `box` to that group when the account exists, and installs the pinned tarball with `npm ci --prefix /opt/evalanche-signer --omit=dev --ignore-scripts`. The tarball carries `npm-shrinkwrap.json`, so ethers, viem, and `@nktkas/hyperliquid` reinstall at the locked versions. It refuses a uid or gid `960` that already belongs to a different name. Restart both agents after the group change. A running process keeps its old groups.
 
 The same command writes `/home/box/agent-data/evalanche-persist/config.json` only when that file is missing. Replace the placeholder allow map before live trading. If the file already exists, `nonceStorePath` and `auditLogPath` must sit under the state bind mount or the persistent state directory, and `verifierPublicKeyPath` must sit under `/etc/evalanche-signer` or the persistent directory. A `trustAnchor` must be the persistent directory or a directory inside it, and the nonce and audit paths must sit under that anchor.
 
 `/opt/evalanche-signer/node_modules/.bin/evalanche-signer` is the binary. The package ships one `flock-linux-x64` helper. It is dynamically linked and needs glibc 2.34 or newer, which covers glibc 2.41.
 
-`scripts/grok-bot-signer.sh` is in the published package `files` list, so the tarball contains it at `package/scripts/grok-bot-signer.sh`. `provision` copies that file to `/opt/evalanche-signer/bin/grok-bot-signer.sh` and to `/home/box/agent-data/evalanche-persist/bin/grok-bot-signer.sh`. `npm install` does not put the script on `PATH`. The copy under `/home` is the one that still exists after a reset.
+`scripts/grok-bot-signer.sh` and `npm-shrinkwrap.json` are in the published package `files` list. `provision` extracts the tarball at `/opt/evalanche-signer` and runs `npm ci`. It copies the script to `/opt/evalanche-signer/bin/grok-bot-signer.sh` and to `/home/box/agent-data/evalanche-persist/bin/grok-bot-signer.sh`. `npm ci` does not put the script on `PATH`. The copy under `/home` is the one that still exists after a reset.
 
 `--ignore-scripts` skips package lifecycle scripts. npm still links the `evalanche-signer` bin.
 

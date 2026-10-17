@@ -331,7 +331,13 @@ describe.skipIf(!linux)('grok-bot signer provision', () => {
     const fakebin = join(root, 'fakebin');
     await mkdir(fakebin, { recursive: true });
     const tarball = join(root, 'evalanche-1.15.0.tgz');
-    await writeFile(tarball, 'pinned-tarball\n');
+    const pack = join(root, 'pack', 'package');
+    await mkdir(join(pack, 'scripts'), { recursive: true });
+    await writeFile(join(pack, 'package.json'), '{"name":"evalanche","version":"1.15.0"}\n');
+    await writeFile(join(pack, 'npm-shrinkwrap.json'), '{"lockfileVersion":3}\n');
+    await writeFile(join(pack, 'scripts/grok-bot-signer.sh'), '#!/bin/sh\necho packaged\n', { mode: 0o755 });
+    const packed = spawnSync('tar', ['-czf', tarball, '-C', join(root, 'pack'), 'package']);
+    if (packed.status !== 0) throw new Error(packed.stderr?.toString() || 'tar failed');
     const npmLog = join(root, 'npm.log');
     const npm = `#!/bin/sh
 printf '%s\\n' "$*" >> ${JSON.stringify(npmLog)}
@@ -341,11 +347,9 @@ for arg in "$@"; do
   if [ "$prev" = "--prefix" ]; then prefix=$arg; fi
   prev=$arg
 done
-mkdir -p "$prefix/node_modules/evalanche/scripts" "$prefix/node_modules/.bin"
+mkdir -p "$prefix/node_modules/.bin"
 printf '%s\\n' '#!/bin/sh' 'exit 0' > "$prefix/node_modules/.bin/evalanche-signer"
 chmod 755 "$prefix/node_modules/.bin/evalanche-signer"
-printf '%s\\n' '#!/bin/sh' 'echo packaged' > "$prefix/node_modules/evalanche/scripts/grok-bot-signer.sh"
-chmod 755 "$prefix/node_modules/evalanche/scripts/grok-bot-signer.sh"
 `;
     await writeFile(join(fakebin, 'npm'), npm, { mode: 0o755 });
     const drop = dropIdentity();
@@ -424,7 +428,7 @@ chmod 755 "$prefix/node_modules/evalanche/scripts/grok-bot-signer.sh"
     await rm(box.prefix, { recursive: true, force: true });
     await rm(box.ephemeral, { recursive: true, force: true });
     await rm(box.etc, { recursive: true, force: true });
-    const second = provision(box, ['provision']);
+    const second = provision(box, ['provision', box.tarball, digest]);
     expect(second.status, second.stderr + second.stdout).toBe(0);
 
     const reused = JSON.parse(readFileSync(noncePath, 'utf8')) as { wallets: Record<string, { lastNonce: string }> };
@@ -440,8 +444,10 @@ chmod 755 "$prefix/node_modules/evalanche/scripts/grok-bot-signer.sh"
     expect(existsSync(join(box.prefix, 'node_modules/.bin/evalanche-signer'))).toBe(true);
     expect(existsSync(join(box.ephemeral, 'run'))).toBe(true);
     const log = readFileSync(box.npmLog, 'utf8');
+    expect(log).toContain('ci');
     expect(log).toContain('--omit=dev');
     expect(log).toContain('--ignore-scripts');
+    expect(log).not.toContain(' install ');
     expect(log.trim().split('\n')).toHaveLength(2);
   });
 
@@ -530,11 +536,9 @@ for arg in "\\$@"; do
   if [ "\\$prev" = "--prefix" ]; then prefix=\\$arg; fi
   prev=\\$arg
 done
-mkdir -p "\\$prefix/node_modules/evalanche/scripts" "\\$prefix/node_modules/.bin"
+mkdir -p "\\$prefix/node_modules/.bin"
 printf '%s\\\\n' '#!/bin/sh' 'exit 0' > "\\$prefix/node_modules/.bin/evalanche-signer"
 chmod 755 "\\$prefix/node_modules/.bin/evalanche-signer"
-printf '%s\\\\n' '#!/bin/sh' 'echo packaged' > "\\$prefix/node_modules/evalanche/scripts/grok-bot-signer.sh"
-chmod 755 "\\$prefix/node_modules/evalanche/scripts/grok-bot-signer.sh"
 EOF
 chmod 755 "$fake/bin/npm"
 persist=/home/box/agent-data/evalanche-persist
@@ -548,7 +552,12 @@ printf '%s\\n' 'token-keep' > "$persist/token"
 chown -R 1000:1000 /home/box
 chmod 755 /home /home/box /home/box/agent-data
 tarball=$fake/evalanche-1.15.0.tgz
-printf '%s\\n' 'pinned-tarball' > "$tarball"
+mkdir -p "$fake/pack/package/scripts"
+printf '%s\\n' '{"name":"evalanche","version":"1.15.0"}' > "$fake/pack/package/package.json"
+printf '%s\\n' '{"lockfileVersion":3}' > "$fake/pack/package/npm-shrinkwrap.json"
+printf '%s\\n' '#!/bin/sh' 'echo packaged' > "$fake/pack/package/scripts/grok-bot-signer.sh"
+chmod 755 "$fake/pack/package/scripts/grok-bot-signer.sh"
+tar -czf "$tarball" -C "$fake/pack" package
 digest=$(sha256sum "$tarball" | awk 'NR==1 { print $1 }')
 "$SCRIPT" provision "$tarball" "$digest"
 test "$(stat -c %u "$persist/verifier.key")" = 0
@@ -577,7 +586,7 @@ chown 1000:1000 "$persist/state/nonces.json"
 chattr +i "$persist/state/nonces.json"
 before=$(wc -l < "$fake/npm.log")
 set +e
-again_out=$("$SCRIPT" provision 2>&1)
+again_out=$("$SCRIPT" provision "$tarball" "$digest" 2>&1)
 again_rc=$?
 set -e
 chattr -i "$persist/state/nonces.json"

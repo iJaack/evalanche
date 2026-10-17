@@ -68,9 +68,11 @@ else
   LOCK=${EVALANCHE_BOX_LOCK:-$STATE/start.lock}
   SKIP_ROOT=${EVALANCHE_BOX_SKIP_ROOT:-0}
 fi
+# Hashed and installed from here. /var is root-owned; /home is not.
+STAGED_TARBALL=$EPHEMERAL/evalanche-1.15.0.tgz
 
 usage() {
-  echo "usage: grok-bot-signer.sh start [--live] | init [--live] | stop | health | provision [tarball] [sha256]" >&2
+  echo "usage: grok-bot-signer.sh start [--live] | init [--live] | stop | health | provision [tarball] <sha256>" >&2
   echo "start and init are dry-run unless --live is passed. init also passes --init-nonces." >&2
   echo "provision recreates the user, /opt, and /etc from the persistent directory." >&2
   echo "It bind-mounts state and log, chowns the persistent files, and does not regenerate a key or reset a nonce store." >&2
@@ -815,18 +817,80 @@ EOF
   mv "$CONFIG_SRC.tmp" "$CONFIG_SRC"
 }
 
+require_tarball_digest() {
+  digest=$1
+  if ! printf '%s' "$digest" | grep -E -q '^[0-9a-f]{64}$'; then
+    echo "tarball sha256 is required and must be 64 hex characters" >&2
+    exit 1
+  fi
+}
+
+# Copy into the root-owned ephemeral directory before hashing. The digest is
+# compared to that copy, and that same copy is what npm ci installs.
+stage_tarball() {
+  src=$1
+  if [ -L "$src" ] || [ ! -f "$src" ]; then
+    echo "provision requires the pinned tarball at $src" >&2
+    exit 1
+  fi
+  make_dir "$EPHEMERAL" root root 0755
+  incoming=$STAGED_TARBALL.incoming
+  rm -f "$incoming"
+  cp -P "$src" "$incoming"
+  if [ -L "$incoming" ] || [ ! -f "$incoming" ]; then
+    echo "refusing to stage $src" >&2
+    exit 1
+  fi
+  chmod 0644 "$incoming"
+  if [ "$SKIP_ROOT" != 1 ]; then
+    chown root:root "$incoming"
+  fi
+  mv -f "$incoming" "$STAGED_TARBALL"
+  if [ -L "$STAGED_TARBALL" ] || [ ! -f "$STAGED_TARBALL" ]; then
+    echo "refusing symlink $STAGED_TARBALL" >&2
+    exit 1
+  fi
+}
+
+verify_staged_tarball() {
+  digest=$1
+  actual=$(sha256sum "$STAGED_TARBALL" | awk 'NR==1 { print $1 }')
+  if [ "$actual" != "$digest" ]; then
+    echo "tarball sha256 does not match" >&2
+    exit 1
+  fi
+}
+
 install_pinned_tarball() {
-  tarball=$1
+  if [ -L "$STAGED_TARBALL" ] || [ ! -f "$STAGED_TARBALL" ]; then
+    echo "refusing to install $STAGED_TARBALL" >&2
+    exit 1
+  fi
   if ! command -v npm >/dev/null 2>&1; then
     echo "npm is required to install the pinned tarball" >&2
     exit 1
   fi
-  npm install --prefix "$PREFIX" --omit=dev --ignore-scripts "$tarball"
+  if ! command -v tar >/dev/null 2>&1; then
+    echo "tar is required to install the pinned tarball" >&2
+    exit 1
+  fi
+  rm -rf "$PREFIX"
+  mkdir -p "$PREFIX"
+  tar -xzf "$STAGED_TARBALL" -C "$PREFIX" --strip-components=1
+  if [ -L "$PREFIX/package.json" ] || [ -L "$PREFIX/npm-shrinkwrap.json" ]; then
+    echo "refusing symlink in the extracted tarball" >&2
+    exit 1
+  fi
+  if [ ! -f "$PREFIX/package.json" ] || [ ! -f "$PREFIX/npm-shrinkwrap.json" ]; then
+    echo "tarball must contain package.json and npm-shrinkwrap.json" >&2
+    exit 1
+  fi
+  npm ci --prefix "$PREFIX" --omit=dev --ignore-scripts
   if [ "$SKIP_ROOT" != 1 ]; then
     chown -R root:root "$PREFIX"
   fi
   chmod -R u+rwX,go+rX,go-w "$PREFIX"
-  packaged=$PREFIX/node_modules/evalanche/scripts/grok-bot-signer.sh
+  packaged=$PREFIX/scripts/grok-bot-signer.sh
   if [ ! -f "$packaged" ] || [ -L "$packaged" ]; then
     echo "tarball did not install grok-bot-signer.sh" >&2
     exit 1
@@ -879,17 +943,25 @@ restore_etc() {
   assert_one "$ETC/token" root "$SIGNER_GROUP" 640 1
 }
 
-pin_tarball() {
-  src=$1
-  if [ "$src" = "$TARBALL" ]; then
+pin_verified_tarball() {
+  if [ "$STAGED_TARBALL" = "$TARBALL" ]; then
     return 0
   fi
-  cp "$src" "$TARBALL.new"
+  if [ -L "$TARBALL" ]; then
+    echo "refusing symlink $TARBALL" >&2
+    exit 1
+  fi
+  make_dir "$(dirname "$TARBALL")" root root 0755
+  cp -P "$STAGED_TARBALL" "$TARBALL.new"
+  if [ -L "$TARBALL.new" ] || [ ! -f "$TARBALL.new" ]; then
+    echo "refusing to pin $TARBALL" >&2
+    exit 1
+  fi
   chmod 0644 "$TARBALL.new"
   if [ "$SKIP_ROOT" != 1 ]; then
     chown root:root "$TARBALL.new"
   fi
-  mv "$TARBALL.new" "$TARBALL"
+  mv -f "$TARBALL.new" "$TARBALL"
 }
 
 # Idempotent. Recreates the user, /opt, and /etc from the persistent directory.
@@ -929,21 +1001,10 @@ provision_signer() {
       exit 1
       ;;
   esac
-  if [ ! -f "$src" ] || [ -L "$src" ]; then
-    echo "provision requires the pinned tarball at $src" >&2
-    exit 1
-  fi
-  if [ -n "$digest" ]; then
-    if ! printf '%s' "$digest" | grep -E -q '^[0-9a-f]{64}$'; then
-      echo "tarball sha256 must be 64 hex characters" >&2
-      exit 1
-    fi
-    actual=$(sha256sum "$src" | awk 'NR==1 { print $1 }')
-    if [ "$actual" != "$digest" ]; then
-      echo "tarball sha256 does not match" >&2
-      exit 1
-    fi
-  fi
+  require_tarball_digest "$digest"
+  make_dir "$EPHEMERAL" root root 0755
+  stage_tarball "$src"
+  verify_staged_tarball "$digest"
   if [ -L "$CONFIG_SRC" ] || [ -L "$CONFIG" ] || [ -L "$STATE" ] || [ -L "$STATE_SRC" ] || [ -L "$LOG_SRC" ] || [ -L "$LOG_DIR" ] || [ -L "$DURABLE" ] || [ -L "$NONCE_FILE" ] || [ -L "$AUDIT_FILE" ] || [ -L "$ETC" ]; then
     echo "durable signer paths must not be symlinks" >&2
     exit 1
@@ -968,8 +1029,8 @@ provision_signer() {
   else
     write_config_template
   fi
-  pin_tarball "$src"
-  install_pinned_tarball "$TARBALL"
+  pin_verified_tarball
+  install_pinned_tarball
   restore_etc
   if [ "$SKIP_ROOT" != 1 ]; then
     mount_bind "$STATE_SRC" "$STATE"
