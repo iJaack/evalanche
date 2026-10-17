@@ -17,6 +17,7 @@
 - Bind-mount persistent signer state and reassert ownership. `provision` chowns the persistent tree back from uid 1000 and fails closed if it cannot. State and log are bind-mounted under `/var/lib/evalanche-signer`. A `trustAnchor` can stop state-path parent checks at a root-owned directory.
 - Refuse a verifier private key on disk. The approval private key is the bot secret OPS_VERIFIER_ED25519. The signer keeps only verifier.pub.
 - Match the TM-008 approval key to the bot secret. Only verifier.pub stays on disk. The acceptance, owner, and 2027-01-16 review are unchanged.
+- Leave trustAnchor unset in production. The Grok Bot bind mounts already cover nonce and audit.
 - Claim signer paths through a no-follow file descriptor. `provision` uses fchown and fchmod on that descriptor.
 - Reuse the existing evalanche-signer group gid instead of hardcoding gid 960. The signer user stays uid 960.
 - Apply Avalanche slippage classes to USDC and sAVAX. USDC is 50 bps. WAVAX, BTC.b, WETH.e, and sAVAX are 200 bps instead of the 300 bps default.

@@ -68,7 +68,7 @@ A reset restores the persistent tree as uid 1000, not root. Every `provision` ch
 
 `trustAnchor` in the signer config is a root-owned directory where parent ownership checks for the nonce and audit paths stop. Directories above it may be owned by `box`. The anchor itself must be root-owned and not group- or world-writable. Every component from `/` to the file is opened without following a symlink, so `box` cannot replace a parent with a symlink to another root-owned directory. Config and the verifier pubkey are not covered by the anchor. They stay on the `/etc` replica, whose parents are root-owned all the way to `/`.
 
-The bind-mount layout does not need `trustAnchor`. Set it only when `nonceStorePath` and `auditLogPath` stay under the persistent directory instead of the mount:
+Leave `trustAnchor` unset in production. The bind-mount layout places the nonce file and the audit log under `/var/lib/evalanche-signer`, whose parents are root-owned, so the anchor is unused on the Grok Bot box. Set it only when `nonceStorePath` and `auditLogPath` stay under the persistent directory instead of the mount:
 
 ```json
 "trustAnchor": "/home/box/agent-data/evalanche-persist"
