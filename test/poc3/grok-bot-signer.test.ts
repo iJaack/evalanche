@@ -5,7 +5,7 @@
  */
 import { createHash } from 'node:crypto';
 import { spawn, spawnSync, type SpawnOptions, type SpawnSyncOptions } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readlinkSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { chmod, copyFile, mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { userInfo, platform, tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -231,6 +231,86 @@ describe.skipIf(!linux)('grok-bot signer start and stop', () => {
     expect(health.status).toBe(0);
     expect(JSON.parse(health.stdout)).toEqual({ ok: true, mode: 'dry-run' });
   }, 20_000);
+
+  it('refuses a second start quickly while one signer is running', async () => {
+    const box = await layout();
+    const started = run(['start'], box);
+    expect(started.status, started.stderr).toBe(0);
+    const pid = Number(readFileSync(box.pidfile, 'utf8').trim());
+    const began = Date.now();
+    const again = spawnSync(script, ['start'], {
+      env: box.env,
+      encoding: 'utf8',
+      timeout: 5_000,
+      ...creds(box),
+    });
+    expect(Date.now() - began).toBeLessThan(4_000);
+    expect(again.error).toBeUndefined();
+    expect(again.status).not.toBe(0);
+    expect(again.stderr).toMatch(/already running/);
+    expect(signerPids(box.bin)).toEqual([pid]);
+    for (const fd of readdirSync(`/proc/${pid}/fd`)) {
+      let target = '';
+      try {
+        target = readlinkSync(join(`/proc/${pid}/fd`, fd));
+      } catch {
+        continue;
+      }
+      expect(target).not.toContain('start.lock');
+    }
+  }, 20_000);
+
+  it('closes the start lock fd before sudo', () => {
+    const source = readFileSync(script, 'utf8');
+    const start = source.indexOf('launch_signer() {');
+    expect(start).toBeGreaterThan(-1);
+    let depth = 0;
+    let end = -1;
+    for (let i = source.indexOf('{', start); i < source.length; i += 1) {
+      if (source[i] === '{') depth += 1;
+      else if (source[i] === '}') {
+        depth -= 1;
+        if (depth === 0) {
+          end = i + 1;
+          break;
+        }
+      }
+    }
+    const fn = source.slice(start, end);
+    const marker = join(tmpdir(), `gbs-fd9-${process.pid}`);
+    const lock = `${marker}.lock`;
+    const probe = `#!/bin/bash
+set -eu
+${fn}
+sudo() {
+  if [ -e /proc/self/fd/9 ]; then
+    echo open > ${JSON.stringify(marker)}
+  else
+    echo closed > ${JSON.stringify(marker)}
+  fi
+  exit 0
+}
+NODE=/bin/true
+BIN=/bin/true
+CONFIG=/dev/null
+SOCKET=/dev/null
+LOG=/dev/null
+SIGNER_USER=nobody
+START_MARK=mark
+SKIP_ROOT=0
+exec 9>${JSON.stringify(lock)}
+launch_signer ""
+wait
+`;
+    const file = `${marker}.sh`;
+    writeFileSync(file, probe, { mode: 0o755 });
+    const result = spawnSync('bash', [file], { encoding: 'utf8', timeout: 5_000 });
+    expect(result.status, result.stderr).toBe(0);
+    expect(readFileSync(marker, 'utf8').trim()).toBe('closed');
+    rmSync(file, { force: true });
+    rmSync(lock, { force: true });
+    rmSync(marker, { force: true });
+  });
 
   it('refuses a second start when the pidfile is missing', async () => {
     const box = await layout();

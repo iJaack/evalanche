@@ -276,8 +276,9 @@ probe_health() {
   ' "$SOCKET"
 }
 
-# Blocking exclusive lock for the whole start. The second start waits, then
-# sees the signer and fails. The lockfile is root-owned when this script is root.
+# Blocking exclusive lock for the whole start. The lockfile is root-owned
+# when this script is root. The child must not keep fd 9: a long-lived sudo
+# would hold the flock and the next start would block instead of refusing.
 hold_start_lock() {
   if [ "$(id -u)" -eq 0 ]; then
     touch "$LOCK"
@@ -291,18 +292,20 @@ hold_start_lock() {
 launch_signer() {
   flags=$1
   # Prefix assignment puts the mark in the environment. It is not an argument.
+  # 9>&- is on sudo and on the daemon shell. The inner exec closes it again
+  # before setsid replaces that shell.
   if [ "$SKIP_ROOT" = 1 ]; then
     # shellcheck disable=SC2086
     EVALANCHE_SIGNER_START_MARK=$START_MARK \
       sh -c 'umask 077; exec 9>&-; exec setsid "$1" "$2" --config "$3" --socket "$4" $5 >>"$6" 2>&1 </dev/null' \
-      sh "$NODE" "$BIN" "$CONFIG" "$SOCKET" "$flags" "$LOG" &
+      sh "$NODE" "$BIN" "$CONFIG" "$SOCKET" "$flags" "$LOG" 9>&- &
   else
     # shellcheck disable=SC2086
     EVALANCHE_SIGNER_START_MARK=$START_MARK \
       sudo -n --preserve-env=EVALANCHE_SIGNER_PRIVATE_KEY,EVALANCHE_SIGNER_TOKEN,EVALANCHE_SIGNER_START_MARK \
       -u "$SIGNER_USER" -- \
       sh -c 'umask 077; exec 9>&-; exec setsid "$1" "$2" --config "$3" --socket "$4" $5 >>"$6" 2>&1 </dev/null' \
-      sh "$NODE" "$BIN" "$CONFIG" "$SOCKET" "$flags" "$LOG" &
+      sh "$NODE" "$BIN" "$CONFIG" "$SOCKET" "$flags" "$LOG" 9>&- &
   fi
   launcher=$!
 }

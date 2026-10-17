@@ -24,6 +24,7 @@ An agent can run Evalanche with no private key in its process. A separate signer
 - Keep node visible when the reset test hides /opt. The runner node under /opt/hostedtoolcache stays on PATH after that mount.
 - Claim signer paths through a no-follow file descriptor. `provision` fchowns and fchmods each path it opened with O_NOFOLLOW, so a symlink swapped in after the check is not followed.
 - Reuse the existing evalanche-signer uid. A user that already exists, including uid 996, is kept. A missing user gets the first free system uid. `provision` checks that the nonce file owner is that uid.
+- Close the start lock before the sudo launcher. The launch closes fd 9 before sudo and before the daemon, so a second start refuses while a signer is running instead of blocking on the flock.
 - Reuse the existing evalanche-signer group gid. `provision` does not hardcode gid 960. A group that already exists, including gid 996, is kept, and the signer user's primary gid is checked against it.
 - Apply Avalanche slippage classes to USDC and sAVAX. USDC is 50 bps. WAVAX, BTC.b, WETH.e, and sAVAX are 200 bps. Those addresses apply without a config list. Every other token stays at 300 bps.
 - Reject trailing bytes on outer Li.Fi V3 calldata. `0x4666fc80` and `0x5fd9ae2e` must re-encode to the same bytes. Extra bytes after the ABI payload are denied.
