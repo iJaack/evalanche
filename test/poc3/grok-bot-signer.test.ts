@@ -333,8 +333,10 @@ describe.skipIf(!linux)('grok-bot signer provision', () => {
     const tarball = join(root, 'evalanche-1.15.0.tgz');
     const pack = join(root, 'pack', 'package');
     await mkdir(join(pack, 'scripts'), { recursive: true });
+    await mkdir(join(pack, 'dist', 'signer'), { recursive: true });
     await writeFile(join(pack, 'package.json'), '{"name":"evalanche","version":"1.15.0"}\n');
     await writeFile(join(pack, 'npm-shrinkwrap.json'), '{"lockfileVersion":3}\n');
+    await writeFile(join(pack, 'dist', 'signer', 'cli.mjs'), 'process.stdout.write("evalanche-signer 1.15.0\\n");\n');
     await writeFile(join(pack, 'scripts/grok-bot-signer.sh'), '#!/bin/sh\necho packaged\n', { mode: 0o755 });
     const packed = spawnSync('tar', ['-czf', tarball, '-C', join(root, 'pack'), 'package']);
     if (packed.status !== 0) throw new Error(packed.stderr?.toString() || 'tar failed');
@@ -439,7 +441,8 @@ chmod 755 "$prefix/node_modules/.bin/evalanche-signer"
     expect(readFileSync(join(box.etc, 'verifier.pub'), 'utf8')).toBe(pubkey);
     expect(existsSync(join(box.etc, 'verifier.key'))).toBe(false);
     expect(readFileSync(join(box.etc, 'token'), 'utf8')).toBe('token-keep\n');
-    expect(existsSync(join(box.prefix, 'node_modules/.bin/evalanche-signer'))).toBe(true);
+    expect(existsSync(join(box.prefix, 'dist/signer/cli.mjs'))).toBe(true);
+    expect(existsSync(join(box.prefix, 'node.path'))).toBe(true);
     expect(existsSync(join(box.ephemeral, 'run'))).toBe(true);
     const log = readFileSync(box.npmLog, 'utf8');
     expect(log).toContain('ci');
@@ -578,8 +581,9 @@ printf '%s\\n' 'token-keep' > "$persist/token"
 chown -R 1000:1000 /home/box
 chmod 755 /home /home/box /home/box/agent-data
 tarball=$fake/evalanche-1.15.0.tgz
-mkdir -p "$fake/pack/package/scripts"
+mkdir -p "$fake/pack/package/scripts" "$fake/pack/package/dist/signer"
 printf '%s\\n' '{"name":"evalanche","version":"1.15.0"}' > "$fake/pack/package/package.json"
+printf '%s\\n' 'process.stdout.write("evalanche-signer 1.15.0\\n");' > "$fake/pack/package/dist/signer/cli.mjs"
 printf '%s\\n' '{"lockfileVersion":3}' > "$fake/pack/package/npm-shrinkwrap.json"
 printf '%s\\n' '#!/bin/sh' 'echo packaged' > "$fake/pack/package/scripts/grok-bot-signer.sh"
 chmod 755 "$fake/pack/package/scripts/grok-bot-signer.sh"
@@ -645,7 +649,7 @@ printf '%s\\n' 'reset-ownership-ok'
 
 describe.skipIf(!linux || (process.getuid?.() ?? 0) !== 0)('grok-bot signer root overrides', () => {
   it('ignores EVALANCHE_BOX overrides when running as root', async () => {
-    if (existsSync('/opt/evalanche-signer/node_modules/.bin/evalanche-signer')) return;
+    if (existsSync('/opt/evalanche-signer/dist/signer/cli.mjs')) return;
     const box = await layout();
     const result = spawnSync(script, ['start'], { env: box.env, encoding: 'utf8', timeout: 15_000 });
     expect(result.status).not.toBe(0);

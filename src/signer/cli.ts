@@ -56,6 +56,11 @@ function parseArgs(argv: string[]): CliArgs {
 }
 
 async function main(): Promise<void> {
+  if (process.argv.includes('--version')) {
+    const pkg = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8')) as { version: string };
+    process.stdout.write(`evalanche-signer ${pkg.version}\n`);
+    return;
+  }
   const token = takeSignerEnvToken();
   const args = parseArgs(process.argv.slice(2));
   if (!token) throw new Error('EVALANCHE_SIGNER_TOKEN is required');

@@ -102,7 +102,8 @@ Root ignores every `EVALANCHE_BOX_*` variable and uses these defaults:
 | Log file | `$LOG_DIR/signer.log` | `EVALANCHE_BOX_LOG` |
 | Start lock | `$STATE/start.lock` | `EVALANCHE_BOX_LOCK` |
 | Signer user | `evalanche-signer` | `EVALANCHE_BOX_USER` |
-| Binary | `$PREFIX/node_modules/.bin/evalanche-signer` | `EVALANCHE_BOX_BIN` |
+| Binary | `$PREFIX/dist/signer/cli.mjs` | `EVALANCHE_BOX_BIN` |
+| Node | `$PREFIX/node.path` | `EVALANCHE_BOX_NODE` |
 
 `provision` requires the config source, token, verifier pubkey, and pinned tarball, and the persistent state and log directories, to stay under the durable directory. A `verifier.key` file is refused. The nonce and audit paths in the config must stay under that state directory or under its bind mount. As root the durable directory must be under `/home`.
 
@@ -134,11 +135,11 @@ sudo /workspace/scripts/grok-bot-signer.sh provision \
 
 The same command writes `/home/box/agent-data/evalanche-persist/config.json` only when that file is missing. Replace the placeholder allow map before live trading. If the file already exists, `nonceStorePath` and `auditLogPath` must sit under the state bind mount or the persistent state directory, and `verifierPublicKeyPath` must sit under `/etc/evalanche-signer` or the persistent directory. A `trustAnchor` must be the persistent directory or a directory inside it, and the nonce and audit paths must sit under that anchor.
 
-`/opt/evalanche-signer/node_modules/.bin/evalanche-signer` is the binary. The package ships one `flock-linux-x64` helper. It is dynamically linked and needs glibc 2.34 or newer, which covers glibc 2.41.
+`/opt/evalanche-signer/dist/signer/cli.mjs` is the signer entry. `provision` records the node binary that ran `npm ci` in `/opt/evalanche-signer/node.path`, and `start` runs that node against the entry. The package ships one `flock-linux-x64` helper. It is dynamically linked and needs glibc 2.34 or newer, which covers glibc 2.41.
 
 `scripts/grok-bot-signer.sh` and `npm-shrinkwrap.json` are in the published package `files` list. `provision` extracts the tarball at `/opt/evalanche-signer` and runs `npm ci`. It copies the script to `/opt/evalanche-signer/bin/grok-bot-signer.sh` and to `/home/box/agent-data/evalanche-persist/bin/grok-bot-signer.sh`. `npm ci` does not put the script on `PATH`. The copy under `/home` is the one that still exists after a reset.
 
-`--ignore-scripts` skips package lifecycle scripts. npm still links the `evalanche-signer` bin.
+`--ignore-scripts` skips package lifecycle scripts. `npm ci` in the package directory does not link the package's own `evalanche-signer` bin. `node_modules/.bin` only receives dependency bins. `start` does not look there.
 
 Generate the Ed25519 approval key once. Keep the private key in the bot secret `OPS_VERIFIER_ED25519`. Write only the public key into the persistent directory. `provision` does not create either file, and it exits non-zero if `verifier.key` exists under the persistent directory or `/etc/evalanche-signer`. The public key is root, mode `0644`. Run this where the bot secret is available, then copy only the public key to the box as root:
 
@@ -230,7 +231,8 @@ The dry-run command is equivalent to running the binary as the signer user with 
 ```sh
 sudo --preserve-env=EVALANCHE_SIGNER_PRIVATE_KEY,EVALANCHE_SIGNER_TOKEN \
   -u evalanche-signer -- \
-  /opt/evalanche-signer/node_modules/.bin/evalanche-signer \
+  "$(cat /opt/evalanche-signer/node.path)" \
+  /opt/evalanche-signer/dist/signer/cli.mjs \
   --config /etc/evalanche-signer/config.json \
   --socket /var/lib/evalanche-signer/run/signer.sock \
   --dry-run

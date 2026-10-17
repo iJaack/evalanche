@@ -26,6 +26,7 @@
 - Apply Avalanche slippage classes to USDC and sAVAX. USDC is 50 bps. WAVAX, BTC.b, WETH.e, and sAVAX are 200 bps instead of the 300 bps default.
 - Deny Kyber router selectors other than swap. Executor `callTarget`, `srcReceivers`, and fee amounts are checked. Trailing Kyber bytes are denied.
 - Require quotedAmountOut on Li.Fi V3 swaps. A missing or one-unit quote is denied, and the quote must sit within the bought-token cap.
+- Run the signer cli with the pinned node. `start` executes `dist/signer/cli.mjs` and does not use `node_modules/.bin/evalanche-signer`.
 - Install the pinned signer tarball with npm ci. The sha256 is required, the hashed bytes are the bytes that are installed, and `npm-shrinkwrap.json` locks the dependency tree.
 - Gate destructive signer reset tests. `EVALANCHE_DESTRUCTIVE_TESTS` must be set before the suite runs sudo, unshare, or userdel.
 - Test signer ownership outside the home directory. The reset test keeps the signer script reachable when `/home` is replaced, and a root start reports the real state bind mount.

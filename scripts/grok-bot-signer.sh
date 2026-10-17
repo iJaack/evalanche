@@ -35,7 +35,8 @@ if [ "$(id -u)" -eq 0 ]; then
   PIDFILE=$STATE/signer.pid
   LOG=$LOG_DIR/signer.log
   SIGNER_USER=evalanche-signer
-  BIN=$PREFIX/node_modules/.bin/evalanche-signer
+  BIN=$PREFIX/dist/signer/cli.mjs
+  NODE_FILE=$PREFIX/node.path
   TOKEN_FILE=$DURABLE/token
   VERIFIER_KEY=$DURABLE/verifier.key
   VERIFIER_PUB=$DURABLE/verifier.pub
@@ -60,7 +61,9 @@ else
   PIDFILE=${EVALANCHE_BOX_PIDFILE:-$STATE/signer.pid}
   LOG=${EVALANCHE_BOX_LOG:-$LOG_DIR/signer.log}
   SIGNER_USER=${EVALANCHE_BOX_USER:-evalanche-signer}
-  BIN=${EVALANCHE_BOX_BIN:-$PREFIX/node_modules/.bin/evalanche-signer}
+  BIN=${EVALANCHE_BOX_BIN:-$PREFIX/dist/signer/cli.mjs}
+  NODE_FILE=${EVALANCHE_BOX_NODE_FILE:-$PREFIX/node.path}
+  NODE=${EVALANCHE_BOX_NODE:-}
   TOKEN_FILE=${EVALANCHE_BOX_TOKEN_FILE:-$DURABLE/token}
   VERIFIER_KEY=${EVALANCHE_BOX_VERIFIER_KEY:-$DURABLE/verifier.key}
   VERIFIER_PUB=${EVALANCHE_BOX_VERIFIER_PUB:-$DURABLE/verifier.pub}
@@ -94,8 +97,13 @@ require_layout() {
     echo "missing user $SIGNER_USER" >&2
     exit 1
   fi
-  if [ ! -x "$BIN" ]; then
+  load_node
+  if [ -L "$BIN" ] || [ ! -f "$BIN" ]; then
     echo "missing $BIN" >&2
+    exit 1
+  fi
+  if [ ! -x "$NODE" ]; then
+    echo "missing node $NODE" >&2
     exit 1
   fi
   if [ ! -f "$CONFIG" ]; then
@@ -112,6 +120,31 @@ require_layout() {
   fi
   if ! command -v flock >/dev/null 2>&1; then
     echo "flock is required" >&2
+    exit 1
+  fi
+}
+
+# The install records the node binary. Root ignores PATH and EVALANCHE_BOX_NODE.
+load_node() {
+  if [ "$SKIP_ROOT" = 1 ]; then
+    if [ -z "${NODE:-}" ]; then
+      NODE=$(command -v node || true)
+    fi
+    if [ -n "${NODE:-}" ]; then
+      resolved=$(readlink -f "$NODE" 2>/dev/null || true)
+      if [ -n "$resolved" ]; then
+        NODE=$resolved
+      fi
+    fi
+    return 0
+  fi
+  if [ -L "$NODE_FILE" ] || [ ! -f "$NODE_FILE" ]; then
+    echo "missing pinned node" >&2
+    exit 1
+  fi
+  NODE=$(tr -d '\n\r' < "$NODE_FILE")
+  if [ -z "$NODE" ] || [ -L "$NODE" ] || [ ! -x "$NODE" ]; then
+    echo "pinned node is not executable" >&2
     exit 1
   fi
 }
@@ -262,15 +295,15 @@ launch_signer() {
   if [ "$SKIP_ROOT" = 1 ]; then
     # shellcheck disable=SC2086
     EVALANCHE_SIGNER_START_MARK=$START_MARK \
-      sh -c 'umask 077; exec 9>&-; exec setsid "$1" --config "$2" --socket "$3" $4 >>"$5" 2>&1 </dev/null' \
-      sh "$BIN" "$CONFIG" "$SOCKET" "$flags" "$LOG" &
+      sh -c 'umask 077; exec 9>&-; exec setsid "$1" "$2" --config "$3" --socket "$4" $5 >>"$6" 2>&1 </dev/null' \
+      sh "$NODE" "$BIN" "$CONFIG" "$SOCKET" "$flags" "$LOG" &
   else
     # shellcheck disable=SC2086
     EVALANCHE_SIGNER_START_MARK=$START_MARK \
       sudo -n --preserve-env=EVALANCHE_SIGNER_PRIVATE_KEY,EVALANCHE_SIGNER_TOKEN,EVALANCHE_SIGNER_START_MARK \
       -u "$SIGNER_USER" -- \
-      sh -c 'umask 077; exec 9>&-; exec setsid "$1" --config "$2" --socket "$3" $4 >>"$5" 2>&1 </dev/null' \
-      sh "$BIN" "$CONFIG" "$SOCKET" "$flags" "$LOG" &
+      sh -c 'umask 077; exec 9>&-; exec setsid "$1" "$2" --config "$3" --socket "$4" $5 >>"$6" 2>&1 </dev/null' \
+      sh "$NODE" "$BIN" "$CONFIG" "$SOCKET" "$flags" "$LOG" &
   fi
   launcher=$!
 }
@@ -885,6 +918,28 @@ stage_tarball() {
   fi
 }
 
+# Record the node that installed the tarball. start runs that binary, not PATH.
+pin_node() {
+  if ! command -v node >/dev/null 2>&1; then
+    echo "node is required to install the pinned tarball" >&2
+    exit 1
+  fi
+  node_cmd=$(command -v node)
+  node_real=$(readlink -f "$node_cmd" 2>/dev/null || true)
+  if [ -z "$node_real" ]; then
+    node_real=$node_cmd
+  fi
+  if [ -L "$node_real" ] || [ ! -x "$node_real" ]; then
+    echo "pinned node is not executable" >&2
+    exit 1
+  fi
+  printf '%s\n' "$node_real" > "$NODE_FILE"
+  chmod 0644 "$NODE_FILE"
+  if [ "$SKIP_ROOT" != 1 ]; then
+    chown root:root "$NODE_FILE"
+  fi
+}
+
 verify_staged_tarball() {
   digest=$1
   actual=$(sha256sum "$STAGED_TARBALL" | awk 'NR==1 { print $1 }')
@@ -919,6 +974,12 @@ install_pinned_tarball() {
     exit 1
   fi
   npm ci --prefix "$PREFIX" --omit=dev --ignore-scripts
+  # npm ci links dependency bins only. The package's own bin is not created.
+  if [ -L "$BIN" ] || [ ! -f "$BIN" ]; then
+    echo "missing $BIN" >&2
+    exit 1
+  fi
+  pin_node
   if [ "$SKIP_ROOT" != 1 ]; then
     chown -R root:root "$PREFIX"
   fi

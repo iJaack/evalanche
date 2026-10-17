@@ -42,6 +42,7 @@ jobs:
           node scripts/check-package-tarball.mjs --pack-json .release-artifacts/npm-pack.json
           node scripts/check-consumer-install.mjs --pack-json .release-artifacts/npm-pack.json --out .release-artifacts/consumer-install.json
           node scripts/release-smoke.mjs
+          node scripts/check-signer-bin.mjs --pack-json .release-artifacts/npm-pack.json
       - name: Audit regression gate
         run: |
           npm audit --omit=dev --json > .release-artifacts/audit.json || true
