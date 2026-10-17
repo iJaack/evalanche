@@ -697,6 +697,23 @@ test "$(tr -d '\\n' < "$persist/verifier.pub")" = ed25519-pub-keep
 mountpoint -q /var/lib/evalanche-signer/state
 mountpoint -q /var/lib/evalanche-signer/log
 test "$(stat -c %d:%i "$persist/state")" = "$(stat -c %d:%i /var/lib/evalanche-signer/state)"
+state_opts=$(findmnt -no OPTIONS --target /var/lib/evalanche-signer/state)
+log_opts=$(findmnt -no OPTIONS --target /var/lib/evalanche-signer/log)
+for flag in nosuid nodev noexec; do
+  printf '%s\\n' "$state_opts" | grep -q "$flag"
+  printf '%s\\n' "$log_opts" | grep -q "$flag"
+done
+umount /var/lib/evalanche-signer/state
+mount --bind "$persist/state" /var/lib/evalanche-signer/state
+set +e
+flag_out=$(EVALANCHE_SIGNER_PRIVATE_KEY=0xabc "$SCRIPT" start 2>&1)
+flag_rc=$?
+set -e
+test "$flag_rc" -ne 0
+printf '%s\\n' "$flag_out" | grep -q 'missing nosuid'
+mount -o remount,bind,nosuid,nodev,noexec /var/lib/evalanche-signer/state
+state_opts=$(findmnt -no OPTIONS --target /var/lib/evalanche-signer/state)
+printf '%s\\n' "$state_opts" | grep -q noexec
 test "$(stat -c %u /etc/evalanche-signer/verifier.pub)" = 0
 test "$(tr -d '\\n' < /etc/evalanche-signer/verifier.pub)" = ed25519-pub-keep
 grep -q '/var/lib/evalanche-signer/state/nonces.json' /etc/evalanche-signer/config.json

@@ -55,10 +55,12 @@ State and log are opened through bind mounts whose parents are root-owned:
 
 ```sh
 mount --bind /home/box/agent-data/evalanche-persist/state /var/lib/evalanche-signer/state
+mount -o remount,bind,nosuid,nodev,noexec /var/lib/evalanche-signer/state
 mount --bind /home/box/agent-data/evalanche-persist/log /var/lib/evalanche-signer/log
+mount -o remount,bind,nosuid,nodev,noexec /var/lib/evalanche-signer/log
 ```
 
-`provision` creates those mounts. It refuses a mount point that is already mounted from a different directory. A reset drops the mounts with `/var`. The next `provision` creates them again. `start` refuses to launch when either mount is missing, so nonce writes cannot land on a directory that the reset will delete.
+`provision` creates those mounts and remounts each one `nosuid,nodev,noexec`, including when the bind is already in place. It refuses a mount point that is already mounted from a different directory. A reset drops the mounts with `/var`. The next `provision` creates them again. `start` refuses to launch when either mount is missing or when `nosuid`, `nodev`, or `noexec` is absent, so nonce writes cannot land on a directory that the reset will delete and a setuid or device node cannot be introduced through the bind.
 
 ### Ownership after a reset
 

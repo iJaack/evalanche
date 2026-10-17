@@ -791,16 +791,41 @@ mount_bind() {
       echo "$dest is already mounted from a different directory than $src" >&2
       exit 1
     fi
-    return 0
+  else
+    mount --bind "$src" "$dest" || {
+      echo "cannot bind-mount $src onto $dest" >&2
+      exit 1
+    }
+    if ! same_inode "$src" "$dest"; then
+      echo "bind mount $src onto $dest did not take effect" >&2
+      exit 1
+    fi
   fi
-  mount --bind "$src" "$dest" || {
-    echo "cannot bind-mount $src onto $dest" >&2
+  # A plain bind inherits the source flags. Remount so nosuid,nodev,noexec
+  # stick even when the mount was already present.
+  mount -o remount,bind,nosuid,nodev,noexec "$dest" || {
+    echo "cannot remount $dest nosuid,nodev,noexec" >&2
     exit 1
   }
-  if ! same_inode "$src" "$dest"; then
-    echo "bind mount $src onto $dest did not take effect" >&2
+}
+
+# Fail closed. findmnt --target reports the mount that covers dest.
+require_bind_flags() {
+  dest=$1
+  if ! command -v findmnt >/dev/null 2>&1; then
+    echo "findmnt is required to check $dest" >&2
     exit 1
   fi
+  opts=$(findmnt -no OPTIONS --target "$dest" 2>/dev/null || true)
+  for flag in nosuid nodev noexec; do
+    case ",$opts," in
+      *",$flag,"*) ;;
+      *)
+        echo "$dest bind mount is missing $flag" >&2
+        exit 1
+        ;;
+    esac
+  done
 }
 
 require_persistent_mounts() {
@@ -818,6 +843,8 @@ require_persistent_mounts() {
     echo "$LOG_DIR is not a bind mount of $LOG_SRC; run provision" >&2
     exit 1
   fi
+  require_bind_flags "$STATE"
+  require_bind_flags "$LOG_DIR"
 }
 
 assert_config_paths() {
