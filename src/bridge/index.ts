@@ -3,8 +3,6 @@
  */
 
 export { LiFiClient, NATIVE_TOKEN } from './lifi';
-export { KYBER_AGGREGATOR_API, assembleLifiV3FromKyber, buildKyberLifiSwap } from './kyber-route';
-export type { KyberLifiSwap, KyberLifiSwapOptions, KyberLifiSwapRequest } from './kyber-route';
 export type {
   LiFiClientOptions,
   BridgeQuoteParams,
