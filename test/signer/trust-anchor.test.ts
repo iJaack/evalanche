@@ -13,14 +13,18 @@ import { assertSignerStateDirectory, readSecureFile } from '../../src/signer/sec
 const linux = process.platform === 'linux';
 
 function asRoot(args: string[]): void {
-  const cmd = (process.getuid?.() ?? -1) === 0 ? args : ['sudo', '-n', ...args];
+  const root = (process.getuid?.() ?? -1) === 0;
+  if (!root && process.env.EVALANCHE_DESTRUCTIVE_TESTS !== '1') {
+    throw new Error('sudo is disabled unless EVALANCHE_DESTRUCTIVE_TESTS=1');
+  }
+  const cmd = root ? args : ['sudo', '-n', ...args];
   const result = spawnSync(cmd[0]!, cmd.slice(1), { encoding: 'utf8' });
   if (result.status !== 0) {
     throw new Error(result.stderr || result.stdout || `${cmd.join(' ')} failed`);
   }
 }
 
-describe.skipIf(!linux)('signer trust anchor', () => {
+describe.skipIf(!linux || ((process.getuid?.() ?? -1) !== 0 && process.env.EVALANCHE_DESTRUCTIVE_TESTS !== '1'))('signer trust anchor', () => {
   const roots: string[] = [];
 
   afterEach(() => {

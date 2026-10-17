@@ -476,13 +476,16 @@ chmod 755 "$prefix/node_modules/evalanche/scripts/grok-bot-signer.sh"
   });
 });
 
+/** Opt-in. The default suite must not call sudo, unshare, or userdel. */
+const DESTRUCTIVE = process.env.EVALANCHE_DESTRUCTIVE_TESTS === '1';
+
 function canEnterMountNamespace(): boolean {
-  if (!linux) return false;
+  if (!DESTRUCTIVE || !linux) return false;
   if ((process.getuid?.() ?? -1) === 0) return spawnSync('unshare', ['--mount', 'true']).status === 0;
   return spawnSync('sudo', ['-n', 'unshare', '--mount', 'true']).status === 0;
 }
 
-describe.skipIf(!canEnterMountNamespace())('grok-bot signer reset ownership', () => {
+describe.skipIf(!DESTRUCTIVE || !canEnterMountNamespace())('grok-bot signer reset ownership', () => {
   it('chowns uid 1000 state back to root and refuses to start when it cannot', async () => {
     const scriptBody = `#!/bin/bash
 set -eu

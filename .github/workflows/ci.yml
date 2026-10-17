@@ -28,6 +28,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+        env:
+          EVALANCHE_DESTRUCTIVE_TESTS: '1'
       - run: npm run typecheck
       - run: npm run build
       - name: Validate docs, exports, package and smoke
@@ -67,6 +69,8 @@ jobs:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
       - run: npm ci
       - run: npx vitest run test/signer test/poc test/poc2 test/poc3
+        env:
+          EVALANCHE_DESTRUCTIVE_TESTS: '1'
 
   signer-macos:
     runs-on: macos-latest
@@ -79,6 +83,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx vitest run test/signer test/poc test/poc2 test/poc3
+        env:
+          EVALANCHE_DESTRUCTIVE_TESTS: '1'
 
   # Rebuild the committed helper with the pinned GCC 13.3 toolchain and compare sha256.
   flock-reproducible:
