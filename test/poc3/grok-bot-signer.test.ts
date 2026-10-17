@@ -737,6 +737,40 @@ printf '%s\\n' "$flag_out" | grep -q 'missing nosuid'
 mount -o remount,bind,nosuid,nodev,noexec /var/lib/evalanche-signer/state
 state_opts=$(findmnt -no OPTIONS --target /var/lib/evalanche-signer/state)
 printf '%s\\n' "$state_opts" | grep -q noexec
+userdel evalanche-signer
+if ! getent group evalanche-signer >/dev/null 2>&1; then
+  groupadd --system --gid "$want" evalanche-signer
+fi
+useradd --non-unique --uid 0 --gid "$want" --no-create-home --home-dir /var/lib/evalanche-signer --shell /bin/false evalanche-signer
+set +e
+zero_out=$("$SCRIPT" provision "$tarball" "$digest" 2>&1)
+zero_rc=$?
+set -e
+test "$zero_rc" -ne 0
+printf '%s\\n' "$zero_out" | grep -q 'system uid'
+# userdel matches uid 0 to pid 1. Drop the name from the copied passwd instead.
+sed -i '/^evalanche-signer:/d' /etc/passwd /etc/shadow
+test "$(id -u root)" = 0
+test "$(getent passwd evalanche-signer || true)" = ""
+if ! getent group evalanche-signer >/dev/null 2>&1; then
+  groupadd --system --gid "$want" evalanche-signer
+fi
+outside=10000
+while getent passwd "$outside" >/dev/null 2>&1; do
+  outside=$((outside + 1))
+done
+useradd --uid "$outside" --gid "$want" --no-create-home --home-dir /var/lib/evalanche-signer --shell /bin/false evalanche-signer
+set +e
+out_out=$("$SCRIPT" provision "$tarball" "$digest" 2>&1)
+out_rc=$?
+set -e
+test "$out_rc" -ne 0
+printf '%s\\n' "$out_out" | grep -q 'system uid'
+userdel evalanche-signer
+if ! getent group evalanche-signer >/dev/null 2>&1; then
+  groupadd --system --gid "$want" evalanche-signer
+fi
+useradd --system --uid "$want" --gid "$want" --no-create-home --home-dir /var/lib/evalanche-signer --shell /bin/false evalanche-signer
 saved_node=$(tr -d '\\n' < /opt/evalanche-signer/node.path)
 bad_node=/opt/evalanche-signer/bad-node
 cp "$saved_node" "$bad_node"

@@ -568,6 +568,11 @@ ensure_signer_account() {
   if id "$SIGNER_USER" >/dev/null 2>&1; then
     uid=$(id -u "$SIGNER_USER")
     ugid=$(id -g "$SIGNER_USER")
+    # uid 0 is root. The system range on this host is 100-999.
+    if [ "$uid" -eq 0 ] || [ "$uid" -lt 100 ] || [ "$uid" -gt 999 ]; then
+      echo "refusing to reuse $SIGNER_USER uid $uid outside the system uid range 100-999" >&2
+      exit 1
+    fi
     if [ "$ugid" != "$gid" ]; then
       echo "user $SIGNER_USER exists as $uid:$ugid, expected primary gid $gid" >&2
       exit 1
