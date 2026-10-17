@@ -11,11 +11,12 @@
 - Record the accepted root risk for TM-008. On the production box the verifier agent holds the wallet key, so separation of duties between key-holder and verifier is gone. The signer enforces policy and is not a boundary against root. Review date 2027-01-16.
 - Document the Grok Bot box signer launch. The signer reads `EVALANCHE_SIGNER_PRIVATE_KEY` and then removes it from the environment. It also removes `EVALANCHE_SIGNER_TOKEN`.
 - Default the Grok Bot signer to dry-run. `/health` reports the mode. Start and stop follow the new process. The bearer token is a root-owned file. `init` passes `--init-nonces`. Signer checks also run on Node 20.19.2.
-- Stop a running Grok Bot signer when the pidfile is missing. Halt the signer before close so a held connection gets no signature. Serialize start with flock. Read the approval key from a root-only file. Record proposed exit triggers pending owner confirmation.
+- Stop a running Grok Bot signer when the pidfile is missing. Halt the signer before close so a held connection gets no signature. Serialize start with flock. Record proposed exit triggers pending owner confirmation.
 - Provision signer state under the persistent home. `grok-bot-signer.sh provision` recreates the signer user at uid 960 and reinstalls the pinned tarball after a reset. The nonce store, audit log, verifier key, and config stay under `/home/box/agent-data/evalanche-persist`.
 - Reuse the persistent signer state on reprovision. `provision` recreates the user, `/opt`, and `/etc` from that directory and does not regenerate keys or reset nonces that already exist. Re-run it by hand. There is no boot hook.
 - Bind-mount persistent signer state and reassert ownership. `provision` chowns the persistent tree back from uid 1000 and fails closed if it cannot. State and log are bind-mounted under `/var/lib/evalanche-signer`. A `trustAnchor` can stop state-path parent checks at a root-owned directory.
 - Refuse a verifier private key on disk. The approval private key is the bot secret OPS_VERIFIER_ED25519. The signer keeps only verifier.pub.
+- Match the TM-008 approval key to the bot secret. Only verifier.pub stays on disk. The acceptance, owner, and 2027-01-16 review are unchanged.
 - Claim signer paths through a no-follow file descriptor. `provision` uses fchown and fchmod on that descriptor.
 - Reuse the existing evalanche-signer group gid instead of hardcoding gid 960. The signer user stays uid 960.
 - Apply Avalanche slippage classes to USDC and sAVAX. USDC is 50 bps. WAVAX, BTC.b, WETH.e, and sAVAX are 200 bps instead of the 300 bps default.
