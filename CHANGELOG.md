@@ -12,7 +12,7 @@
 - Document the Grok Bot box signer launch. The signer reads `EVALANCHE_SIGNER_PRIVATE_KEY` and then removes it from the environment. It also removes `EVALANCHE_SIGNER_TOKEN`.
 - Default the Grok Bot signer to dry-run. `/health` reports the mode. Start and stop follow the new process. The bearer token is a root-owned file. `init` passes `--init-nonces`. Signer checks also run on Node 20.19.2.
 - Stop a running Grok Bot signer when the pidfile is missing. Halt the signer before close so a held connection gets no signature. Serialize start with flock. Record proposed exit triggers pending owner confirmation.
-- Provision signer state under the persistent home. `grok-bot-signer.sh provision` recreates the signer user at uid 960 and reinstalls the pinned tarball after a reset. The nonce store, audit log, verifier key, and config stay under `/home/box/agent-data/evalanche-persist`.
+- Provision signer state under the persistent home. `grok-bot-signer.sh provision` recreates the signer user and reinstalls the pinned tarball after a reset. The nonce store, audit log, verifier key, and config stay under `/home/box/agent-data/evalanche-persist`.
 - Reuse the persistent signer state on reprovision. `provision` recreates the user, `/opt`, and `/etc` from that directory and does not regenerate keys or reset nonces that already exist. Re-run it by hand. There is no boot hook.
 - Bind-mount persistent signer state and reassert ownership. `provision` chowns the persistent tree back from uid 1000 and fails closed if it cannot. State and log are bind-mounted under `/var/lib/evalanche-signer`. A `trustAnchor` can stop state-path parent checks at a root-owned directory.
 - Refuse a verifier private key on disk. The approval private key is the bot secret OPS_VERIFIER_ED25519. The signer keeps only verifier.pub.
@@ -22,7 +22,8 @@
 - Pick a free signer group gid in the reset test when 996 is already taken.
 - Keep node visible when the reset test hides /opt.
 - Claim signer paths through a no-follow file descriptor. `provision` uses fchown and fchmod on that descriptor.
-- Reuse the existing evalanche-signer group gid instead of hardcoding gid 960. The signer user stays uid 960.
+- Reuse the existing evalanche-signer uid instead of pinning uid 960. A missing user gets a free system uid, and the nonce file owner is checked afterwards.
+- Reuse the existing evalanche-signer group gid instead of hardcoding gid 960.
 - Apply Avalanche slippage classes to USDC and sAVAX. USDC is 50 bps. WAVAX, BTC.b, WETH.e, and sAVAX are 200 bps instead of the 300 bps default.
 - Reject trailing bytes on outer Li.Fi V3 calldata. The decoded `0x4666fc80` and `0x5fd9ae2e` payloads must re-encode to the same length.
 - Match Kyber srcReceivers to decoded pools. Appended and unaligned addresses, and the zero address, are denied.

@@ -544,12 +544,14 @@ fi
 if getent group evalanche-signer >/dev/null 2>&1; then
   groupdel evalanche-signer || true
 fi
-# 996 is the live box group. Runners often already use it, so take the first
-# free system gid other than the uid pin 960 and require provision to reuse it.
+# 996 is the live box uid and gid. Take a free system id other than the old
+# pin 960, and require provision to reuse a user that already has that uid.
 want=""
 candidate=996
 while [ "$candidate" -ge 100 ]; do
-  if [ "$candidate" != 960 ] && ! getent group "$candidate" >/dev/null 2>&1; then
+  if [ "$candidate" != 960 ] \
+    && ! getent group "$candidate" >/dev/null 2>&1 \
+    && ! getent passwd "$candidate" >/dev/null 2>&1; then
     want=$candidate
     break
   fi
@@ -590,14 +592,24 @@ chmod 755 "$fake/pack/package/scripts/grok-bot-signer.sh"
 tar -czf "$tarball" -C "$fake/pack" package
 digest=$(sha256sum "$tarball" | awk 'NR==1 { print $1 }')
 "$SCRIPT" provision "$tarball" "$digest"
+picked=$(id -u evalanche-signer)
+test "$picked" -ge 100
+test "$picked" -le 999
+test "$(stat -c %u "$persist/state/nonces.json")" = "$picked"
+userdel evalanche-signer
+if ! getent group evalanche-signer >/dev/null 2>&1; then
+  groupadd --system --gid "$want" evalanche-signer
+fi
+useradd --system --uid "$want" --gid "$want" --no-create-home --home-dir /var/lib/evalanche-signer --shell /bin/false evalanche-signer
+"$SCRIPT" provision "$tarball" "$digest"
 test ! -e "$persist/verifier.key"
 test "$(stat -c %u "$persist/config.json")" = 0
 test "$(stat -c %a "$persist/config.json")" = 644
-test "$(id -u evalanche-signer)" = 960
+test "$(id -u evalanche-signer)" = "$want"
 test "$want" != 960
 test "$(id -g evalanche-signer)" = "$want"
 test "$(getent group evalanche-signer | cut -d: -f3)" = "$want"
-test "$(stat -c %u "$persist/state/nonces.json")" = 960
+test "$(stat -c %u "$persist/state/nonces.json")" = "$want"
 test "$(stat -c %a "$persist/state/nonces.json")" = 600
 test "$(stat -c %u "$persist/verifier.pub")" = 0
 grep -q '"lastNonce":"42"' "$persist/state/nonces.json"

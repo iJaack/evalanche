@@ -12,9 +12,8 @@
 # As root, EVALANCHE_BOX_* overrides are ignored.
 set -eu
 
-# Pinned so a recreated user still owns the nonce files that survived the reboot.
-# The group gid is not pinned: an existing evalanche-signer group is reused.
-SIGNER_UID_PIN=960
+# Neither uid nor gid is pinned. An existing evalanche-signer user and group
+# are reused. A missing user gets the first free system uid.
 SIGNER_GROUP=evalanche-signer
 
 if [ "$(id -u)" -eq 0 ]; then
@@ -501,8 +500,22 @@ make_dir() {
   install -d -o "$owner" -g "$group" -m "$mode" "$path"
 }
 
-# Recreate the user at the pinned uid. Reuse the group's gid when it already
-# exists, so a box whose evalanche-signer group is not 960 still provisions.
+# First free uid in the system range, highest first.
+pick_free_system_uid() {
+  candidate=999
+  while [ "$candidate" -ge 100 ]; do
+    if ! getent passwd "$candidate" >/dev/null 2>&1; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+    candidate=$((candidate - 1))
+  done
+  echo "no free system uid" >&2
+  return 1
+}
+
+# Reuse the user and the group when they already exist. A box whose
+# evalanche-signer user is not uid 960 still provisions.
 ensure_signer_account() {
   if [ "$SKIP_ROOT" = 1 ]; then
     return 0
@@ -515,24 +528,20 @@ ensure_signer_account() {
     echo "cannot resolve gid for group $SIGNER_GROUP" >&2
     exit 1
   fi
-  taken=$(getent passwd "$SIGNER_UID_PIN" | cut -d: -f1 || true)
-  if [ -n "$taken" ] && [ "$taken" != "$SIGNER_USER" ]; then
-    echo "uid $SIGNER_UID_PIN is already used by user $taken" >&2
-    exit 1
-  fi
   if id "$SIGNER_USER" >/dev/null 2>&1; then
     uid=$(id -u "$SIGNER_USER")
     ugid=$(id -g "$SIGNER_USER")
-    if [ "$uid" != "$SIGNER_UID_PIN" ] || [ "$ugid" != "$gid" ]; then
-      echo "user $SIGNER_USER exists as $uid:$ugid, expected $SIGNER_UID_PIN:$gid" >&2
+    if [ "$ugid" != "$gid" ]; then
+      echo "user $SIGNER_USER exists as $uid:$ugid, expected primary gid $gid" >&2
       exit 1
     fi
   else
-    useradd --system --uid "$SIGNER_UID_PIN" --gid "$gid" \
+    uid=$(pick_free_system_uid) || exit 1
+    useradd --system --uid "$uid" --gid "$gid" \
       --no-create-home --home-dir "$EPHEMERAL" --shell /bin/false "$SIGNER_USER"
   fi
-  if [ "$(id -u "$SIGNER_USER")" != "$SIGNER_UID_PIN" ] || [ "$(id -g "$SIGNER_USER")" != "$gid" ]; then
-    echo "signer account gid does not match group $SIGNER_GROUP" >&2
+  if [ "$(id -u "$SIGNER_USER")" != "$uid" ] || [ "$(id -g "$SIGNER_USER")" != "$gid" ]; then
+    echo "signer account does not match $uid:$gid" >&2
     exit 1
   fi
   if [ "$(getent group "$SIGNER_GROUP" | cut -d: -f3)" != "$gid" ]; then
