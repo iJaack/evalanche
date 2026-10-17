@@ -13,8 +13,8 @@
 set -eu
 
 # Pinned so a recreated user still owns the nonce files that survived the reboot.
+# The group gid is not pinned: an existing evalanche-signer group is reused.
 SIGNER_UID_PIN=960
-SIGNER_GID_PIN=960
 SIGNER_GROUP=evalanche-signer
 
 if [ "$(id -u)" -eq 0 ]; then
@@ -467,24 +467,19 @@ make_dir() {
   install -d -o "$owner" -g "$group" -m "$mode" "$path"
 }
 
-# Recreate the account at the pinned ids. A new uid would orphan the nonce files.
+# Recreate the user at the pinned uid. Reuse the group's gid when it already
+# exists, so a box whose evalanche-signer group is not 960 still provisions.
 ensure_signer_account() {
   if [ "$SKIP_ROOT" = 1 ]; then
     return 0
   fi
-  taken=$(getent group "$SIGNER_GID_PIN" | cut -d: -f1 || true)
-  if [ -n "$taken" ] && [ "$taken" != "$SIGNER_GROUP" ]; then
-    echo "gid $SIGNER_GID_PIN is already used by group $taken" >&2
-    exit 1
+  if ! getent group "$SIGNER_GROUP" >/dev/null 2>&1; then
+    groupadd --system "$SIGNER_GROUP"
   fi
-  if getent group "$SIGNER_GROUP" >/dev/null 2>&1; then
-    gid=$(getent group "$SIGNER_GROUP" | cut -d: -f3)
-    if [ "$gid" != "$SIGNER_GID_PIN" ]; then
-      echo "group $SIGNER_GROUP exists with gid $gid, expected $SIGNER_GID_PIN" >&2
-      exit 1
-    fi
-  else
-    groupadd --system --gid "$SIGNER_GID_PIN" "$SIGNER_GROUP"
+  gid=$(getent group "$SIGNER_GROUP" | cut -d: -f3)
+  if [ -z "$gid" ]; then
+    echo "cannot resolve gid for group $SIGNER_GROUP" >&2
+    exit 1
   fi
   taken=$(getent passwd "$SIGNER_UID_PIN" | cut -d: -f1 || true)
   if [ -n "$taken" ] && [ "$taken" != "$SIGNER_USER" ]; then
@@ -493,14 +488,22 @@ ensure_signer_account() {
   fi
   if id "$SIGNER_USER" >/dev/null 2>&1; then
     uid=$(id -u "$SIGNER_USER")
-    gid=$(id -g "$SIGNER_USER")
-    if [ "$uid" != "$SIGNER_UID_PIN" ] || [ "$gid" != "$SIGNER_GID_PIN" ]; then
-      echo "user $SIGNER_USER exists as $uid:$gid, expected $SIGNER_UID_PIN:$SIGNER_GID_PIN" >&2
+    ugid=$(id -g "$SIGNER_USER")
+    if [ "$uid" != "$SIGNER_UID_PIN" ] || [ "$ugid" != "$gid" ]; then
+      echo "user $SIGNER_USER exists as $uid:$ugid, expected $SIGNER_UID_PIN:$gid" >&2
       exit 1
     fi
   else
-    useradd --system --uid "$SIGNER_UID_PIN" --gid "$SIGNER_GID_PIN" \
+    useradd --system --uid "$SIGNER_UID_PIN" --gid "$gid" \
       --no-create-home --home-dir "$EPHEMERAL" --shell /bin/false "$SIGNER_USER"
+  fi
+  if [ "$(id -u "$SIGNER_USER")" != "$SIGNER_UID_PIN" ] || [ "$(id -g "$SIGNER_USER")" != "$gid" ]; then
+    echo "signer account gid does not match group $SIGNER_GROUP" >&2
+    exit 1
+  fi
+  if [ "$(getent group "$SIGNER_GROUP" | cut -d: -f3)" != "$gid" ]; then
+    echo "group $SIGNER_GROUP gid changed during provision" >&2
+    exit 1
   fi
   if id box >/dev/null 2>&1; then
     usermod -aG "$SIGNER_GROUP" box

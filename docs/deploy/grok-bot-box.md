@@ -46,7 +46,7 @@ That path is the Grok Bot default. Every state path below is still configurable.
 
 `...` is `/home/box/agent-data/evalanche-persist`. Edit the files there. `provision` copies config, `verifier.key`, `verifier.pub`, and `token` into `/etc/evalanche-signer` and does not write those copies back. It does not copy the nonce file or the audit log there. The signer reads `/etc/evalanche-signer/config.json`. That config points `nonceStorePath` and `auditLogPath` at the bind mount, and `verifierPublicKeyPath` at `/etc/evalanche-signer/verifier.pub`.
 
-The user and group are recreated at uid `960` and gid `960`, so the nonce files still belong to the signer after the account comes back. The signer's login directory is `/var/lib/evalanche-signer`, which does not persist. Durable state is not that home. The Linux lock helper is opened from `/opt/evalanche-signer`. `/opt`, `/var`, and `/var/lib` must be real directories, root-owned, and not group- or world-writable. `provision` recreates the signer directories under them after a reset.
+The user is recreated at uid `960`, so the nonce files still belong to the signer after the account comes back. The group gid is the existing `evalanche-signer` gid. On this box that gid is `996`. `provision` creates the group only when the name is missing, then checks that the user's primary gid is that group. The signer's login directory is `/var/lib/evalanche-signer`, which does not persist. Durable state is not that home. The Linux lock helper is opened from `/opt/evalanche-signer`. `/opt`, `/var`, and `/var/lib` must be real directories, root-owned, and not group- or world-writable. `provision` recreates the signer directories under them after a reset.
 
 ### Bind mounts
 
@@ -131,7 +131,7 @@ sudo /workspace/scripts/grok-bot-signer.sh provision \
   "$EVALANCHE_TARBALL_SHA256"
 ```
 
-`provision` creates group and user `evalanche-signer` at gid `960` and uid `960`, adds `box` to that group when the account exists, and installs the pinned tarball with `npm ci --prefix /opt/evalanche-signer --omit=dev --ignore-scripts`. The tarball carries `npm-shrinkwrap.json`, so ethers, viem, and `@nktkas/hyperliquid` reinstall at the locked versions. It refuses a uid or gid `960` that already belongs to a different name. Restart both agents after the group change. A running process keeps its old groups.
+`provision` reuses the `evalanche-signer` group when that name already exists, whatever its gid is, and creates the group only when it is missing. The user is uid `960` with that group as its primary gid. It adds `box` to the group when the account exists, and installs the pinned tarball with `npm ci --prefix /opt/evalanche-signer --omit=dev --ignore-scripts`. The tarball carries `npm-shrinkwrap.json`, so ethers, viem, and `@nktkas/hyperliquid` reinstall at the locked versions. It refuses a uid `960` that already belongs to a different name, and it refuses a user whose primary gid is not the group. Restart both agents after the group change. A running process keeps its old groups.
 
 The same command writes `/home/box/agent-data/evalanche-persist/config.json` only when that file is missing. Replace the placeholder allow map before live trading. If the file already exists, `nonceStorePath` and `auditLogPath` must sit under the state bind mount or the persistent state directory, and `verifierPublicKeyPath` must sit under `/etc/evalanche-signer` or the persistent directory. A `trustAnchor` must be the persistent directory or a directory inside it, and the nonce and audit paths must sit under that anchor.
 

@@ -527,6 +527,7 @@ fi
 if getent group evalanche-signer >/dev/null 2>&1; then
   groupdel evalanche-signer || true
 fi
+groupadd --system --gid 996 evalanche-signer
 cat > "$fake/bin/npm" << EOF
 #!/bin/sh
 printf '%s\\\\n' "\\$*" >> "$fake/npm.log"
@@ -564,6 +565,9 @@ test "$(stat -c %u "$persist/verifier.key")" = 0
 test "$(stat -c %a "$persist/verifier.key")" = 600
 test "$(stat -c %u "$persist/config.json")" = 0
 test "$(stat -c %a "$persist/config.json")" = 644
+test "$(id -u evalanche-signer)" = 960
+test "$(id -g evalanche-signer)" = 996
+test "$(getent group evalanche-signer | cut -d: -f3)" = 996
 test "$(stat -c %u "$persist/state/nonces.json")" = 960
 test "$(stat -c %a "$persist/state/nonces.json")" = 600
 test "$(stat -c %u "$persist/verifier.pub")" = 0
