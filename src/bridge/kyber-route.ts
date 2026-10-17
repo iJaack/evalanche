@@ -35,6 +35,9 @@ const CHAIN_SLUG: Record<number, string> = {
 /** Build `amountOut` may differ from the route quote by at most this many bps. */
 const ROUTE_BUILD_AMOUNT_TOLERANCE_BPS = 10n;
 
+/** A quote more than this far under an independent reference is refused. */
+const REFERENCE_MAX_DISCOUNT_BPS = 100n;
+
 const SWAP_LEG = 'tuple(address callTo, address approveTo, address sendingAssetId, address receivingAssetId, uint256 fromAmount, bytes callData, bool requiresDeposit)';
 
 const LIFI_V3 = new Interface([
@@ -53,6 +56,14 @@ export interface KyberLifiSwapRequest {
   /** V3 receiver. Must be the signer wallet when the tx is submitted. */
   treasury: string;
   slippageCaps?: SlippageCaps;
+}
+
+/** The trade a reference-price fetcher is asked to price. */
+export interface KyberReferenceRequest {
+  chainId: number;
+  tokenIn: string;
+  tokenOut: string;
+  amountIn: bigint;
 }
 
 export interface KyberLifiSwap {
@@ -101,6 +112,13 @@ type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
 export interface KyberLifiSwapOptions {
   /** Test double. Production uses {@link safeFetch}. */
   fetchImpl?: FetchLike;
+  /**
+   * Independent bought-token amount, or a fetcher that returns one
+   * (a second Kyber route, CoinGecko, or another source). The builder
+   * refuses when `quotedAmountOut` is more than 1% below it. Omitted
+   * means the check is off. The signer never calls this.
+   */
+  referencePrice?: bigint | ((request: KyberReferenceRequest) => Promise<bigint> | bigint);
 }
 
 function fail(message: string): never {
@@ -246,6 +264,23 @@ function assertKyberResponsesMatchRequest(
     fail('Kyber build amountOut does not match the route amountOut');
   }
   return buildOut;
+}
+
+/**
+ * Proposer-side only. A missing reference skips the check. A quote above
+ * the reference, or as little as 1% under it, is kept.
+ */
+async function assertQuotedNearReference(
+  quoted: bigint,
+  request: KyberReferenceRequest,
+  reference: KyberLifiSwapOptions['referencePrice'],
+): Promise<void> {
+  if (reference === undefined) return;
+  const value = typeof reference === 'function' ? await reference(request) : reference;
+  if (typeof value !== 'bigint' || value <= 0n) fail('Kyber reference price must be a positive amount');
+  if (quoted * 10_000n < value * (10_000n - REFERENCE_MAX_DISCOUNT_BPS)) {
+    fail('Kyber quotedAmountOut is more than 1% below the reference price');
+  }
 }
 
 function classFloor(quoted: bigint, tokenOut: string, caps: SlippageCaps | undefined): bigint {
@@ -397,6 +432,12 @@ export async function buildKyberLifiSwap(
   const calldata = build.data?.data;
   if (!calldata || !calldata.startsWith('0x')) fail('Kyber build response has no calldata');
   const quotedAmountOut = assertKyberResponsesMatchRequest(request, tokenIn, tokenOut, route, build, calldata);
+  await assertQuotedNearReference(quotedAmountOut, {
+    chainId: request.chainId,
+    tokenIn,
+    tokenOut,
+    amountIn: request.amountIn,
+  }, options.referencePrice);
   return assembleLifiV3FromKyber({
     chainId: request.chainId,
     calldata,

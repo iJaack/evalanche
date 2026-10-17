@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import { Interface, Wallet, getAddress } from 'ethers';
 import { KEY, leg, patchKyber, sign } from '../r8review/helpers';
-import { buildKyberLifiSwap, assembleLifiV3FromKyber } from '../../src/bridge/kyber-route';
+import { buildKyberLifiSwap, assembleLifiV3FromKyber, type KyberReferenceRequest } from '../../src/bridge/kyber-route';
 import {
   KYBER_META_AGGREGATION_ROUTER_V2,
   KYBER_SWAP_SELECTOR,
@@ -188,5 +188,61 @@ describe('Kyber aggregator route as one Li.Fi V3 swap', () => {
     const buildChain = cloneFixture();
     Object.assign(buildChain.build.data, { chainId: 1 });
     await expect(buildFrom(buildChain)).rejects.toThrow(/build chain/);
+  });
+
+  it('builds an understated amountOut when no reference is provided', async () => {
+    const pair = cloneFixture();
+    const half = BigInt(recorded.build.data.amountOut) / 2n;
+    pair.route.data.routeSummary.amountOut = half.toString();
+    pair.build.data.amountOut = half.toString();
+    await expect(buildFrom(pair)).resolves.toMatchObject({ quotedAmountOut: half });
+  });
+
+  it('refuses an amountOut 50% under the reference', async () => {
+    const pair = cloneFixture();
+    const half = BigInt(recorded.build.data.amountOut) / 2n;
+    pair.route.data.routeSummary.amountOut = half.toString();
+    pair.build.data.amountOut = half.toString();
+    const reference = BigInt(recorded.build.data.amountOut);
+    await expect(buildFrom(pair, { referencePrice: reference })).rejects.toThrow(/reference price/);
+    await expect(buildFrom(pair, { referencePrice: async () => reference })).rejects.toThrow(/reference price/);
+  });
+
+  it('keeps a quote at the 1% floor and refuses one unit under it', async () => {
+    const atFloor = cloneFixture();
+    atFloor.route.data.routeSummary.amountOut = '9900';
+    atFloor.build.data.amountOut = '9900';
+    await expect(buildFrom(atFloor, { referencePrice: 10_000n })).resolves.toMatchObject({ quotedAmountOut: 9900n });
+
+    const under = cloneFixture();
+    under.route.data.routeSummary.amountOut = '9899';
+    under.build.data.amountOut = '9899';
+    await expect(buildFrom(under, { referencePrice: 10_000n })).rejects.toThrow(/reference price/);
+
+    const above = cloneFixture();
+    above.route.data.routeSummary.amountOut = '10001';
+    above.build.data.amountOut = '10001';
+    await expect(buildFrom(above, { referencePrice: 10_000n })).resolves.toMatchObject({ quotedAmountOut: 10001n });
+  });
+
+  it('passes the requested trade to a reference fetcher', async () => {
+    let seen: KyberReferenceRequest | undefined;
+    await buildFrom(cloneFixture(), {
+      referencePrice: (request) => {
+        seen = request;
+        return BigInt(recorded.build.data.amountOut);
+      },
+    });
+    expect(seen).toEqual({
+      chainId: CHAIN,
+      tokenIn: getAddress(recorded.request.tokenIn),
+      tokenOut: getAddress(recorded.request.tokenOut),
+      amountIn: BigInt(recorded.request.amountIn),
+    });
+  });
+
+  it('refuses a non-positive reference price', async () => {
+    await expect(buildFrom(cloneFixture(), { referencePrice: 0n })).rejects.toThrow(/reference price/);
+    await expect(buildFrom(cloneFixture(), { referencePrice: -1n })).rejects.toThrow(/reference price/);
   });
 });

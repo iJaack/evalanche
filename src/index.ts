@@ -58,7 +58,7 @@ export type { PaymentRequirements, PayAndFetchOptions, PayAndFetchResult } from 
 
 export { BridgeClient, LiFiClient, GasZipClient, NATIVE_TOKEN } from './bridge';
 export { KYBER_AGGREGATOR_API, assembleLifiV3FromKyber, buildKyberLifiSwap } from './bridge/kyber-route';
-export type { KyberLifiSwap, KyberLifiSwapOptions, KyberLifiSwapRequest } from './bridge/kyber-route';
+export type { KyberLifiSwap, KyberLifiSwapOptions, KyberLifiSwapRequest, KyberReferenceRequest } from './bridge/kyber-route';
 export type {
   BridgeQuoteParams,
   BridgeQuote,

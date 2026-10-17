@@ -26,6 +26,7 @@
 - Close the start lock before the sudo launcher. A second start refuses while a signer is running.
 - Build a single-step Kyber Li.Fi route from the KyberSwap aggregator. One GenericSwapFacetV3 call, no Li.Fi fixed-fee step, and minOut from the bought-token class cap. Keep the Kyber route out of the bridge import.
 - Match the Kyber route and build to the request. tokenIn, tokenOut, and amountIn must be exact, the router must be the one for the chain, and the build amountOut must be within 0.1% of the route amountOut.
+- Refuse a Kyber quote below the reference price. An optional reference amount or fetcher throws when quotedAmountOut is more than 1% below it. The signer does not run the check.
 - Remount signer state mounts nosuid, nodev, and noexec. `start` fails closed when a state or log bind is missing one of those flags.
 - Set example slippage caps to the Avalanche classes. USDC and USDt are 50 bps, WAVAX, BTC.b, WETH.e, and sAVAX are 200 bps, and every other token is 300 bps.
 - Refuse a node binary that is not root-owned, and refuse one whose directory chain is group or world writable.

@@ -407,6 +407,8 @@ The build request sets both `sender` and `recipient` to that diamond. The diamon
 
 The builder throws unless the route and the build name the requested `tokenIn`, `tokenOut`, and `amountIn`, the router is the Avalanche MetaAggregationRouterV2 for chain 43114, and the build `amountOut` is within 0.1% of the route `amountOut`.
 
+`referencePrice` is optional and stays off unless the caller sets it. Pass a bought-token amount, or a function that returns one from a second Kyber route or from CoinGecko. The builder refuses when `quotedAmountOut` is more than 1% below that reference. The signer does not run this check.
+
 Native-in uses the same `0x4666fc80` selector and sets `value` to `fromAmount`, which the signer already allows. Native V3 selectors stay unused. A Kyber `recipient` other than the diamond is refused, and a positive Kyber fee is refused.
 
 ```js
