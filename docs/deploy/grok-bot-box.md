@@ -405,6 +405,8 @@ A live Li.Fi quote can still insert a "LIFI Fixed Fee" step (`callTo` `0xCE40…
 
 The build request sets both `sender` and `recipient` to that diamond. The diamond is the router caller, and it is the address whose token balance the V3 facet measures before it forwards the output. The `treasury` argument is the V3 `receiver`. It must be the signer wallet, with the `recipient` role. `quotedAmountOut` is Kyber's `amountOut`. `minAmountOut` is `quotedAmountOut * (10000 - classCap) / 10000`, using the bought-token class cap (50 bps for a stable, 200 for a top asset, 300 otherwise).
 
+The builder throws unless the route and the build name the requested `tokenIn`, `tokenOut`, and `amountIn`, the router is the Avalanche MetaAggregationRouterV2 for chain 43114, and the build `amountOut` is within 0.1% of the route `amountOut`.
+
 Native-in uses the same `0x4666fc80` selector and sets `value` to `fromAmount`, which the signer already allows. Native V3 selectors stay unused. A Kyber `recipient` other than the diamond is refused, and a positive Kyber fee is refused.
 
 ```js

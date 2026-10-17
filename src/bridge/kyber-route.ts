@@ -32,6 +32,9 @@ const CHAIN_SLUG: Record<number, string> = {
   43114: 'avalanche',
 };
 
+/** Build `amountOut` may differ from the route quote by at most this many bps. */
+const ROUTE_BUILD_AMOUNT_TOLERANCE_BPS = 10n;
+
 const SWAP_LEG = 'tuple(address callTo, address approveTo, address sendingAssetId, address receivingAssetId, uint256 fromAmount, bytes callData, bool requiresDeposit)';
 
 const LIFI_V3 = new Interface([
@@ -67,15 +70,30 @@ export interface KyberLifiSwap {
   amountIn: bigint;
 }
 
+interface KyberRouteSummary {
+  tokenIn?: string;
+  tokenOut?: string;
+  amountIn?: string;
+  amountOut?: string;
+  routerAddress?: string;
+  chainId?: number | string;
+}
+
+interface KyberBuildData {
+  routeSummary?: KyberRouteSummary;
+  routerAddress?: string;
+  amountIn?: string;
+  amountOut?: string;
+  tokenIn?: string;
+  tokenOut?: string;
+  data?: string;
+  chainId?: number | string;
+}
+
 interface KyberEnvelope {
   code?: number;
   message?: string;
-  data?: {
-    routeSummary?: unknown;
-    routerAddress?: string;
-    amountOut?: string;
-    data?: string;
-  };
+  data?: KyberBuildData;
 }
 
 type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
@@ -103,6 +121,131 @@ function aggregatorToken(token: string): string {
   } catch {
     fail(`Kyber token is not an address: ${token}`);
   }
+}
+
+function sameToken(left: string | undefined, right: string): boolean {
+  if (!left) return false;
+  if (isNativeAsset(left) && isNativeAsset(right)) return true;
+  try {
+    return getAddress(left) === getAddress(right);
+  } catch {
+    return false;
+  }
+}
+
+function parseUnits(value: string | undefined, label: string): bigint {
+  if (value === undefined || value === '' || !/^\d+$/.test(value)) fail(`${label} is missing`);
+  return BigInt(value);
+}
+
+function chainRouter(chainId: number): string {
+  chainSlug(chainId);
+  return getAddress(KYBER_META_AGGREGATION_ROUTER_V2);
+}
+
+function assertChainId(reported: number | string | undefined, chainId: number, label: string): void {
+  if (reported === undefined || reported === '') return;
+  if (String(reported) !== String(chainId)) fail(`${label} chain does not match the request`);
+}
+
+function assertRouter(reported: string | undefined, expected: string, label: string): void {
+  if (!reported) fail(`${label} router is missing`);
+  let router: string;
+  try {
+    router = getAddress(reported);
+  } catch {
+    fail(`${label} router is not an address`);
+  }
+  if (router !== expected) fail(`${label} router is not the router for this chain`);
+}
+
+interface DecodedKyberSwap {
+  srcToken: string;
+  dstToken: string;
+  dstReceiver: string;
+  amount: bigint;
+  feeAmounts: readonly bigint[];
+}
+
+function readKyberSwap(calldata: string): DecodedKyberSwap {
+  if (calldata.slice(0, 10).toLowerCase() !== KYBER_SWAP_SELECTOR) {
+    fail('Kyber router selector is not swap');
+  }
+  let decoded: ReturnType<Interface['decodeFunctionData']>;
+  try {
+    decoded = KYBER.decodeFunctionData('swap', calldata);
+  } catch {
+    fail('Kyber swap calldata could not be decoded');
+  }
+  const execution = decoded[0];
+  const again = KYBER.encodeFunctionData('swap', [execution]);
+  if (again.toLowerCase() !== calldata.toLowerCase()) {
+    fail('Kyber swap calldata has trailing bytes');
+  }
+  const desc = execution.desc as DecodedKyberSwap;
+  return {
+    srcToken: String(desc.srcToken),
+    dstToken: String(desc.dstToken),
+    dstReceiver: String(desc.dstReceiver),
+    amount: BigInt(desc.amount),
+    feeAmounts: desc.feeAmounts,
+  };
+}
+
+/**
+ * The route summary and the build must be the trade that was requested.
+ * `tokenIn`, `tokenOut`, and `amountIn` are exact. The router must be the
+ * one for `chainId`. Build `amountOut` may differ from the route quote by
+ * at most 0.1%.
+ */
+function assertKyberResponsesMatchRequest(
+  request: KyberLifiSwapRequest,
+  tokenIn: string,
+  tokenOut: string,
+  route: KyberEnvelope,
+  build: KyberEnvelope,
+  calldata: string,
+): bigint {
+  const summary = route.data?.routeSummary;
+  if (!summary) fail('Kyber route response has no routeSummary');
+  const router = chainRouter(request.chainId);
+  assertChainId(summary.chainId, request.chainId, 'Kyber route');
+  assertChainId(build.data?.chainId, request.chainId, 'Kyber build');
+  if (!sameToken(summary.tokenIn, tokenIn)) fail('Kyber route tokenIn does not match the request');
+  if (!sameToken(summary.tokenOut, tokenOut)) fail('Kyber route tokenOut does not match the request');
+  if (parseUnits(summary.amountIn, 'Kyber route amountIn') !== request.amountIn) {
+    fail('Kyber route amountIn does not match the request');
+  }
+  assertRouter(summary.routerAddress ?? route.data?.routerAddress, router, 'Kyber route');
+  if (route.data?.routerAddress) assertRouter(route.data.routerAddress, router, 'Kyber route');
+  if (summary.routerAddress && route.data?.routerAddress && getAddress(summary.routerAddress) !== getAddress(route.data.routerAddress)) {
+    fail('Kyber route router does not match the route summary');
+  }
+
+  if (parseUnits(build.data?.amountIn, 'Kyber build amountIn') !== request.amountIn) {
+    fail('Kyber build amountIn does not match the request');
+  }
+  if (build.data?.tokenIn && !sameToken(build.data.tokenIn, tokenIn)) {
+    fail('Kyber build tokenIn does not match the request');
+  }
+  if (build.data?.tokenOut && !sameToken(build.data.tokenOut, tokenOut)) {
+    fail('Kyber build tokenOut does not match the request');
+  }
+  assertRouter(build.data?.routerAddress, router, 'Kyber build');
+
+  const swap = readKyberSwap(calldata);
+  if (!sameToken(swap.srcToken, tokenIn)) fail('Kyber build tokenIn does not match the request');
+  if (!sameToken(swap.dstToken, tokenOut)) fail('Kyber build tokenOut does not match the request');
+  if (swap.amount !== request.amountIn) fail('Kyber build amountIn does not match the request');
+
+  const routeOut = parseUnits(summary.amountOut, 'Kyber route amountOut');
+  const buildOut = parseUnits(build.data?.amountOut, 'Kyber build amountOut');
+  if (routeOut <= 0n || buildOut <= 0n) fail('Kyber amountOut must be greater than zero');
+  const diff = routeOut > buildOut ? routeOut - buildOut : buildOut - routeOut;
+  if (diff * 10_000n > routeOut * ROUTE_BUILD_AMOUNT_TOLERANCE_BPS) {
+    fail('Kyber build amountOut does not match the route amountOut');
+  }
+  return buildOut;
 }
 
 function classFloor(quoted: bigint, tokenOut: string, caps: SlippageCaps | undefined): bigint {
@@ -161,27 +304,7 @@ export function assembleLifiV3FromKyber(input: {
   } catch {
     fail('treasury is not an address');
   }
-  if (input.calldata.slice(0, 10).toLowerCase() !== KYBER_SWAP_SELECTOR) {
-    fail('Kyber router selector is not swap');
-  }
-  let decoded: ReturnType<Interface['decodeFunctionData']>;
-  try {
-    decoded = KYBER.decodeFunctionData('swap', input.calldata);
-  } catch {
-    fail('Kyber swap calldata could not be decoded');
-  }
-  const execution = decoded[0];
-  const again = KYBER.encodeFunctionData('swap', [execution]);
-  if (again.toLowerCase() !== input.calldata.toLowerCase()) {
-    fail('Kyber swap calldata has trailing bytes');
-  }
-  const desc = execution.desc as {
-    srcToken: string;
-    dstToken: string;
-    dstReceiver: string;
-    amount: bigint;
-    feeAmounts: readonly bigint[];
-  };
+  const desc = readKyberSwap(input.calldata);
   const diamond = getAddress(LIFI_DIAMOND);
   let dstReceiver: string;
   try {
@@ -271,18 +394,9 @@ export async function buildKyberLifiSwap(
       source: 'evalanche',
     }),
   }, options.fetchImpl);
-  const router = build.data?.routerAddress;
-  if (!router || getAddress(router) !== getAddress(KYBER_META_AGGREGATION_ROUTER_V2)) {
-    fail('Kyber build router is not MetaAggregationRouterV2');
-  }
   const calldata = build.data?.data;
   if (!calldata || !calldata.startsWith('0x')) fail('Kyber build response has no calldata');
-  let quotedAmountOut: bigint;
-  try {
-    quotedAmountOut = BigInt(build.data?.amountOut ?? '');
-  } catch {
-    fail('Kyber build response has no amountOut');
-  }
+  const quotedAmountOut = assertKyberResponsesMatchRequest(request, tokenIn, tokenOut, route, build, calldata);
   return assembleLifiV3FromKyber({
     chainId: request.chainId,
     calldata,

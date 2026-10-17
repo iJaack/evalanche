@@ -23,11 +23,35 @@ const V3 = new Interface([
   `function swapTokensSingleV3ERC20ToERC20(bytes32 transactionId, string integrator, string referrer, address receiver, uint256 minAmountOut, ${SWAP_LEG} swapData)`,
 ]);
 
+const WAVAX = '0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7';
+
 function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status: 200,
     headers: { 'content-type': 'application/json' },
   });
+}
+
+function cloneFixture(): { route: typeof recorded.route; build: typeof recorded.build } {
+  return structuredClone({ route: recorded.route, build: recorded.build });
+}
+
+async function buildFrom(
+  pair: { route: unknown; build: unknown },
+  options: Parameters<typeof buildKyberLifiSwap>[1] = {},
+) {
+  const fetchImpl = async (url: string): Promise<Response> => {
+    if (url.includes('/routes?')) return jsonResponse(pair.route);
+    if (url.endsWith('/route/build')) return jsonResponse(pair.build);
+    throw new Error(`unexpected ${url}`);
+  };
+  return buildKyberLifiSwap({
+    chainId: CHAIN,
+    tokenIn: recorded.request.tokenIn,
+    tokenOut: recorded.request.tokenOut,
+    amountIn: BigInt(recorded.request.amountIn),
+    treasury: WALLET,
+  }, { ...options, fetchImpl });
 }
 
 describe('Kyber aggregator route as one Li.Fi V3 swap', () => {
@@ -100,5 +124,69 @@ describe('Kyber aggregator route as one Li.Fi V3 swap', () => {
     });
     expect(built.value).toBe(built.amountIn);
     expect(built.data.slice(0, 10).toLowerCase()).toBe(SELECTOR.swapTokensSingleV3ERC20ToERC20);
+  });
+
+  it('refuses a route whose tokenIn, tokenOut, or amountIn is not the request', async () => {
+    const tokenIn = cloneFixture();
+    tokenIn.route.data.routeSummary.tokenIn = WAVAX;
+    await expect(buildFrom(tokenIn)).rejects.toThrow(/route tokenIn/);
+
+    const tokenOut = cloneFixture();
+    tokenOut.route.data.routeSummary.tokenOut = WAVAX;
+    await expect(buildFrom(tokenOut)).rejects.toThrow(/route tokenOut/);
+
+    const amountIn = cloneFixture();
+    amountIn.route.data.routeSummary.amountIn = '1';
+    await expect(buildFrom(amountIn)).rejects.toThrow(/route amountIn/);
+  });
+
+  it('refuses a build whose amountIn or decoded tokenIn is not the request', async () => {
+    const amountIn = cloneFixture();
+    amountIn.build.data.amountIn = '1';
+    await expect(buildFrom(amountIn)).rejects.toThrow(/build amountIn/);
+
+    const tokenIn = cloneFixture();
+    tokenIn.build.data.data = patchKyber(recorded.build.data.data, { srcToken: LIFI_NATIVE_SENTINEL });
+    await expect(buildFrom(tokenIn)).rejects.toThrow(/build tokenIn/);
+  });
+
+  it('accepts a build amountOut within 0.1% of the route and refuses a wider gap', async () => {
+    const under = cloneFixture();
+    under.route.data.routeSummary.amountOut = '1000000';
+    under.build.data.amountOut = '999000';
+    await expect(buildFrom(under)).resolves.toMatchObject({ quotedAmountOut: 999000n });
+
+    const over = cloneFixture();
+    over.route.data.routeSummary.amountOut = '1000000';
+    over.build.data.amountOut = '1001000';
+    await expect(buildFrom(over)).resolves.toMatchObject({ quotedAmountOut: 1001000n });
+
+    const tooLow = cloneFixture();
+    tooLow.route.data.routeSummary.amountOut = '1000000';
+    tooLow.build.data.amountOut = '998999';
+    await expect(buildFrom(tooLow)).rejects.toThrow(/amountOut/);
+
+    const tooHigh = cloneFixture();
+    tooHigh.route.data.routeSummary.amountOut = '1000000';
+    tooHigh.build.data.amountOut = '1001001';
+    await expect(buildFrom(tooHigh)).rejects.toThrow(/amountOut/);
+  });
+
+  it('refuses a router or chain that is not the request', async () => {
+    const router = cloneFixture();
+    router.build.data.routerAddress = '0x000000000000000000000000000000000000dEaD';
+    await expect(buildFrom(router)).rejects.toThrow(/build router/);
+
+    const summaryRouter = cloneFixture();
+    summaryRouter.route.data.routeSummary.routerAddress = '0x000000000000000000000000000000000000dEaD';
+    await expect(buildFrom(summaryRouter)).rejects.toThrow(/route router/);
+
+    const chain = cloneFixture();
+    Object.assign(chain.route.data.routeSummary, { chainId: 1 });
+    await expect(buildFrom(chain)).rejects.toThrow(/route chain/);
+
+    const buildChain = cloneFixture();
+    Object.assign(buildChain.build.data, { chainId: 1 });
+    await expect(buildFrom(buildChain)).rejects.toThrow(/build chain/);
   });
 });
