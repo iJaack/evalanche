@@ -7,6 +7,7 @@ import {
   COINGECKO_PRICE_MAX_AGE_MS,
   COINGECKO_SIMPLE_PRICE_URL,
   NATIVE_COINGECKO_IDS,
+  assertCoinGeckoPricePlausible,
   coinGeckoBindings,
   fetchCoinGeckoSimplePrice,
   nativeCoinGeckoId,
@@ -44,17 +45,16 @@ describe('CoinGecko simple/price', () => {
     expect(nativeCoinGeckoId(137, undefined)).toBe('polygon-ecosystem-token');
   });
 
-  it('accepts only the official https simple/price URLs', () => {
+  it('accepts only the official https simple/price URL', () => {
     expect(normalizeCoinGeckoFeed('coingecko', 'priceFeed')).toEqual({
       provider: 'coingecko',
       url: COINGECKO_SIMPLE_PRICE_URL,
       maxAgeMs: COINGECKO_PRICE_MAX_AGE_MS,
     });
-    expect(normalizeCoinGeckoFeed({
+    expect(() => normalizeCoinGeckoFeed({
       provider: 'coingecko',
       url: 'https://pro-api.coingecko.com/api/v3/simple/price',
-      maxAgeMs: 60_000,
-    }, 'priceFeed')?.url).toBe('https://pro-api.coingecko.com/api/v3/simple/price');
+    }, 'priceFeed')).toThrow(/simple\/price/);
     expect(() => normalizeCoinGeckoFeed({ provider: 'coingecko', url: 'http://api.coingecko.com/api/v3/simple/price' }, 'priceFeed')).toThrow(/https/);
     expect(() => normalizeCoinGeckoFeed({ provider: 'coingecko', url: 'https://example.com/api/v3/simple/price' }, 'priceFeed')).toThrow(/simple\/price/);
     expect(() => normalizeCoinGeckoFeed({ provider: 'binance' }, 'priceFeed')).toThrow(/coingecko/);
@@ -131,5 +131,76 @@ describe('CoinGecko simple/price', () => {
       nowMs: NOW,
       fetchImpl: async () => new Response('not-json', { status: 200 }),
     })).rejects.toThrow(/malformed/);
+  });
+
+  it('keeps a feed price inside a min/max or within 50% of a positive reference', () => {
+    const native = NATIVE_ADDRESS.toLowerCase();
+    const usdc = USDC.toLowerCase();
+    const reference = { [native]: 20 };
+    expect(() => assertCoinGeckoPricePlausible({ [native]: 10 }, undefined, reference)).not.toThrow();
+    expect(() => assertCoinGeckoPricePlausible({ [native]: 30 }, undefined, reference)).not.toThrow();
+    expect(() => assertCoinGeckoPricePlausible({ [native]: 9.99 }, undefined, reference)).toThrow(/outside the sanity bound/);
+    expect(() => assertCoinGeckoPricePlausible({ [native]: 30.01 }, undefined, reference)).toThrow(/outside the sanity bound/);
+    const bounds = { [native]: { min: 1, max: 100 } };
+    expect(() => assertCoinGeckoPricePlausible({ [native]: 20 }, bounds, undefined)).not.toThrow();
+    expect(() => assertCoinGeckoPricePlausible({ [native]: 101 }, bounds, undefined)).toThrow(/outside the sanity bound/);
+    expect(() => assertCoinGeckoPricePlausible({ [native]: 40 }, bounds, reference)).toThrow(/outside the sanity bound/);
+    expect(() => assertCoinGeckoPricePlausible({ [native]: 20 }, undefined, { [native]: 0 })).toThrow(/no sanity bound/);
+    expect(() => assertCoinGeckoPricePlausible({ [native]: 20 }, undefined, undefined)).toThrow(/no sanity bound/);
+    expect(() => assertCoinGeckoPricePlausible(
+      { [native]: 20, [usdc]: 1 },
+      bounds,
+      undefined,
+    )).toThrow(/no sanity bound/);
+  });
+
+  it('refuses redirects, oversized bodies, and timeouts on the official host', async () => {
+    const bindings = coinGeckoBindings(1, undefined);
+    const original = globalThis.fetch;
+    const base = {
+      url: COINGECKO_SIMPLE_PRICE_URL,
+      bindings,
+      maxAgeMs: COINGECKO_PRICE_MAX_AGE_MS,
+      nowMs: NOW,
+    };
+    try {
+      let calls = 0;
+      let init: RequestInit | undefined;
+      globalThis.fetch = (async (_url: string, options?: RequestInit) => {
+        calls += 1;
+        init = options;
+        return new Response(JSON.stringify({ ethereum: { usd: 3000, last_updated_at: FRESH } }), {
+          status: 302,
+          headers: { location: 'https://evil.example/price', 'content-type': 'application/json' },
+        });
+      }) as typeof fetch;
+      await expect(fetchCoinGeckoSimplePrice(base)).rejects.toThrow(/Price feed request failed/);
+      expect(init?.redirect).toBe('error');
+      expect(calls).toBe(1);
+
+      globalThis.fetch = (async () => new Response('{}', {
+        status: 200,
+        headers: { 'content-type': 'application/json', 'content-length': '1000001' },
+      })) as typeof fetch;
+      await expect(fetchCoinGeckoSimplePrice(base)).rejects.toThrow(/too large/);
+
+      globalThis.fetch = ((_url: string, options?: RequestInit) => new Promise((_resolve, reject) => {
+        const signal = options?.signal;
+        if (!signal) {
+          reject(new Error('missing abort signal'));
+          return;
+        }
+        if (signal.aborted) {
+          reject(signal.reason ?? new Error('aborted'));
+          return;
+        }
+        signal.addEventListener('abort', () => {
+          reject(signal.reason instanceof Error ? signal.reason : new Error('This operation was aborted'));
+        }, { once: true });
+      })) as typeof fetch;
+      await expect(fetchCoinGeckoSimplePrice({ ...base, timeoutMs: 30 })).rejects.toThrow(/Network request failed/);
+    } finally {
+      globalThis.fetch = original;
+    }
   });
 });

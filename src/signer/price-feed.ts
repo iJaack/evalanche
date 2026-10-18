@@ -5,7 +5,9 @@
  * Ids come from `price.ids`, with the native id filled from
  * {@link NATIVE_COINGECKO_IDS} when config omits it. A missing, malformed,
  * non-positive, or stale price throws. The signer does not keep the last
- * good value. HTTPS only, and only the official CoinGecko price URLs.
+ * good value. HTTPS only, and only the public CoinGecko simple/price URL.
+ * A returned price must also sit inside a configured min/max or within 50%
+ * of a positive static price. Otherwise the feed fails closed.
  */
 
 import { getAddress } from 'ethers';
@@ -14,9 +16,10 @@ import { safeFetch } from '../utils/safe-fetch';
 import { NATIVE_ADDRESS } from './decode';
 
 export const COINGECKO_SIMPLE_PRICE_URL = 'https://api.coingecko.com/api/v3/simple/price';
-const COINGECKO_PRO_PRICE_URL = 'https://pro-api.coingecko.com/api/v3/simple/price';
 /** Upstream `last_updated_at` older than this is refused. The cache TTL is separate. */
 export const COINGECKO_PRICE_MAX_AGE_MS = 10 * 60 * 1000;
+const FEED_TIMEOUT_MS = 5_000;
+const FEED_MAX_BYTES = 1_000_000;
 const FUTURE_SKEW_MS = 60_000;
 const COIN_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -39,7 +42,6 @@ export const NATIVE_COINGECKO_IDS: Readonly<Record<number, string>> = {
 
 const ALLOWED_URLS = new Set([
   COINGECKO_SIMPLE_PRICE_URL,
-  COINGECKO_PRO_PRICE_URL,
 ]);
 
 export interface CoinGeckoPriceFeed {
@@ -58,6 +60,12 @@ export interface CoinGeckoPriceFeedInput {
   provider?: string;
   url?: string;
   maxAgeMs?: number;
+}
+
+/** Inclusive USD band for one asset. `min` is positive and `max` is at least `min`. */
+export interface CoinGeckoPriceBound {
+  min: number;
+  max: number;
 }
 
 function fail(message: string): never {
@@ -172,6 +180,37 @@ export function parseCoinGeckoSimplePrice(
   return out;
 }
 
+function usdMicros(usd: number): bigint {
+  return BigInt(Math.round(usd * 1_000_000));
+}
+
+/**
+ * Fail closed unless every feed price is plausible. A configured bound must
+ * contain the price. A positive static reference must contain it in
+ * [reference/2, reference×3/2]. Both apply when both exist. An asset with
+ * neither is refused. Comparison is on USD micros so the edges are inclusive.
+ */
+export function assertCoinGeckoPricePlausible(
+  prices: Record<string, number>,
+  bounds: Readonly<Record<string, CoinGeckoPriceBound>> | undefined,
+  references: Readonly<Record<string, number>> | undefined,
+): void {
+  for (const [address, usd] of Object.entries(prices)) {
+    const bound = bounds?.[address];
+    const reference = references?.[address];
+    const hasReference = typeof reference === 'number' && Number.isFinite(reference) && reference > 0;
+    if (!bound && !hasReference) priceFail('Price feed price has no sanity bound');
+    const micros = usdMicros(usd);
+    if (bound && (micros < usdMicros(bound.min) || micros > usdMicros(bound.max))) {
+      priceFail('Price feed price is outside the sanity bound');
+    }
+    if (hasReference) {
+      const ref = usdMicros(reference);
+      if (micros * 2n < ref || micros * 2n > ref * 3n) priceFail('Price feed price is outside the sanity bound');
+    }
+  }
+}
+
 type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
 
 export async function fetchCoinGeckoSimplePrice(input: {
@@ -179,6 +218,10 @@ export async function fetchCoinGeckoSimplePrice(input: {
   bindings: readonly CoinGeckoPriceBinding[];
   maxAgeMs: number;
   nowMs?: number;
+  /** Passed to {@link safeFetch} when `fetchImpl` is omitted. Defaults to 5s. */
+  timeoutMs?: number;
+  /** Passed to {@link safeFetch} when `fetchImpl` is omitted. Defaults to 1 MB. */
+  maxBytes?: number;
   fetchImpl?: FetchLike;
 }): Promise<Record<string, number>> {
   const ids = [...new Set(input.bindings.map((binding) => binding.coinId))];
@@ -193,9 +236,12 @@ export async function fetchCoinGeckoSimplePrice(input: {
     : await safeFetch(endpoint.toString(), {
       method: 'GET',
       headers: { accept: 'application/json' },
-      timeoutMs: 5_000,
-      maxBytes: 1_000_000,
+      timeoutMs: input.timeoutMs ?? FEED_TIMEOUT_MS,
+      maxBytes: input.maxBytes ?? FEED_MAX_BYTES,
     });
+  if (response.status >= 300 && response.status < 400) {
+    throw new EvalancheError('Price feed request failed', EvalancheErrorCode.NETWORK_ERROR);
+  }
   if (!response.ok) {
     throw new EvalancheError('Price feed request failed', EvalancheErrorCode.NETWORK_ERROR);
   }

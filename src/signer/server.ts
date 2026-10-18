@@ -58,7 +58,7 @@ import {
 } from './decode';
 import { NonceStore, writeDurable } from './nonce-store';
 import { resolveSignerPolicy, rpcUrlsFor, tokenCap, type ResolvedChain, type SignerChainConfig, type SignerPolicy } from './chain-policy';
-import { coinGeckoBindings, fetchCoinGeckoSimplePrice, nativeCoinGeckoId } from './price-feed';
+import { assertCoinGeckoPricePlausible, coinGeckoBindings, fetchCoinGeckoSimplePrice, nativeCoinGeckoId } from './price-feed';
 import { CLMM_CHAIN_ID, assertClmmConfig, clmmFundingTokens, isClmmNpmApprove, isClmmPositionManager } from './clmm';
 import {
   assertClobAuth,
@@ -1140,7 +1140,7 @@ export class EvalancheSignerServer {
       ? addressPrices(this.options.prices)
       : { ...(chain?.localPrices ?? {}) };
     if (chain?.priceFeed) {
-      const remote = await this.coinGeckoPrices(chain);
+      const remote = await this.coinGeckoPrices(chain, local);
       return { ...local, ...remote };
     }
     const source = this.chainPolicy.legacy
@@ -1174,7 +1174,10 @@ export class EvalancheSignerServer {
     return { ...local, ...remote };
   }
 
-  private async coinGeckoPrices(chain: ResolvedChain): Promise<Record<string, number>> {
+  private async coinGeckoPrices(
+    chain: ResolvedChain,
+    references: Record<string, number>,
+  ): Promise<Record<string, number>> {
     const feed = chain.priceFeed;
     if (!feed) return {};
     let bindings;
@@ -1196,6 +1199,7 @@ export class EvalancheSignerServer {
         maxAgeMs: feed.maxAgeMs,
         nowMs: now,
       });
+      assertCoinGeckoPricePlausible(remote, chain.priceBounds, references);
       this.priceCache.set(cacheKey, { fetchedAt: now, prices: remote });
       return remote;
     } catch (error) {
@@ -1523,7 +1527,12 @@ function assertEnabledChainsReady(options: SignerServerOptions, policy: SignerPo
     }
     const native = chain.localPrices?.[NATIVE_ADDRESS.toLowerCase()];
     const staticNative = typeof native === 'number' && Number.isFinite(native);
+    const positiveNative = staticNative && native > 0;
+    const nativeBound = chain.priceBounds?.[NATIVE_ADDRESS.toLowerCase()];
     const feedNative = Boolean(chain.priceFeed && nativeCoinGeckoId(chain.chainId, chain.priceIds));
+    if (chain.priceFeed && !positiveNative && !nativeBound) {
+      throw new EvalancheError(`${label}.price.priceFeed needs a native sanity bound`, EvalancheErrorCode.INVALID_CONFIG);
+    }
     if (!chain.sanitySource && !staticNative && !feedNative) {
       throw new EvalancheError(`${label} is missing a native price or price.sanitySource`, EvalancheErrorCode.INVALID_CONFIG);
     }

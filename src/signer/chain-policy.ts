@@ -12,7 +12,7 @@
 import { getAddress } from 'ethers';
 import { EvalancheError, EvalancheErrorCode } from '../utils/errors';
 import { LIFI_DIAMOND, NATIVE_ADDRESS } from './decode';
-import { nativeCoinGeckoId, normalizeCoinGeckoFeed, type CoinGeckoPriceFeed } from './price-feed';
+import { nativeCoinGeckoId, normalizeCoinGeckoFeed, type CoinGeckoPriceBound, type CoinGeckoPriceFeed } from './price-feed';
 import {
   SIGNER_DEFAULT_CHAIN_ID,
   assertSignerChainCanBeEnabled,
@@ -55,8 +55,14 @@ export interface ChainPriceConfig {
    */
   priceFeed?: 'coingecko' | { provider?: string; url?: string; maxAgeMs?: number };
   /**
+   * Inclusive USD min/max for a CoinGecko price. Keys are addresses or "native".
+   * A feed price outside the band is refused. `min` is positive.
+   */
+  bounds?: Record<string, { min: number; max: number }>;
+  /**
    * USD prices for this chain only. Keys are addresses or "native".
-   * They are not shared with another chain.
+   * They are not shared with another chain. A positive value is also the
+   * ±50% reference for a CoinGecko price of that asset.
    */
   prices?: Record<string, number>;
 }
@@ -112,6 +118,8 @@ export interface ResolvedChain {
   priceIds?: Record<string, string>;
   /** Lowercase address → USD. Present only for this chain. */
   localPrices?: Record<string, number>;
+  /** Lowercase address → inclusive USD band for a CoinGecko price. */
+  priceBounds?: Record<string, CoinGeckoPriceBound>;
   sanitySource?: string;
   priceFeed?: CoinGeckoPriceFeed;
   polymarket?: PolymarketModuleConfig;
@@ -190,6 +198,28 @@ function normalizeLocalPrices(
       continue;
     }
     out[checksum(key, label).toLowerCase()] = value;
+  }
+  return out;
+}
+
+function normalizePriceBounds(
+  bounds: Record<string, { min: number; max: number }> | undefined,
+  label: string,
+): Record<string, CoinGeckoPriceBound> | undefined {
+  if (bounds === undefined) return undefined;
+  if (!bounds || typeof bounds !== 'object' || Array.isArray(bounds)) fail(`${label} must be an address map`);
+  const out: Record<string, CoinGeckoPriceBound> = {};
+  for (const [key, value] of Object.entries(bounds)) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) fail(`${label} values must be { min, max }`);
+    const { min, max } = value;
+    const minMicros = Math.round(min * 1_000_000);
+    const maxMicros = Math.round(max * 1_000_000);
+    if (typeof min !== 'number' || typeof max !== 'number' || !Number.isFinite(min) || !Number.isFinite(max)
+      || !(min > 0) || max < min || !Number.isSafeInteger(minMicros) || !Number.isSafeInteger(maxMicros)) {
+      fail(`${label} min must be positive and max must be at least min`);
+    }
+    const address = key === 'native' ? NATIVE_ADDRESS.toLowerCase() : checksum(key, label).toLowerCase();
+    out[address] = { min, max };
   }
   return out;
 }
@@ -323,6 +353,7 @@ function applyChainEntry(
       : (id === SIGNER_DEFAULT_CHAIN_ID ? base.kyberExecutors : entry.kyberExecutors),
     priceIds: entry.price?.ids,
     localPrices: normalizeLocalPrices(entry.price?.prices, `${label}.price.prices`) ?? base.localPrices,
+    priceBounds: normalizePriceBounds(entry.price?.bounds, `${label}.price.bounds`) ?? base.priceBounds,
     sanitySource: assertHttps(entry.price?.sanitySource, `${label}.price.sanitySource`) ?? base.sanitySource,
     priceFeed: entry.price?.priceFeed !== undefined
       ? normalizeCoinGeckoFeed(entry.price.priceFeed, `${label}.price.priceFeed`)

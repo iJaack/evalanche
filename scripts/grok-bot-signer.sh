@@ -69,8 +69,9 @@ else
   SKIP_ROOT=${EVALANCHE_BOX_SKIP_ROOT:-0}
 fi
 # TARBALL and STAGED_TARBALL are set in provision. start does not need them.
-# The pinned name is evalanche-<package.json version>.tgz. As root,
-# EVALANCHE_BOX_TARBALL is ignored. A non-root run may set that override.
+# The pinned name is evalanche-<version>.tgz. The version is read from the
+# staged tarball's package/package.json after the checksum check. As root,
+# EVALANCHE_BOX_TARBALL is ignored.
 
 usage() {
   echo "usage: grok-bot-signer.sh start [--live] | init [--live] | stop | health | provision [tarball] <sha256>" >&2
@@ -1160,67 +1161,98 @@ refuse_verifier_private_key() {
   done
 }
 
-# Read the version from package.json next to this script, one directory up,
-# or under PREFIX. stdout is the version. Errors go to stderr.
-package_version() {
-  script_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd) || return 1
-  node -e '
-    const fs = require("node:fs");
-    const path = require("node:path");
-    const scriptDir = process.argv[1];
-    const prefix = process.argv[2] || "";
-    const candidates = [
-      path.join(scriptDir, "package.json"),
-      path.join(scriptDir, "..", "package.json"),
-    ];
-    if (prefix) candidates.push(path.join(prefix, "package.json"));
-    let file = "";
-    for (const candidate of candidates) {
-      try {
-        if (fs.statSync(candidate).isFile()) {
-          file = candidate;
-          break;
-        }
-      } catch (error) {
-        continue;
-      }
-    }
-    if (!file) {
-      console.error("package.json is required to name the pinned tarball");
-      process.exit(1);
-    }
-    let parsed;
-    try {
-      parsed = JSON.parse(fs.readFileSync(file, "utf8"));
-    } catch (error) {
-      console.error("package.json is not JSON");
-      process.exit(1);
-    }
-    const version = parsed && parsed.version;
-    if (typeof version !== "string" || !/^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.]+)?$/.test(version)) {
-      console.error("package.json version is not a release version");
-      process.exit(1);
-    }
-    process.stdout.write(version);
-  ' "$script_dir" "$PREFIX"
+# Default source when provision is given no tarball path. Root ignores
+# EVALANCHE_BOX_TARBALL. A non-root run may use it as the source file only.
+# The pin name still comes from the staged package.json.
+default_tarball_source() {
+  if [ "$(id -u)" -ne 0 ] && [ -n "${EVALANCHE_BOX_TARBALL:-}" ]; then
+    printf '%s\n' "$EVALANCHE_BOX_TARBALL"
+    return 0
+  fi
+  found=""
+  count=0
+  if [ -d "$DURABLE" ]; then
+    for candidate in "$DURABLE"/evalanche-*.tgz; do
+      [ -f "$candidate" ] || continue
+      case "$candidate" in
+        *\*) continue ;;
+      esac
+      count=$((count + 1))
+      found=$candidate
+    done
+  fi
+  if [ "$count" -eq 1 ]; then
+    printf '%s\n' "$found"
+    return 0
+  fi
+  if [ "$count" -gt 1 ]; then
+    echo "provision needs one pinned tarball under $DURABLE" >&2
+    return 1
+  fi
+  echo "provision requires a tarball path; the installed tree is not used" >&2
+  return 1
 }
 
-# Pin evalanche-<version>.tgz. Root ignores EVALANCHE_BOX_TARBALL.
-resolve_pinned_tarball() {
-  if [ "$(id -u)" -ne 0 ] && [ -n "${EVALANCHE_BOX_TARBALL:-}" ]; then
-    TARBALL=$EVALANCHE_BOX_TARBALL
-  else
-    version=$(package_version) || exit 1
-    TARBALL=$DURABLE/evalanche-${version}.tgz
+# stdout is the version inside the staged tarball. The member must be a
+# regular package/package.json. Errors go to stderr.
+read_staged_version() {
+  if ! command -v tar >/dev/null 2>&1; then
+    echo "tar is required to read the staged tarball version" >&2
+    return 1
   fi
-  case "$TARBALL" in
-    */*) ;;
-    *)
-      echo "pinned tarball path must include a directory" >&2
-      exit 1
+  meta=$(tar -tvzf "$STAGED_TARBALL" package/package.json 2>/dev/null) || {
+    echo "staged tarball is missing package/package.json" >&2
+    return 1
+  }
+  case "$meta" in
+    l*)
+      echo "refusing symlink package/package.json" >&2
+      return 1
       ;;
   esac
-  STAGED_TARBALL=$EPHEMERAL/${TARBALL##*/}
+  raw=$(tar -xOf "$STAGED_TARBALL" package/package.json | head -c 100001) || return 1
+  printf '%s' "$raw" | node -e '
+    let raw = "";
+    process.stdin.setEncoding("utf8");
+    process.stdin.on("data", (chunk) => { raw += chunk; });
+    process.stdin.on("end", () => {
+      if (raw.length > 100000) {
+        console.error("package.json in the tarball is too large");
+        process.exit(1);
+      }
+      let parsed;
+      try {
+        parsed = JSON.parse(raw);
+      } catch (error) {
+        console.error("package.json is not JSON");
+        process.exit(1);
+      }
+      const version = parsed && parsed.version;
+      if (typeof version !== "string" || !/^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.]+)?$/.test(version)) {
+        console.error("package.json version is not a release version");
+        process.exit(1);
+      }
+      process.stdout.write(version);
+    });
+  '
+}
+
+# The source basename evalanche-<version>.tgz must match the bytes.
+assert_tarball_name_matches() {
+  src=$1
+  version=$2
+  base=${src##*/}
+  case "$base" in
+    evalanche-*.tgz)
+      named=${base#evalanche-}
+      named=${named%.tgz}
+      if [ "$named" != "$version" ]; then
+        echo "tarball version $version does not match $base" >&2
+        return 1
+      fi
+      ;;
+  esac
+  return 0
 }
 
 # Idempotent. Recreates the user, /opt, and /etc from the persistent directory.
@@ -1231,9 +1263,11 @@ provision_signer() {
   if [ -n "${3:-}" ]; then
     usage
   fi
-  resolve_pinned_tarball
+  # Staged path does not depend on the version. The pin name is set after
+  # the checksum, from package/package.json inside these bytes.
+  STAGED_TARBALL=$EPHEMERAL/evalanche-staged.tgz
   if [ -z "$src" ]; then
-    src=$TARBALL
+    src=$(default_tarball_source) || exit 1
   fi
   require_root
   refuse_verifier_private_key
@@ -1253,7 +1287,6 @@ provision_signer() {
   assert_under_durable "log directory" "$LOG_SRC"
   assert_under_durable "token file" "$TOKEN_FILE"
   assert_under_durable "verifier pubkey" "$VERIFIER_PUB"
-  assert_under_durable "pinned tarball" "$TARBALL"
   case "$CONFIG" in
     "$ETC"/*|"$DURABLE"/*) ;;
     *)
@@ -1265,6 +1298,10 @@ provision_signer() {
   make_dir "$EPHEMERAL" root root 0755
   stage_tarball "$src"
   verify_staged_tarball "$digest"
+  version=$(read_staged_version) || exit 1
+  assert_tarball_name_matches "$src" "$version" || exit 1
+  TARBALL=$DURABLE/evalanche-${version}.tgz
+  assert_under_durable "pinned tarball" "$TARBALL"
   if [ -L "$CONFIG_SRC" ] || [ -L "$CONFIG" ] || [ -L "$STATE" ] || [ -L "$STATE_SRC" ] || [ -L "$LOG_SRC" ] || [ -L "$LOG_DIR" ] || [ -L "$DURABLE" ] || [ -L "$NONCE_FILE" ] || [ -L "$AUDIT_FILE" ] || [ -L "$ETC" ]; then
     echo "durable signer paths must not be symlinks" >&2
     exit 1

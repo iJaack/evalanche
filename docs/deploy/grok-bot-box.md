@@ -28,7 +28,7 @@ That path is the Grok Bot default. Every state path below is still configurable.
 | `.../config.json` | root | `0644` | yes | Allow map and paths. Source of truth. No key and no bearer token. |
 | `.../token` | root | `0640` | yes | Bearer token. Group `evalanche-signer`. Not regenerated on start or provision. |
 | `.../verifier.pub` | root | `0644` | yes | Ed25519 verifier public key. `provision` never replaces it. The private key is not stored here. |
-| `.../evalanche-<version>.tgz` | root | `0644` | yes | Pinned tarball. The name comes from `package.json`. `provision` with no arguments installs this file. |
+| `.../evalanche-<version>.tgz` | root | `0644` | yes | Pinned tarball. The version is read from `package/package.json` in the staged copy after the checksum. `provision` with no tarball path installs the one `evalanche-*.tgz` here. |
 | `.../state` | `evalanche-signer` | `0700` | yes | Nonce file, audit JSONL, budget, lock, pid file. |
 | `.../state/nonces.json` | `evalanche-signer` | `0600` | yes | Nonce high-water mark. Not reset when the file already exists. |
 | `.../state/audit.jsonl` | `evalanche-signer` | `0600` | yes | Audit chain. Not rewritten by `provision`. |
@@ -93,7 +93,7 @@ Root ignores every `EVALANCHE_BOX_*` variable and uses these defaults:
 | Bearer token | `$DURABLE/token` | `EVALANCHE_BOX_TOKEN_FILE` |
 | Verifier private key | not on disk | `OPS_VERIFIER_ED25519` |
 | Verifier public key | `$DURABLE/verifier.pub` | `EVALANCHE_BOX_VERIFIER_PUB` |
-| Pinned tarball | `$DURABLE/evalanche-<version>.tgz` | `EVALANCHE_BOX_TARBALL` |
+| Pinned tarball | `$DURABLE/evalanche-<version>.tgz` | ignored as root. When not root, `EVALANCHE_BOX_TARBALL` is only a default source file |
 | `/etc` replica | `/etc/evalanche-signer` | `EVALANCHE_BOX_ETC` |
 | Install prefix | `/opt/evalanche-signer` | `EVALANCHE_BOX_PREFIX` |
 | Ephemeral root | `/var/lib/evalanche-signer` | `EVALANCHE_BOX_EPHEMERAL` |
@@ -120,7 +120,7 @@ npm pack
 sha256sum evalanche-$(node -p "require('./package.json').version").tgz
 ```
 
-`npm pack` names the file from `package.json`. At 1.17.0-rc.1 that file is `evalanche-1.17.0-rc.1.tgz`. The live box is still 1.16.0 at `b788bd5` until someone provisions this tarball. Record that digest with the release or the CI pack artifact. On the box, pass that recorded digest. Do not hash the file you are about to install: a copy under `/home` can be replaced before `provision` reads it. `provision` reads the same version from `package.json` beside the script, one directory above it, or under the install prefix, and copies the tarball into `/var/lib/evalanche-signer/evalanche-<version>.tgz`, which is root-owned, hashes that copy, and installs those same bytes. As root, `EVALANCHE_BOX_TARBALL` is ignored. `start` does not need `package.json`. The sha256 argument is required. A digest that does not match fails before `npm` and before the pinned copy is replaced.
+`npm pack` names the file from `package.json`. At 1.17.0-rc.1 that file is `evalanche-1.17.0-rc.1.tgz`. The live box is still 1.16.0 at `b788bd5` until someone provisions this tarball. Record that digest with the release or the CI pack artifact. On the box, pass that recorded digest. Do not hash the file you are about to install: a copy under `/home` can be replaced before `provision` reads it. `provision` copies the bytes to `/var/lib/evalanche-signer/evalanche-staged.tgz`, which is root-owned, hashes that copy, and only then reads `package/package.json` from it. The pin is `/home/box/agent-data/evalanche-persist/evalanche-<version>.tgz`. The installed tree, the script directory, and the working directory are not consulted, so the copy under `.../bin` still works after `/opt` is wiped. A version that is not a release version is refused. A source named `evalanche-<other>.tgz` that does not match the inner version is refused. Those failures happen before `npm` and before the pin is replaced. As root, `EVALANCHE_BOX_TARBALL` is ignored. When the tarball path is omitted, the single `evalanche-*.tgz` already under the durable directory is the source. `start` does not need `package.json`. The sha256 argument is required. A digest that does not match fails before `npm` and before the pinned copy is replaced.
 
 ```sh
 id box

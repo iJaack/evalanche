@@ -147,6 +147,16 @@ describe('chain policy', () => {
       url: 'https://api.coingecko.com/api/v3/simple/price',
     });
     expect(fed.chains.get(1)?.priceFeed).toBeUndefined();
+    const bounded = resolveSignerPolicy({
+      chains: { 43114: { price: { priceFeed: 'coingecko', bounds: { native: { min: 1, max: 100 } } } } },
+    }, BOUNDS);
+    expect(bounded.chains.get(43114)?.priceBounds?.[NATIVE_ADDRESS.toLowerCase()]).toEqual({ min: 1, max: 100 });
+    expect(() => resolveSignerPolicy({
+      chains: { 43114: { price: { bounds: { native: { min: 0, max: 1 } } } } },
+    }, BOUNDS)).toThrow(/min must be positive/);
+    expect(() => resolveSignerPolicy({
+      chains: { 43114: { price: { bounds: { native: { min: 5, max: 1 } } } } },
+    }, BOUNDS)).toThrow(/max must be at least min/);
 
     const withChains = resolveSignerPolicy({
       priceFeed: 'coingecko',
@@ -326,12 +336,21 @@ describe('chain policy on the signer', () => {
     });
     expect(fed.server.address).toMatch(/^0x/);
 
-    const priced = await boot({
+    await expect(boot({
       chains: {
         43114: {
           gas: { maxFeeUsd: 5 },
           tokenCaps: { native: '0', [getAddress(USDC)]: '1' },
           price: { priceFeed: 'coingecko' },
+        },
+      },
+    })).rejects.toThrow(/native sanity bound/);
+    const priced = await boot({
+      chains: {
+        43114: {
+          gas: { maxFeeUsd: 5 },
+          tokenCaps: { native: '0', [getAddress(USDC)]: '1' },
+          price: { priceFeed: 'coingecko', bounds: { native: { min: 1, max: 100 } } },
         },
       },
     });
@@ -364,7 +383,11 @@ describe('chain policy on the signer', () => {
           43114: {
             gas: { maxFeeUsd: 5 },
             tokenCaps: { native: '0' },
-            price: { priceFeed: 'coingecko', prices: { native: 1 } },
+            price: {
+              priceFeed: 'coingecko',
+              prices: { native: 20 },
+              bounds: { native: { min: 5, max: 50 } },
+            },
           },
         },
       });
@@ -380,21 +403,31 @@ describe('chain policy on the signer', () => {
       expect((await h.server.handle(request(h.wallet.address, 43114, approval, intent))).signedTransaction).toMatch(/^0x/);
       expect(calls).toBe(1);
 
+      body = { 'avalanche-2': { usd: 100, last_updated_at: now } };
+      const wild = send('2');
+      const wildApproval = signVerifierApproval({ intent: wild, verifierPrivateKey: h.verifier.privateKey, verifierPublicKey: h.verifier.publicKey });
+      await expect(h.server.handle(request(h.wallet.address, 43114, wildApproval, wild))).rejects.toThrow(/outside the sanity bound/);
+
+      body = { 'avalanche-2': { usd: 35, last_updated_at: now } };
+      const wide = send('3');
+      const wideApproval = signVerifierApproval({ intent: wide, verifierPrivateKey: h.verifier.privateKey, verifierPublicKey: h.verifier.publicKey });
+      await expect(h.server.handle(request(h.wallet.address, 43114, wideApproval, wide))).rejects.toThrow(/outside the sanity bound/);
+
       body = { 'avalanche-2': { usd: 20, last_updated_at: now - 24 * 60 * 60 } };
-      const stale = send('2');
+      const stale = send('4');
       const staleApproval = signVerifierApproval({ intent: stale, verifierPrivateKey: h.verifier.privateKey, verifierPublicKey: h.verifier.publicKey });
       await expect(h.server.handle(request(h.wallet.address, 43114, staleApproval, stale))).rejects.toThrow(/stale/);
 
       body = { 'avalanche-2': { usd: '20', last_updated_at: now } };
-      const malformed = send('3');
+      const malformed = send('5');
       const malformedApproval = signVerifierApproval({ intent: malformed, verifierPrivateKey: h.verifier.privateKey, verifierPublicKey: h.verifier.publicKey });
       await expect(h.server.handle(request(h.wallet.address, 43114, malformedApproval, malformed))).rejects.toThrow(/malformed/);
 
       body = {};
-      const missing = send('4');
+      const missing = send('6');
       const missingApproval = signVerifierApproval({ intent: missing, verifierPrivateKey: h.verifier.privateKey, verifierPublicKey: h.verifier.publicKey });
       await expect(h.server.handle(request(h.wallet.address, 43114, missingApproval, missing))).rejects.toThrow(/missing a price/);
-      expect(calls).toBe(4);
+      expect(calls).toBe(6);
     } finally {
       globalThis.fetch = original;
     }
