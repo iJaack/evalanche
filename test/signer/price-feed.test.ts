@@ -33,6 +33,8 @@ describe('CoinGecko simple/price', () => {
       10: 'ethereum',
       56: 'binancecoin',
       137: 'polygon-ecosystem-token',
+      146: 'sonic-3',
+      999: 'hyperliquid',
       4663: 'ethereum',
       8453: 'ethereum',
       42161: 'ethereum',
@@ -43,6 +45,8 @@ describe('CoinGecko simple/price', () => {
     expect(nativeCoinGeckoId(25, undefined)).toBeUndefined();
     expect(nativeCoinGeckoId(43114, { native: 'avalanche-2' })).toBe('avalanche-2');
     expect(nativeCoinGeckoId(137, undefined)).toBe('polygon-ecosystem-token');
+    expect(nativeCoinGeckoId(146, undefined)).toBe('sonic-3');
+    expect(nativeCoinGeckoId(999, undefined)).toBe('hyperliquid');
   });
 
   it('accepts only the official https simple/price URL', () => {

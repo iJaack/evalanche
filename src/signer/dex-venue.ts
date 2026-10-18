@@ -107,8 +107,6 @@ export interface DexDecodeInput {
  * docs/signer-multichain.md.
  */
 export const DEX_UNSAFE_REASON: Readonly<Record<number, string>> = {
-  250: 'Fantom Opera is not safe: Sonic Labs sunset the chain on 30 June 2026 and the FTM to S bridge is closed',
-  324: 'zkSync Era is not safe: the account model is EraVM, so the router bytecode cannot be checked against the audited EVM SwapRouter',
   1284: 'Moonbeam is not safe: no liquid venue was confirmed, and the official Uniswap front-end is deprecated',
   81457: 'Blast is not safe: the liquid Thruster router exposes setManager, and the canonical Uniswap pools are not a treasury venue',
   534352: 'Scroll is not safe: canonical Uniswap is not liquid, and the liquid routers take arbitrary path or callback bytes',

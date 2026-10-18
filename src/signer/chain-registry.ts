@@ -10,7 +10,7 @@ import { CHAINS } from '../utils/chains';
 import { EvalancheError, EvalancheErrorCode } from '../utils/errors';
 
 export const SIGNER_MAINNET_IDS = [
-  1, 10, 25, 56, 100, 137, 250, 324, 1284, 4663, 5000, 8453, 42161, 42220, 43114,
+  1, 10, 25, 56, 100, 137, 146, 999, 1284, 4663, 5000, 8453, 42161, 42220, 43114,
   59144, 80094, 81457, 534352,
 ] as const;
 

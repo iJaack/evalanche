@@ -1,8 +1,8 @@
 /**
  * Direct swap venues for chains the Kyber plus Li.Fi path cannot serve.
  * Each venue stays off until chains[id].dex.enabled, and the chain stays off
- * until enabled. Fantom, zkSync Era, Moonbeam, Blast, and Scroll cannot be
- * enabled.
+ * until enabled. Moonbeam, Blast, and Scroll cannot be enabled. Sonic and
+ * HyperEVM use the Kyber path, so a direct venue is not available.
  */
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -316,6 +316,22 @@ describe('SwapRouter02 deadline', () => {
 });
 
 describe('direct venue startup', () => {
+  it('refuses a direct venue on Sonic and HyperEVM', async () => {
+    for (const chainId of [146, 999]) {
+      await expect(boot({
+        [chainId]: {
+          enabled: true,
+          dex: { enabled: true },
+          gas: { maxFeeUsd: 1 },
+          tokenCaps: { native: '0' },
+          price: { prices: { native: 1 } },
+        },
+      }, {
+        43114: [{ address: ATTACKER, selectors: ['0x'], roles: ['recipient'] }],
+      })).rejects.toThrow(/not available/);
+    }
+  });
+
   it('refuses dex.enabled on a chain that was assessed as not safe', async () => {
     for (const chainId of Object.keys(DEX_UNSAFE_REASON).map(Number)) {
       await expect(boot({

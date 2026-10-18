@@ -339,6 +339,31 @@ describe('Kyber routes on every pinned chain', () => {
       amountIn: BigInt(recorded.request.amountIn),
       treasury: WALLET,
     }, { fetchImpl: async () => { throw new Error('fetch must not run'); } })).rejects.toThrow(/does not support chain 250/);
+    await expect(buildKyberLifiSwap({
+      chainId: 324,
+      tokenIn: recorded.request.tokenIn,
+      tokenOut: recorded.request.tokenOut,
+      amountIn: BigInt(recorded.request.amountIn),
+      treasury: WALLET,
+    }, { fetchImpl: async () => { throw new Error('fetch must not run'); } })).rejects.toThrow(/does not support chain 324/);
+  });
+
+  it('pins Sonic and HyperEVM to the checked router, diamond, and wrapped native', () => {
+    const sonic = KYBER_ROUTE_CHAINS.find((entry) => entry.chainId === 146);
+    const hyper = KYBER_ROUTE_CHAINS.find((entry) => entry.chainId === 999);
+    expect(sonic).toMatchObject({
+      slug: 'sonic',
+      router: '0x6131B5fae19EA4f9D964eAc0408E4408b66337b5',
+      diamond: '0x1231DEB6f5749EF6cE6943a275A1D3E7486F4EaE',
+      wrappedNative: '0x039e2fB66102314Ce7b64Ce5Ce3E5183bc94aD38',
+    });
+    expect(hyper).toMatchObject({
+      slug: 'hyperevm',
+      router: '0x6131B5fae19EA4f9D964eAc0408E4408b66337b5',
+      diamond: '0x0a0758d937d1059c356D4714e57F5df0239bce1A',
+      wrappedNative: '0x5555555555555555555555555555555555555555',
+    });
+    expect(hyper?.diamond).not.toBe(LIFI_DIAMOND);
   });
 
   it('refuses a Kyber dstReceiver that is not that chain diamond', () => {

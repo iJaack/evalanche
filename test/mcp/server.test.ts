@@ -522,7 +522,23 @@ describe('EvalancheMCPServer', () => {
         currency: 'ETH',
         isTestnet: false,
       }),
+      expect.objectContaining({
+        id: 146,
+        name: 'Sonic',
+        currency: 'S',
+        isTestnet: false,
+      }),
+      expect.objectContaining({
+        id: 999,
+        name: 'HyperEVM',
+        currency: 'HYPE',
+        isTestnet: false,
+      }),
     ]));
+    const ids = parsed.chains.map((chain: { id: number }) => chain.id);
+    expect(ids).not.toContain(250);
+    expect(ids).not.toContain(324);
+    expect(parsed.count).toBe(19);
   });
 
   it('handles get_chain_info for current chain', async () => {

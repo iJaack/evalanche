@@ -46,14 +46,17 @@ function route(
 }
 
 /**
- * Enabled mainnets where Kyber is pinned. Mantle, Fantom, and the other
- * Kyber networks stay out: the treasury signer has not enabled them.
+ * Mainnets where Kyber and Li.Fi are both pinned. Sonic and HyperEVM are
+ * in this list and stay off on the signer until config enables them.
+ * Mantle and the other Kyber networks stay out.
  */
 export const KYBER_ROUTE_CHAINS: readonly KyberRouteChain[] = [
   route(1, 'ethereum', '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'),
   route(10, 'optimism', '0x4200000000000000000000000000000000000006'),
   route(56, 'bsc', '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c'),
   route(137, 'polygon', '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270'),
+  route(146, 'sonic', '0x039e2fB66102314Ce7b64Ce5Ce3E5183bc94aD38'),
+  route(999, 'hyperevm', '0x5555555555555555555555555555555555555555', '0x0a0758d937d1059c356D4714e57F5df0239bce1A'),
   route(4663, 'robinhood', '0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73', '0xB477751B76CF82d00a686A1232f5fCD772414Af3'),
   route(8453, 'base', '0x4200000000000000000000000000000000000006'),
   route(42161, 'arbitrum', '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1'),
