@@ -23,7 +23,8 @@ import {
   SELECTOR,
   isNativeAsset,
 } from '../signer/decode';
-import { tokenClassBps, type SlippageCaps } from '../signer/server';
+import { type SlippageCaps } from '../signer/server';
+import { proposerSlippageBps } from './slippage';
 import {
   KYBER_ROUTE_CHAIN_IDS,
   kyberRouteChain,
@@ -129,6 +130,12 @@ export interface KyberSignerPins {
   lifiDiamond?: string;
   router?: string;
   wrappedNative?: string;
+  /**
+   * Slippage caps from the signer chain config. Required off Avalanche.
+   * The builder uses these as the ceiling so minOut is not looser than the
+   * signer's per-class cap.
+   */
+  slippageCaps?: SlippageCaps;
 }
 
 export interface KyberLifiSwapOptions {
@@ -370,9 +377,20 @@ async function assertQuotedNearReference(
   }
 }
 
-function classFloor(quoted: bigint, tokenOut: string, caps: SlippageCaps | undefined): bigint {
+function classFloor(
+  quoted: bigint,
+  tokenOut: string,
+  chainId: number,
+  caps: SlippageCaps | undefined,
+  signerCaps: SlippageCaps | undefined,
+): bigint {
   if (quoted <= 0n) fail('Kyber amountOut must be greater than zero');
-  const bps = tokenClassBps(caps, tokenOut);
+  const bps = proposerSlippageBps({
+    chainId,
+    tokenOut,
+    slippageCaps: caps,
+    signerSlippageCaps: signerCaps,
+  });
   const floor = quoted * (10_000n - BigInt(bps)) / 10_000n;
   if (floor <= 0n) fail('Kyber amountOut is too small to leave a positive slippage floor');
   return floor;
@@ -445,7 +463,13 @@ export function assembleLifiV3FromKyber(input: {
   const tokenIn = String(desc.srcToken);
   const tokenOut = String(desc.dstToken);
   const nativeIn = isNativeAsset(tokenIn);
-  const minAmountOut = classFloor(input.quotedAmountOut, isNativeAsset(tokenOut) ? tokenOut : getAddress(tokenOut), input.slippageCaps);
+  const minAmountOut = classFloor(
+    input.quotedAmountOut,
+    isNativeAsset(tokenOut) ? tokenOut : getAddress(tokenOut),
+    chainId,
+    input.slippageCaps,
+    input.signer?.slippageCaps,
+  );
   const router = getAddress(pinned.router);
   const data = LIFI_V3.encodeFunctionData('swapTokensSingleV3ERC20ToERC20', [
     `0x${'00'.repeat(32)}`,
@@ -497,6 +521,12 @@ export async function buildKyberLifiSwap(
   const slug = pinned.slug;
   const tokenIn = aggregatorToken(request.tokenIn);
   const tokenOut = aggregatorToken(request.tokenOut);
+  const bps = proposerSlippageBps({
+    chainId: request.chainId,
+    tokenOut,
+    slippageCaps: request.slippageCaps,
+    signerSlippageCaps: options.signer?.slippageCaps,
+  });
   const headers = {
     accept: 'application/json',
     'content-type': 'application/json',
@@ -508,7 +538,6 @@ export async function buildKyberLifiSwap(
   routeUrl.searchParams.set('amountIn', request.amountIn.toString());
   const route = await readKyber(routeUrl.toString(), { method: 'GET', headers }, options.fetchImpl);
   if (!route.data?.routeSummary) fail('Kyber route response has no routeSummary');
-  const bps = tokenClassBps(request.slippageCaps, tokenOut);
   const diamond = getAddress(pinned.diamond);
   const build = await readKyber(`${KYBER_AGGREGATOR_API}/${slug}/api/v1/route/build`, {
     method: 'POST',

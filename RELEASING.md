@@ -5,8 +5,8 @@ Evalanche uses a tag-driven GitHub Actions release workflow.
 <!-- GENERATED:release-process:start -->
 ## Current Release Automation
 
-- Current release line: `v1.17.0-rc.1`
-- Release notes path: `docs/releases/RELEASE_NOTES_1.17.0-rc.1.md`
+- Current release line: `v1.17.0-rc.2`
+- Release notes path: `docs/releases/RELEASE_NOTES_1.17.0-rc.2.md`
 - Required workflow checks:
   - release integrity and notes coverage
   - `npm test`

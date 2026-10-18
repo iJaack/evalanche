@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.17.0-rc.2
+
+- Release candidate. The live box is 1.17.0-rc.1 at `6ad45d8` (`6ad45d810622db13ef1561d9b1f01864d8d78af4`). Provision `evalanche-1.17.0-rc.2.tgz` as a new pin and leave `evalanche-1.17.0-rc.1.tgz` in place. Provisioning again under the rc.1 filename would overwrite the pin a rollback reinstalls.
+- Off Avalanche, `buildKyberLifiSwap` and `buildDirectDexSwap` require `slippageCaps` on the request or `signer.slippageCaps` from the signer chain config. A missing list fails closed and names the chain. When the signer caps are set they are the ceiling, so a request that allows more bps than the signer class for that token is refused. A 300 bps default is refused when the signer stable cap is 50 bps. Avalanche still uses the built-in stable and top lists when caps are omitted.
+- `quoteDirectDexSwap` quotes Cronos through VVS `getAmountsOut` on the pinned router, and Gnosis and Celo through Uniswap QuoterV2 `quoteExactInput`. Gnosis QuoterV2 is `0x7E9cB3499A6cee3baBe5c8a3D328EA7FD36578f4` (Uniswap governance deployment list, factory `0xe32F7dD7e3f098D518ff19A22d5f028e076489B1`). Celo QuoterV2 is `0x82825d0554fA07f7FC52Ab63c961F330fdEFa8E8` (Uniswap Celo deployments and Celo contract docs, factory `0xAfE208a311B21f13EF87E33A90049fC17A7acDEc`). The hop must be in `dex.pools`. `buildExactRouterApproval` approves exactly `amountIn` to the pinned router. The signer server, its decode path, and the chain defaults are unchanged.
+
 ## 1.17.0-rc.1
 
 - Release candidate only. The live Grok Bot box still runs 1.16.0 at `b788bd5` (`b788bd50c2df91eb253d6f61d08847249437811e`) with a multichain config on chains 1, 10, 56, 137, 4663, 8453, 42161, 43114, 59144, and 80094. This rc is not deployed.

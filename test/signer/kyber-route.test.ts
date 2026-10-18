@@ -294,6 +294,9 @@ describe('Kyber routes on every pinned chain', () => {
         lifiDiamond: chain.diamond,
         router: chain.router,
         wrappedNative: chain.wrappedNative,
+        ...(chain.chainId === 43114 ? {} : {
+          slippageCaps: { stables: [recorded.request.tokenOut], stableBps: 50 },
+        }),
       },
     });
     expect(calls[0]?.url).toContain(`/${chain.slug}/api/v1/routes?`);
@@ -314,13 +317,17 @@ describe('Kyber routes on every pinned chain', () => {
   it('refuses a router that is not pinned', async () => {
     const { pair } = retarget(1);
     pair.build.data.routerAddress = ATTACKER;
-    await expect(buildOn(1, pair)).rejects.toThrow(/build router/);
+    await expect(buildOn(1, pair, {
+      slippageCaps: { stables: [recorded.request.tokenOut], stableBps: 50 },
+    })).rejects.toThrow(/build router/);
   });
 
   it('refuses a route whose chain is not the request', async () => {
     const { pair } = retarget(1);
     Object.assign(pair.route.data.routeSummary, { chainId: 10 });
-    await expect(buildOn(1, pair)).rejects.toThrow(/route chain/);
+    await expect(buildOn(1, pair, {
+      slippageCaps: { stables: [recorded.request.tokenOut], stableBps: 50 },
+    })).rejects.toThrow(/route chain/);
   });
 
   it('refuses a recipient that is not the treasury', async () => {
@@ -387,7 +394,9 @@ describe('Kyber routes on every pinned chain', () => {
   it('fails closed when the signer diamond, router, or wrapped native disagrees', async () => {
     const sonic = retarget(146);
     const hyper = retarget(999);
-    const { built } = await buildOn(146, sonic.pair);
+    const { built } = await buildOn(146, sonic.pair, {
+      slippageCaps: { stables: [recorded.request.tokenOut], stableBps: 50 },
+    });
     expect(built.to).toBe(sonic.chain.diamond);
     expect(built.wrappedNative).toBe('0x039e2fB66102314Ce7b64Ce5Ce3E5183bc94aD38');
 
@@ -400,7 +409,9 @@ describe('Kyber routes on every pinned chain', () => {
     }, { fetchImpl: async () => { throw new Error('fetch must not run'); } })).rejects.toThrow(/diamond does not match the signer config for chain 999/);
 
     await expect(buildOn(999, hyper.pair, {}, { signer: { lifiDiamond: LIFI_DIAMOND } })).rejects.toThrow(/chain 999/);
-    const agreed = await buildOn(999, hyper.pair, {}, {
+    const agreed = await buildOn(999, hyper.pair, {
+      slippageCaps: { stables: [recorded.request.tokenOut], stableBps: 50 },
+    }, {
       signer: {
         lifiDiamond: hyper.chain.diamond,
         router: hyper.chain.router,
@@ -418,5 +429,33 @@ describe('Kyber routes on every pinned chain', () => {
       const { pair } = retarget(chainId);
       await expect(buildOn(chainId, pair)).rejects.toThrow(new RegExp(`chain ${chainId}`));
     }
+  });
+
+  it('requires slippage caps off Avalanche and keeps minOut inside the signer class cap', async () => {
+    const { pair } = retarget(10);
+    const stable = { stables: [recorded.request.tokenOut], stableBps: 50 };
+    await expect(buildKyberLifiSwap({
+      chainId: 10,
+      tokenIn: recorded.request.tokenIn,
+      tokenOut: recorded.request.tokenOut,
+      amountIn: BigInt(recorded.request.amountIn),
+      treasury: WALLET,
+    }, { fetchImpl: async () => { throw new Error('fetch must not run'); } })).rejects.toThrow(/slippageCaps are required on chain 10/);
+
+    const fromSigner = await buildOn(10, pair, {}, { signer: { lifiDiamond: LIFI_DIAMOND, slippageCaps: stable } });
+    expect(fromSigner.built.minAmountOut).toBe(fromSigner.built.quotedAmountOut * 9950n / 10000n);
+    const body = JSON.parse(fromSigner.calls[1]?.body ?? '{}') as { slippageTolerance: number };
+    expect(body.slippageTolerance).toBe(50);
+
+    await expect(buildOn(10, pair, { slippageCaps: { otherBps: 300 } }, {
+      signer: { lifiDiamond: LIFI_DIAMOND, slippageCaps: stable },
+    })).rejects.toThrow(/above the signer class cap of 50 bps/);
+
+    expect(() => assembleLifiV3FromKyber({
+      chainId: 10,
+      calldata: pair.build.data.data,
+      quotedAmountOut: BigInt(recorded.build.data.amountOut),
+      treasury: WALLET,
+    })).toThrow(/slippageCaps are required/);
   });
 });

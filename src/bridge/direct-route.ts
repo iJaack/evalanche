@@ -11,9 +11,9 @@
  * hop, or a deadline outside the next 600 seconds fails closed here.
  */
 
-import { Interface, getAddress, solidityPacked } from 'ethers';
+import { Interface, MaxUint256, getAddress, solidityPacked } from 'ethers';
 import { EvalancheError, EvalancheErrorCode } from '../utils/errors';
-import { isNativeAsset } from '../signer/decode';
+import { decodeCalldata, isNativeAsset } from '../signer/decode';
 import {
   DEX_MAX_DEADLINE_SEC,
   decodeDexCalldata,
@@ -22,7 +22,8 @@ import {
   type DexVenueConfig,
   type PinnedDexVenue,
 } from '../signer/dex-venue';
-import { tokenClassBps, type SlippageCaps } from '../signer/server';
+import { type SlippageCaps } from '../signer/server';
+import { proposerSlippageBps } from './slippage';
 
 const SWAP_ROUTER_02 = new Interface([
   'function exactInputSingle((address tokenIn,address tokenOut,uint24 fee,address recipient,uint256 amountIn,uint256 amountOutMinimum,uint160 sqrtPriceLimitX96) params) payable returns (uint256 amountOut)',
@@ -37,7 +38,34 @@ const SWAP_ROUTER = new Interface([
 
 const V2 = new Interface([
   'function swapExactTokensForTokens(uint256 amountIn, uint256 amountOutMin, address[] path, address to, uint256 deadline) returns (uint256[] amounts)',
+  'function getAmountsOut(uint256 amountIn, address[] path) view returns (uint256[] amounts)',
 ]);
+
+const QUOTER_V2 = new Interface([
+  'function quoteExactInput(bytes path, uint256 amountIn) returns (uint256 amountOut, uint160[] sqrtPriceX96AfterList, uint32[] initializedTicksCrossedList, uint256 gasEstimate)',
+]);
+
+const ERC20 = new Interface([
+  'function approve(address spender, uint256 amount) returns (bool)',
+]);
+
+/**
+ * QuoterV2 on Gnosis. Official Uniswap v3 deployment list
+ * (https://gov.uniswap.org/t/official-uniswap-v3-deployments-list/24323),
+ * same factory as the pinned SwapRouter02. On 18 October 2026 `factory()`
+ * returned `0xe32F7dD7e3f098D518ff19A22d5f028e076489B1` and the code was 8273
+ * bytes with `quoteExactInput` (`0xcdca1753`).
+ */
+export const GNOSIS_QUOTER_V2 = '0x7E9cB3499A6cee3baBe5c8a3D328EA7FD36578f4';
+
+/**
+ * QuoterV2 on Celo. Uniswap docs
+ * (https://developers.uniswap.org/docs/protocols/v3/deployments/v3-celo-deployments)
+ * and https://docs.celo.org/build/tools/contracts/uniswap-contracts.
+ * On 18 October 2026 `factory()` returned `0xAfE208a311B21f13EF87E33A90049fC17A7acDEc`
+ * and the code was 8273 bytes with `quoteExactInput`.
+ */
+export const CELO_QUOTER_V2 = '0x82825d0554fA07f7FC52Ab63c961F330fdEFa8E8';
 
 interface NormalizedPool {
   tokenA: string;
@@ -59,6 +87,11 @@ export interface DirectDexSwapRequest {
   /** Signer `dex` config, including `pools`. The venue must be enabled. */
   dex: DexVenueConfig;
   slippageCaps?: SlippageCaps;
+  /**
+   * Signer chain slippage caps. Off Avalanche, these or `slippageCaps` are
+   * required. When both are set, the signer caps are the ceiling.
+   */
+  signer?: { slippageCaps?: SlippageCaps };
   /**
    * Encoded minOut. Omitted uses the class floor. A value under that floor
    * is refused. A higher value is kept.
@@ -192,7 +225,9 @@ function feeForHop(pools: NormalizedPool[], tokenA: string, tokenB: string, requ
 function classFloor(
   quoted: bigint,
   tokenOut: string,
+  chainId: number,
   caps: SlippageCaps | undefined,
+  signerCaps: SlippageCaps | undefined,
   maxSlippageBps: number | undefined,
   minAmountOut: bigint | undefined,
   tokenOutCap: bigint | undefined,
@@ -201,7 +236,12 @@ function classFloor(
     if (quoted === undefined) fail('quotedAmountOut is required for a direct DEX swap');
     fail('quotedAmountOut must be greater than zero');
   }
-  const classBps = tokenClassBps(caps, tokenOut, false);
+  const classBps = proposerSlippageBps({
+    chainId,
+    tokenOut,
+    slippageCaps: caps,
+    signerSlippageCaps: signerCaps,
+  });
   if (maxSlippageBps !== undefined) {
     if (!Number.isInteger(maxSlippageBps) || maxSlippageBps < 0 || maxSlippageBps > 10_000) {
       fail('maxSlippageBps must be an integer from 0 to 10000');
@@ -244,6 +284,37 @@ function packPath(tokens: string[], fees: number[]): string {
     }
   });
   return solidityPacked(types, values);
+}
+
+function pathTokens(tokenIn: string, tokenOut: string, tokenMid: string | undefined): string[] {
+  const tokens = [address(tokenIn, 'DEX tokenIn')];
+  if (tokenMid !== undefined) tokens.push(address(tokenMid, 'DEX path token'));
+  tokens.push(address(tokenOut, 'DEX tokenOut'));
+  if (tokens.length < 2 || tokens.length > 3) fail('DEX path must contain 2 or 3 tokens');
+  if (new Set(tokens).size !== tokens.length) fail('DEX path token pair must be two different addresses');
+  if (isNativeAsset(tokens[0]) || isNativeAsset(tokens[tokens.length - 1])) fail('DEX transaction value must be 0');
+  return tokens;
+}
+
+function allowlistedFees(
+  venue: PinnedDexVenue,
+  dex: DexVenueConfig,
+  tokens: string[],
+  fee: number | undefined,
+  hopFees: readonly number[] | undefined,
+): number[] {
+  const pools = readPools(dex, venue);
+  const v2 = venue.style === 'uniswap-v2';
+  const hopCount = tokens.length - 1;
+  const requestedFees = hopFees !== undefined ? [...hopFees] : Array.from({ length: hopCount }, () => fee);
+  if (requestedFees.length !== hopCount) fail('DEX pool fee is ambiguous');
+  const fees: number[] = [];
+  for (let i = 0; i < hopCount; i += 1) {
+    const hopFee = feeForHop(pools, tokens[i], tokens[i + 1], requestedFees[i], v2);
+    if (hopFee !== undefined) fees.push(hopFee);
+  }
+  if (!v2 && fees.length !== hopCount) fail('DEX pool is not allowlisted');
+  return fees;
 }
 
 function encodeSwap(
@@ -331,41 +402,24 @@ export function buildDirectDexSwap(request: DirectDexSwapRequest): DirectDexSwap
   }
 
   const treasury = address(request.treasury, 'DEX treasury');
-  const tokenIn = address(request.tokenIn, 'DEX tokenIn');
-  const tokenOut = address(request.tokenOut, 'DEX tokenOut');
-  if (isNativeAsset(tokenIn) || isNativeAsset(tokenOut)) fail('DEX transaction value must be 0');
-  const tokens = [tokenIn];
-  if (request.tokenMid !== undefined) tokens.push(address(request.tokenMid, 'DEX path token'));
-  tokens.push(tokenOut);
-  if (tokens.length < 2 || tokens.length > 3) fail('DEX path must contain 2 or 3 tokens');
-  if (new Set(tokens).size !== tokens.length) fail('DEX path token pair must be two different addresses');
+  const tokens = pathTokens(request.tokenIn, request.tokenOut, request.tokenMid);
+  const tokenIn = tokens[0];
+  const tokenOut = tokens[tokens.length - 1];
 
   const minAmountOut = classFloor(
     request.quotedAmountOut,
     tokenOut,
+    venue.chainId,
     request.slippageCaps,
+    request.signer?.slippageCaps,
     request.maxSlippageBps,
     request.minAmountOut,
     request.tokenOutCap,
   );
   const nowSec = request.nowSec ?? Math.floor(Date.now() / 1000);
   const deadline = resolveDeadline(request.deadline, nowSec);
-  const pools = readPools(dex, venue);
+  const fees = allowlistedFees(venue, dex, tokens, request.fee, request.hopFees);
   const v2 = venue.style === 'uniswap-v2';
-  const hopCount = tokens.length - 1;
-  let requestedFees: Array<number | undefined>;
-  if (request.hopFees !== undefined) {
-    if (request.hopFees.length !== hopCount) fail('DEX pool fee is ambiguous');
-    requestedFees = [...request.hopFees];
-  } else {
-    requestedFees = Array.from({ length: hopCount }, () => request.fee);
-  }
-  const fees: number[] = [];
-  for (let i = 0; i < hopCount; i += 1) {
-    const fee = feeForHop(pools, tokens[i], tokens[i + 1], requestedFees[i], v2);
-    if (fee !== undefined) fees.push(fee);
-  }
-  if (!v2 && fees.length !== hopCount) fail('DEX pool is not allowlisted');
 
   const data = encodeSwap(venue, tokens, fees, request.amountIn, minAmountOut, treasury, deadline);
   const decoded = decodeDexCalldata(venue.router, data, {
@@ -406,5 +460,193 @@ export function buildDirectDexSwap(request: DirectDexSwapRequest): DirectDexSwap
     tokenOut,
     amountIn: request.amountIn,
     deadline,
+  };
+}
+
+export interface DirectQuoteRequest {
+  chainId: number;
+  tokenIn: string;
+  tokenOut: string;
+  tokenMid?: string;
+  amountIn: bigint;
+  /** Pools the quote is allowed to use. The same list `buildDirectDexSwap` reads. */
+  dex: DexVenueConfig;
+  fee?: number;
+  hopFees?: readonly number[];
+  /** Test double. Production passes `rpcUrl` or this caller. */
+  callImpl?: (to: string, data: string) => Promise<string>;
+  /** HTTPS JSON-RPC. Used when `callImpl` is omitted. */
+  rpcUrl?: string;
+}
+
+export interface DirectQuote {
+  chainId: number;
+  to: string;
+  data: string;
+  quotedAmountOut: bigint;
+}
+
+function quoterFor(chainId: number): { to: string; style: 'v2' | 'v3' } {
+  if (chainId === 25) {
+    const venue = dexVenue(25);
+    if (!venue) fail('direct quote helper does not support chain 25');
+    return { to: venue.router, style: 'v2' };
+  }
+  if (chainId === 100) return { to: getAddress(GNOSIS_QUOTER_V2), style: 'v3' };
+  if (chainId === 42220) return { to: getAddress(CELO_QUOTER_V2), style: 'v3' };
+  fail(`direct quote helper does not support chain ${chainId}`);
+}
+
+async function ethCall(rpcUrl: string, to: string, data: string): Promise<string> {
+  if (!rpcUrl.startsWith('https://')) fail('direct quote RPC must be https');
+  let response: Response;
+  try {
+    response = await fetch(rpcUrl, {
+      method: 'POST',
+      redirect: 'error',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'eth_call',
+        params: [{ to, data }, 'latest'],
+      }),
+    });
+  } catch (error) {
+    throw new EvalancheError(
+      'direct quote RPC request failed',
+      EvalancheErrorCode.NETWORK_ERROR,
+      error instanceof Error ? error : undefined,
+    );
+  }
+  if (!response.ok) {
+    throw new EvalancheError(`direct quote RPC HTTP ${response.status}`, EvalancheErrorCode.NETWORK_ERROR);
+  }
+  let body: { result?: string; error?: { message?: string } };
+  try {
+    body = await response.json() as { result?: string; error?: { message?: string } };
+  } catch (error) {
+    throw new EvalancheError(
+      'direct quote RPC returned malformed JSON',
+      EvalancheErrorCode.NETWORK_ERROR,
+      error instanceof Error ? error : undefined,
+    );
+  }
+  if (!body.result || !body.result.startsWith('0x')) {
+    throw new EvalancheError(
+      `direct quote RPC rejected the call: ${body.error?.message ?? 'empty result'}`,
+      EvalancheErrorCode.NETWORK_ERROR,
+    );
+  }
+  return body.result;
+}
+
+/**
+ * Quote a direct-router path. Cronos calls `getAmountsOut` on the pinned VVS
+ * router. Gnosis and Celo call `quoteExactInput` on the pinned QuoterV2.
+ * Mantle is not quoted. The hops must already be in `dex.pools`.
+ */
+export async function quoteDirectDexSwap(request: DirectQuoteRequest): Promise<DirectQuote> {
+  const venue = dexVenue(request.chainId);
+  if (!venue) fail(`direct quote helper does not support chain ${request.chainId}`);
+  if (request.amountIn <= 0n) fail('DEX amountIn must be greater than zero');
+  const quoter = quoterFor(request.chainId);
+  const tokens = pathTokens(request.tokenIn, request.tokenOut, request.tokenMid);
+  const fees = allowlistedFees(venue, request.dex, tokens, request.fee, request.hopFees);
+  const data = quoter.style === 'v2'
+    ? V2.encodeFunctionData('getAmountsOut', [request.amountIn, tokens])
+    : QUOTER_V2.encodeFunctionData('quoteExactInput', [packPath(tokens, fees), request.amountIn]);
+  const call = request.callImpl ?? (request.rpcUrl ? (to: string, encoded: string) => ethCall(request.rpcUrl as string, to, encoded) : undefined);
+  if (!call) fail('direct quote needs an eth_call');
+  let raw: string;
+  try {
+    raw = await call(quoter.to, data);
+  } catch (error) {
+    if (error instanceof EvalancheError) throw error;
+    throw new EvalancheError(
+      'direct quote could not be decoded',
+      EvalancheErrorCode.NETWORK_ERROR,
+      error instanceof Error ? error : undefined,
+    );
+  }
+  let quotedAmountOut: bigint;
+  try {
+    if (quoter.style === 'v2') {
+      const decoded = V2.decodeFunctionResult('getAmountsOut', raw);
+      const amounts = decoded[0] as bigint[];
+      quotedAmountOut = BigInt(amounts[amounts.length - 1]);
+    } else {
+      const decoded = QUOTER_V2.decodeFunctionResult('quoteExactInput', raw);
+      quotedAmountOut = BigInt(decoded[0]);
+    }
+  } catch {
+    fail('direct quote could not be decoded');
+  }
+  if (quotedAmountOut <= 0n) fail('quotedAmountOut must be greater than zero');
+  return { chainId: venue.chainId, to: quoter.to, data, quotedAmountOut };
+}
+
+export interface ExactRouterApproval {
+  chainId: number;
+  /** Token contract. */
+  to: string;
+  data: string;
+  value: bigint;
+  spender: string;
+  amount: bigint;
+}
+
+/**
+ * `approve` of exactly `amountIn` to the pinned router. Unlimited approvals
+ * are refused. The signer accepts this when the token has the token role,
+ * the router has the spender role, and the intent amountIn matches.
+ */
+export function buildExactRouterApproval(input: {
+  chainId: number;
+  token: string;
+  amountIn: bigint;
+}): ExactRouterApproval {
+  const venue = dexVenue(input.chainId);
+  if (!venue) fail(`direct route builder does not support chain ${input.chainId}`);
+  if (typeof input.amountIn !== 'bigint' || input.amountIn <= 0n) fail('DEX amountIn must be greater than zero');
+  if (input.amountIn === MaxUint256) fail('Unlimited ERC-20 approval is denied');
+  const token = address(input.token, 'DEX tokenIn');
+  const data = ERC20.encodeFunctionData('approve', [venue.router, input.amountIn]);
+  const decoded = decodeCalldata(token, data, {
+    wallet: '0x0000000000000000000000000000000000000001',
+    value: 0n,
+    explicitAllows: new Set(),
+    tokenIn: token,
+    amountIn: input.amountIn,
+    allowAddress: () => true,
+    allowSelector: (to, selector) => {
+      try {
+        return getAddress(to) === token && selector.toLowerCase() === '0x095ea7b3';
+      } catch {
+        return false;
+      }
+    },
+    allowRole: (spender, role) => {
+      try {
+        const who = getAddress(spender);
+        if (role === 'spender') return who === venue.router;
+        if (role === 'token') return who === token;
+      } catch {
+        return false;
+      }
+      return false;
+    },
+  });
+  if (decoded.length !== 1 || decoded[0]?.kind !== 'erc20-approve' || decoded[0].amount !== input.amountIn) {
+    fail('decoded approval amount does not equal amountIn');
+  }
+  if (getAddress(String(decoded[0].spender)) !== venue.router) fail('approve spender is not the pinned router');
+  return {
+    chainId: venue.chainId,
+    to: token,
+    data,
+    value: 0n,
+    spender: venue.router,
+    amount: input.amountIn,
   };
 }

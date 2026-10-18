@@ -7,9 +7,16 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { Wallet, getAddress } from 'ethers';
+import { Interface, MaxUint256, Wallet, getAddress } from 'ethers';
 import { generateEd25519KeyPair, startSignerServer } from '../../src/index';
-import { buildDirectDexSwap, type DirectDexSwapRequest } from '../../src/bridge/direct-route';
+import {
+  CELO_QUOTER_V2,
+  GNOSIS_QUOTER_V2,
+  buildDirectDexSwap,
+  buildExactRouterApproval,
+  quoteDirectDexSwap,
+  type DirectDexSwapRequest,
+} from '../../src/bridge/direct-route';
 import { decodeCalldata } from '../../src/signer/decode';
 import { DEX_VENUES, decodeDexCalldata, type DexVenueConfig } from '../../src/signer/dex-venue';
 import { computeApprovedTxHash, signVerifierApproval, type ApprovedTransaction, type SigningIntent } from '../../src/signer/intent';
@@ -76,12 +83,21 @@ function request(chainId: number, patch: Partial<DirectDexSwapRequest> = {}): Di
     amountIn: 1000n,
     treasury: WALLET,
     quotedAmountOut: QUOTE,
+    slippageCaps: { otherBps: 300 },
     dex,
     ...patch,
   };
 }
 
-async function boot(chainId: number, dex: DexVenueConfig, tokens: string[], caps?: Record<string, string>) {
+async function boot(
+  chainId: number,
+  dex: DexVenueConfig,
+  tokens: string[],
+  caps?: Record<string, string>,
+  slippageCaps?: SignerChainConfig['slippageCaps'],
+  extraAllow: Array<Record<string, unknown>> = [],
+  tokenSelectors: string[] = [],
+) {
   const tokenCaps: Record<string, string> = { native: '0' };
   for (const token of tokens) tokenCaps[getAddress(token)] = CAP;
   const root = await mkdtemp(join(tmpdir(), 'direct-route-'));
@@ -98,7 +114,10 @@ async function boot(chainId: number, dex: DexVenueConfig, tokens: string[], caps
     simulate: async () => ({ success: true }),
     allow: {
       43114: [{ address: WALLET, selectors: ['0x'], roles: ['recipient'] }],
-      [chainId]: tokens.map((address) => ({ address, selectors: [] as string[], decimals: 18, roles: ['token'] })),
+      [chainId]: [
+        ...tokens.map((address) => ({ address, selectors: tokenSelectors, decimals: 18, roles: ['token'] })),
+        ...extraAllow,
+      ],
     },
     chains: {
       43114: {
@@ -111,6 +130,7 @@ async function boot(chainId: number, dex: DexVenueConfig, tokens: string[], caps
         gas: { maxFeeUsd: 1 },
         tokenCaps: { ...tokenCaps, ...caps },
         price: { prices: { native: 1 } },
+        slippageCaps,
         dex,
       } satisfies SignerChainConfig,
     },
@@ -128,8 +148,9 @@ async function sign(
   extra: Partial<SigningIntent> = {},
   tokens = [intent.tokenIn, intent.tokenOut],
   caps?: Record<string, string>,
+  slippageCaps?: SignerChainConfig['slippageCaps'],
 ) {
-  const h = await boot(chainId, dex, tokens, caps);
+  const h = await boot(chainId, dex, tokens, caps, slippageCaps);
   const tx: ApprovedTransaction = {
     to: getAddress(to),
     value: '0',
@@ -451,5 +472,151 @@ describe('direct router intent builder', () => {
     expect(() => policyDecode(built, req.dex, Number(built.deadline) - 601)).toThrow(/10 minutes/);
     await expect(sign(25, `${built.data}00`, built.to, built, req.dex)).rejects.toThrow(/trailing/);
     await expect(sign(25, built.data, built.to, built, req.dex, {}, undefined, { [getAddress(CRONOS_USDC)]: '1000' })).rejects.toThrow(/token cap/);
+  });
+
+  it('takes non-Avalanche slippage caps from the signer and refuses a looser default', async () => {
+    expect(() => buildDirectDexSwap(request(25, { slippageCaps: undefined }))).toThrow(/slippageCaps are required on chain 25/);
+    expect(() => buildDirectDexSwap(request(25, {
+      slippageCaps: { otherBps: 300 },
+      signer: { slippageCaps: { stables: [CRONOS_USDC], stableBps: 50 } },
+    }))).toThrow(/above the signer class cap of 50 bps/);
+
+    const stable = { stables: [CRONOS_USDC], stableBps: 50 };
+    const req = request(25, { slippageCaps: undefined, signer: { slippageCaps: stable } });
+    const built = buildDirectDexSwap(req);
+    expect(built.minAmountOut).toBe(QUOTE * 9950n / 10_000n);
+    const signed = await sign(25, built.data, built.to, built, req.dex, {}, undefined, undefined, stable);
+    expect(signed.signedTransaction).toMatch(/^0x/);
+  });
+
+  it('quotes VVS and QuoterV2 only on allowlisted hops', async () => {
+    const v2 = new Interface(['function getAmountsOut(uint256 amountIn, address[] path) view returns (uint256[] amounts)']);
+    const quoter = new Interface([
+      'function quoteExactInput(bytes path, uint256 amountIn) returns (uint256 amountOut, uint160[] sqrtPriceX96AfterList, uint32[] initializedTicksCrossedList, uint256 gasEstimate)',
+    ]);
+    const cronos = request(25);
+    const cronosQuote = await quoteDirectDexSwap({
+      ...cronos,
+      callImpl: async (to, data) => {
+        expect(getAddress(to)).toBe(venue(25).router);
+        expect(data.slice(0, 10).toLowerCase()).toBe('0xd06ca61f');
+        return v2.encodeFunctionResult('getAmountsOut', [[1000n, 12_345n]]);
+      },
+    });
+    expect(cronosQuote.quotedAmountOut).toBe(12_345n);
+
+    const gnosis = request(100);
+    const gnosisQuote = await quoteDirectDexSwap({
+      ...gnosis,
+      callImpl: async (to, data) => {
+        expect(getAddress(to)).toBe(GNOSIS_QUOTER_V2);
+        const decoded = quoter.decodeFunctionData('quoteExactInput', data);
+        expect(String(decoded[0]).toLowerCase()).toContain('000064');
+        return quoter.encodeFunctionResult('quoteExactInput', [8_000n, [], [], 1n]);
+      },
+    });
+    expect(gnosisQuote.quotedAmountOut).toBe(8_000n);
+
+    const celo = request(42220);
+    const celoQuote = await quoteDirectDexSwap({
+      ...celo,
+      callImpl: async (to) => {
+        expect(getAddress(to)).toBe(CELO_QUOTER_V2);
+        return quoter.encodeFunctionResult('quoteExactInput', [7_000n, [], [], 1n]);
+      },
+    });
+    expect(celoQuote.quotedAmountOut).toBe(7_000n);
+
+    await expect(quoteDirectDexSwap({ ...request(5000), callImpl: async () => '0x' })).rejects.toThrow(/does not support chain 5000/);
+    await expect(quoteDirectDexSwap({ ...cronos, tokenOut: MID })).rejects.toThrow(/not allowlisted/);
+    await expect(quoteDirectDexSwap(cronos)).rejects.toThrow(/needs an eth_call/);
+    await expect(quoteDirectDexSwap({ ...cronos, rpcUrl: 'http://rpc.example' })).rejects.toThrow(/https/);
+  });
+
+  it('approves exactly amountIn to the pinned router and the signer accepts it', async () => {
+    const approval = buildExactRouterApproval({ chainId: 25, token: WCRO, amountIn: 1000n });
+    expect(approval.to).toBe(getAddress(WCRO));
+    expect(approval.spender).toBe(venue(25).router);
+    expect(approval.value).toBe(0n);
+    expect(approval.amount).toBe(1000n);
+    expect(() => buildExactRouterApproval({ chainId: 25, token: WCRO, amountIn: MaxUint256 })).toThrow(/Unlimited ERC-20 approval is denied/);
+    expect(() => buildExactRouterApproval({ chainId: 146, token: WCRO, amountIn: 1000n })).toThrow(/does not support chain 146/);
+
+    const h = await boot(25, { enabled: false }, [WCRO], undefined, undefined, [
+      { address: venue(25).router, selectors: [], decimals: 18, roles: ['spender'] },
+    ], ['0x095ea7b3']);
+    const tx: ApprovedTransaction = {
+      to: approval.to,
+      value: '0',
+      data: approval.data,
+      chainId: 25,
+      nonce: '0',
+      gasLimit: '100000',
+      maxFeePerGas: '0',
+      maxPriorityFeePerGas: '0',
+      gasPrice: '1',
+      type: 0,
+    };
+    const now = Date.now();
+    const intent: SigningIntent = {
+      version: '1',
+      intentId: 'approve-vvs',
+      nonce: '1',
+      createdAt: now,
+      expiresAt: now + 60_000,
+      wallet: WALLET,
+      chainId: 25,
+      venue: 'dex',
+      action: 'approve',
+      amountIn: '1000',
+      tokenIn: { address: WCRO, symbol: 'WCRO', decimals: 18 },
+      routeHash: computeApprovedTxHash(tx),
+      tx,
+    };
+    const signed = await h.server.handle({
+      requestId: 'approve-vvs',
+      kind: 'transaction',
+      chainId: 25,
+      from: WALLET,
+      to: approval.to,
+      value: '0',
+      data: approval.data,
+      gasLimit: '100000',
+      gasPrice: '1',
+      maxFeePerGas: '0',
+      maxPriorityFeePerGas: '0',
+      nonce: 0,
+      type: 0,
+      intent: 'approve',
+      structuredIntent: intent,
+      approval: signVerifierApproval({
+        intent,
+        verifierPrivateKey: h.verifier.privateKey,
+        verifierPublicKey: h.verifier.publicKey,
+      }),
+    });
+    expect(signed.signedTransaction).toMatch(/^0x/);
+    await expect(h.server.handle({
+      requestId: 'approve-vvs-mismatch',
+      kind: 'transaction',
+      chainId: 25,
+      from: WALLET,
+      to: approval.to,
+      value: '0',
+      data: approval.data,
+      gasLimit: '100000',
+      gasPrice: '1',
+      maxFeePerGas: '0',
+      maxPriorityFeePerGas: '0',
+      nonce: 0,
+      type: 0,
+      intent: 'approve',
+      structuredIntent: { ...intent, nonce: '2', intentId: 'approve-vvs-mismatch', amountIn: '1001', routeHash: computeApprovedTxHash(tx) },
+      approval: signVerifierApproval({
+        intent: { ...intent, nonce: '2', intentId: 'approve-vvs-mismatch', amountIn: '1001' },
+        verifierPrivateKey: h.verifier.privateKey,
+        verifierPublicKey: h.verifier.publicKey,
+      }),
+    })).rejects.toThrow(/amountIn/);
   });
 });
