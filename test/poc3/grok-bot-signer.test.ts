@@ -598,6 +598,129 @@ chmod 755 "$prefix/node_modules/.bin/evalanche-signer"
     expect(readFileSync(noncePath, 'utf8')).toBe('nonce-stays\n');
     expect(readFileSync(box.npmLog, 'utf8').trim().split('\n')).toHaveLength(calls);
   });
+
+  function give(box: Awaited<ReturnType<typeof provisionLayout>>, path: string) {
+    if (!box.drop) return;
+    const chowned = spawnSync('chown', ['-R', `${box.drop.uid}:${box.drop.gid}`, path]);
+    if (chowned.status !== 0) throw new Error(chowned.stderr?.toString() || 'chown failed');
+  }
+
+  async function packVersion(dir: string, version: string, filename: string): Promise<string> {
+    const packRoot = join(dir, `pack-${filename.replace(/[^A-Za-z0-9.]+/g, '-')}`);
+    const pack = join(packRoot, 'package');
+    await mkdir(join(pack, 'scripts'), { recursive: true });
+    await mkdir(join(pack, 'dist', 'signer'), { recursive: true });
+    await writeFile(join(pack, 'package.json'), `${JSON.stringify({ name: 'evalanche', version })}\n`);
+    await writeFile(join(pack, 'npm-shrinkwrap.json'), '{"lockfileVersion":3}\n');
+    await writeFile(join(pack, 'dist', 'signer', 'cli.mjs'), 'process.stdout.write("packed\\n");\n');
+    await writeFile(join(pack, 'scripts/grok-bot-signer.sh'), '#!/bin/sh\necho packaged\n', { mode: 0o755 });
+    const tarball = join(dir, filename);
+    const packed = spawnSync('tar', ['-czf', tarball, '-C', packRoot, 'package']);
+    if (packed.status !== 0) throw new Error(packed.stderr?.toString() || 'tar failed');
+    return tarball;
+  }
+
+  it('names the pinned tarball from the staged package.json when no path is given', async () => {
+    const box = await provisionLayout();
+    const digest = createHash('sha256').update(readFileSync(box.tarball)).digest('hex');
+    const env = { ...box.env };
+    delete env.EVALANCHE_BOX_TARBALL;
+    const run = (args: string[]) => spawnSync(script, args, {
+      env,
+      encoding: 'utf8',
+      timeout: 20_000,
+      ...(box.drop ? { uid: box.drop.uid, gid: box.drop.gid } : {}),
+    });
+    const missing = run(['provision', '', digest]);
+    expect(missing.status).not.toBe(0);
+    expect(`${missing.stderr}`).toMatch(/installed tree is not used/);
+    expect(`${missing.stderr}`).not.toMatch(/1\.17\.0-rc\.1/);
+    expect(existsSync(box.npmLog)).toBe(false);
+
+    await mkdir(box.durable, { recursive: true });
+    const pinned = join(box.durable, 'evalanche-1.15.0.tgz');
+    await writeFile(pinned, readFileSync(box.tarball));
+    give(box, box.durable);
+    const ready = run(['provision', '', digest]);
+    expect(ready.status, ready.stderr).toBe(0);
+    expect(existsSync(pinned)).toBe(true);
+    expect(existsSync(join(box.durable, 'evalanche-1.17.0-rc.1.tgz'))).toBe(false);
+    expect(existsSync(join(box.prefix, 'dist/signer/cli.mjs'))).toBe(true);
+  });
+
+  it('reads the staged version after /opt is wiped and ignores an installed package.json', async () => {
+    const box = await provisionLayout();
+    const digest = createHash('sha256').update(readFileSync(box.tarball)).digest('hex');
+    await mkdir(join(box.prefix, 'bin'), { recursive: true });
+    await writeFile(join(box.prefix, 'package.json'), '{"name":"evalanche","version":"9.9.9"}\n');
+    const installed = join(box.prefix, 'bin', 'grok-bot-signer.sh');
+    await copyFile(script, installed);
+    await chmod(installed, 0o755);
+    // The dropped user has to unlink PREFIX. That needs a writable parent.
+    give(box, box.root);
+    const fromOpt = spawnSync(installed, ['provision', box.tarball, digest], {
+      env: box.env,
+      encoding: 'utf8',
+      timeout: 20_000,
+      ...(box.drop ? { uid: box.drop.uid, gid: box.drop.gid } : {}),
+    });
+    expect(fromOpt.status, fromOpt.stderr).toBe(0);
+    expect(existsSync(join(box.durable, 'evalanche-1.15.0.tgz'))).toBe(true);
+    expect(existsSync(join(box.durable, 'evalanche-9.9.9.tgz'))).toBe(false);
+
+    await rm(box.prefix, { recursive: true, force: true });
+    await rm(join(box.durable, 'evalanche-1.15.0.tgz'), { force: true });
+    const recovery = join(box.root, 'recovery');
+    await mkdir(join(recovery, 'bin'), { recursive: true });
+    await writeFile(join(recovery, 'package.json'), '{"name":"evalanche","version":"8.8.8"}\n');
+    const recoveryScript = join(recovery, 'bin', 'grok-bot-signer.sh');
+    await copyFile(script, recoveryScript);
+    await chmod(recoveryScript, 0o755);
+    give(box, recovery);
+    const wiped = spawnSync(recoveryScript, ['provision', box.tarball, digest], {
+      env: box.env,
+      encoding: 'utf8',
+      timeout: 20_000,
+      ...(box.drop ? { uid: box.drop.uid, gid: box.drop.gid } : {}),
+    });
+    expect(wiped.status, wiped.stderr).toBe(0);
+    expect(existsSync(join(box.prefix, 'dist/signer/cli.mjs'))).toBe(true);
+    expect(readFileSync(join(box.prefix, 'package.json'), 'utf8')).toContain('"version":"1.15.0"');
+    expect(existsSync(join(box.durable, 'evalanche-1.15.0.tgz'))).toBe(true);
+    expect(existsSync(join(box.durable, 'evalanche-8.8.8.tgz'))).toBe(false);
+    expect(existsSync(join(box.durable, 'evalanche-9.9.9.tgz'))).toBe(false);
+  });
+
+  it('refuses a bad or mismatched tarball version before npm', async () => {
+    const box = await provisionLayout();
+    const latest = await packVersion(box.root, 'latest', 'incoming.tgz');
+    give(box, latest);
+    const latestDigest = createHash('sha256').update(readFileSync(latest)).digest('hex');
+    const bad = provision(box, ['provision', latest, latestDigest]);
+    expect(bad.status).not.toBe(0);
+    expect(bad.stderr).toMatch(/not a release version/);
+    expect(existsSync(box.npmLog)).toBe(false);
+
+    const traversal = await packVersion(box.root, '../evil', 'incoming-evil.tgz');
+    give(box, traversal);
+    const traversalDigest = createHash('sha256').update(readFileSync(traversal)).digest('hex');
+    const escaped = provision(box, ['provision', traversal, traversalDigest]);
+    expect(escaped.status).not.toBe(0);
+    expect(escaped.stderr).toMatch(/not a release version/);
+    expect(existsSync(box.npmLog)).toBe(false);
+    expect(existsSync(join(box.durable, 'evalanche-..'))).toBe(false);
+
+    const mismatched = join(box.root, 'evalanche-9.9.9.tgz');
+    await copyFile(box.tarball, mismatched);
+    give(box, mismatched);
+    const mismatchDigest = createHash('sha256').update(readFileSync(mismatched)).digest('hex');
+    const mismatch = provision(box, ['provision', mismatched, mismatchDigest]);
+    expect(mismatch.status).not.toBe(0);
+    expect(mismatch.stderr).toMatch(/tarball version 1\.15\.0 does not match evalanche-9\.9\.9\.tgz/);
+    expect(existsSync(box.npmLog)).toBe(false);
+    expect(existsSync(join(box.durable, 'evalanche-9.9.9.tgz'))).toBe(false);
+    expect(existsSync(join(box.prefix, 'dist/signer/cli.mjs'))).toBe(false);
+  });
 });
 
 /** Opt-in. The default suite must not call sudo, unshare, or userdel. */
@@ -811,7 +934,10 @@ test "$before" = "$after"
 printf '%s\\n' 'reset-ownership-ok'
 `;
     const file = join(tmpdir(), `gbs-reset-${process.pid}.sh`);
-    const signerCopy = join(tmpdir(), `grok-bot-signer-${process.pid}.sh`);
+    const signerHome = join(tmpdir(), `gbs-reset-src-${process.pid}`);
+    const signerCopy = join(signerHome, 'scripts', 'grok-bot-signer.sh');
+    await mkdir(join(signerHome, 'scripts'), { recursive: true });
+    await writeFile(join(signerHome, 'package.json'), '{"name":"evalanche","version":"1.16.0"}\n');
     await copyFile(script, signerCopy);
     await chmod(signerCopy, 0o755);
     await writeFile(file, scriptBody.replaceAll('$SCRIPT', signerCopy).replaceAll('$NODE', process.execPath), { mode: 0o755 });
@@ -822,8 +948,122 @@ printf '%s\\n' 'reset-ownership-ok'
     expect(`${result.stdout}\n${result.stderr}`, result.stderr).toContain('reset-ownership-ok');
     expect(result.status, result.stderr).toBe(0);
     await rm(file, { force: true });
-    await rm(signerCopy, { force: true });
+    await rm(signerHome, { recursive: true, force: true });
   }, 180_000);
+});
+
+describe.skipIf(!DESTRUCTIVE || !canEnterMountNamespace())('grok-bot signer root tarball source', () => {
+  it('ignores EVALANCHE_BOX_TARBALL and reads the version from the staged tarball', async () => {
+    const scriptBody = `#!/bin/bash
+set -eu
+fake=$(mktemp -d)
+cleanup() {
+  umount /var/lib/evalanche-signer/state 2>/dev/null || true
+  umount /var/lib/evalanche-signer/log 2>/dev/null || true
+  umount /var /home /opt /etc 2>/dev/null || true
+  umount "$fake/node" 2>/dev/null || true
+  rm -rf "$fake"
+}
+trap cleanup EXIT
+mkdir -p "$fake/etc" "$fake/home" "$fake/opt" "$fake/var" "$fake/bin"
+nodebin="$NODE"
+nodedir=$(dirname "$(readlink -f "$nodebin")")
+case "$nodebin" in
+  /home/*|/opt/*|/var/*|/etc/*)
+    mkdir -p "$fake/node"
+    mount --bind "$nodedir" "$fake/node"
+    nodedir="$fake/node"
+    ;;
+esac
+cp -a /etc/. "$fake/etc/"
+mount --bind "$fake/etc" /etc
+mount --bind "$fake/home" /home
+mount --bind "$fake/opt" /opt
+mount --bind "$fake/var" /var
+export PATH="/usr/sbin:/usr/bin:/sbin:/bin:$fake/bin:$nodedir"
+if id evalanche-signer >/dev/null 2>&1; then
+  userdel evalanche-signer || true
+fi
+if getent group evalanche-signer >/dev/null 2>&1; then
+  groupdel evalanche-signer || true
+fi
+cat > "$fake/bin/npm" << EOF
+#!/bin/sh
+printf '%s\\\\n' "\\$*" >> "$fake/npm.log"
+prefix=""
+prev=""
+for arg in "\\$@"; do
+  if [ "\\$prev" = "--prefix" ]; then prefix=\\$arg; fi
+  prev=\\$arg
+done
+mkdir -p "\\$prefix/node_modules/.bin"
+printf '%s\\\\n' '#!/bin/sh' 'exit 0' > "\\$prefix/node_modules/.bin/evalanche-signer"
+chmod 755 "\\$prefix/node_modules/.bin/evalanche-signer"
+EOF
+chmod 755 "$fake/bin/npm"
+persist=/home/box/agent-data/evalanche-persist
+mkdir -p "$persist"
+printf '%s\\n' 'token-keep' > "$persist/token"
+printf '%s\\n' 'ed25519-pub-keep' > "$persist/verifier.pub"
+good=$persist/evalanche-1.15.0.tgz
+mkdir -p "$fake/pack/package/scripts" "$fake/pack/package/dist/signer"
+printf '%s\\n' '{"name":"evalanche","version":"1.15.0"}' > "$fake/pack/package/package.json"
+printf '%s\\n' 'process.stdout.write("evalanche-signer 1.15.0\\n");' > "$fake/pack/package/dist/signer/cli.mjs"
+printf '%s\\n' '{"lockfileVersion":3}' > "$fake/pack/package/npm-shrinkwrap.json"
+printf '%s\\n' '#!/bin/sh' 'echo packaged' > "$fake/pack/package/scripts/grok-bot-signer.sh"
+chmod 755 "$fake/pack/package/scripts/grok-bot-signer.sh"
+tar -czf "$good" -C "$fake/pack" package
+digest=$(sha256sum "$good" | awk 'NR==1 { print $1 }')
+mkdir -p "$fake/decoy-pack/package/scripts" "$fake/decoy-pack/package/dist/signer"
+printf '%s\\n' '{"name":"evalanche","version":"9.9.9"}' > "$fake/decoy-pack/package/package.json"
+printf '%s\\n' 'process.stdout.write("decoy\\n");' > "$fake/decoy-pack/package/dist/signer/cli.mjs"
+printf '%s\\n' '{"lockfileVersion":3}' > "$fake/decoy-pack/package/npm-shrinkwrap.json"
+printf '%s\\n' '#!/bin/sh' 'echo decoy' > "$fake/decoy-pack/package/scripts/grok-bot-signer.sh"
+chmod 755 "$fake/decoy-pack/package/scripts/grok-bot-signer.sh"
+decoy=$fake/decoy.tgz
+tar -czf "$decoy" -C "$fake/decoy-pack" package
+decoy_digest=$(sha256sum "$decoy" | awk 'NR==1 { print $1 }')
+test ! -e /opt/evalanche-signer
+export EVALANCHE_BOX_TARBALL="$fake/missing-env-tarball.tgz"
+test ! -e "$EVALANCHE_BOX_TARBALL"
+"$SCRIPT" provision "" "$digest"
+test -f "$persist/evalanche-1.15.0.tgz"
+test ! -e "$persist/evalanche-9.9.9.tgz"
+test ! -e "$EVALANCHE_BOX_TARBALL"
+grep -q '"version":"1.15.0"' /opt/evalanche-signer/package.json
+test "$(wc -l < "$fake/npm.log")" -ge 1
+before=$(wc -l < "$fake/npm.log")
+rm -f "$persist/evalanche-1.15.0.tgz"
+export EVALANCHE_BOX_TARBALL="$decoy"
+set +e
+ignored_out=$(EVALANCHE_BOX_TARBALL="$decoy" "$SCRIPT" provision "" "$decoy_digest" 2>&1)
+ignored_rc=$?
+set -e
+test "$ignored_rc" -ne 0
+printf '%s\\n' "$ignored_out" | grep -q 'installed tree is not used'
+test ! -e "$persist/evalanche-9.9.9.tgz"
+grep -q '"version":"1.15.0"' /opt/evalanche-signer/package.json
+after=$(wc -l < "$fake/npm.log")
+test "$before" = "$after"
+printf '%s\\n' 'root-ignores-tarball-env'
+`;
+    const file = join(tmpdir(), `gbs-root-tarball-${process.pid}.sh`);
+    const signerHome = join(tmpdir(), `gbs-root-tarball-src-${process.pid}`);
+    const signerCopy = join(signerHome, 'scripts', 'grok-bot-signer.sh');
+    await mkdir(join(signerHome, 'scripts'), { recursive: true });
+    await writeFile(join(signerHome, 'package.json'), '{"name":"evalanche","version":"8.8.8"}\n');
+    await copyFile(script, signerCopy);
+    await chmod(signerCopy, 0o755);
+    await writeFile(file, scriptBody.replaceAll('$SCRIPT', signerCopy).replaceAll('$NODE', process.execPath), { mode: 0o755 });
+    const cmd = (process.getuid?.() ?? -1) === 0
+      ? ['unshare', '--mount', 'bash', file]
+      : ['sudo', '-n', 'unshare', '--mount', 'bash', file];
+    const result = spawnSync(cmd[0]!, cmd.slice(1), { encoding: 'utf8', timeout: 120_000 });
+    expect(`${result.stdout}\n${result.stderr}`, result.stderr).toContain('root-ignores-tarball-env');
+    expect(result.status, result.stderr).toBe(0);
+    await rm(file, { force: true });
+    await rm(signerHome, { recursive: true, force: true });
+  }, 120_000);
 });
 
 describe.skipIf(!linux || (process.getuid?.() ?? 0) !== 0)('grok-bot signer root overrides', () => {

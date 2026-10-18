@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { Interface, Wallet, getAddress } from 'ethers';
 import { KEY, leg, patchKyber, sign } from '../r8review/helpers';
 import { buildKyberLifiSwap, assembleLifiV3FromKyber, type KyberReferenceRequest } from '../../src/bridge/kyber-route';
+import { KYBER_ROUTE_CHAINS } from '../../src/bridge/kyber-chains';
 import {
   KYBER_META_AGGREGATION_ROUTER_V2,
   KYBER_SWAP_SELECTOR,
@@ -244,5 +245,110 @@ describe('Kyber aggregator route as one Li.Fi V3 swap', () => {
   it('refuses a non-positive reference price', async () => {
     await expect(buildFrom(cloneFixture(), { referencePrice: 0n })).rejects.toThrow(/reference price/);
     await expect(buildFrom(cloneFixture(), { referencePrice: -1n })).rejects.toThrow(/reference price/);
+  });
+});
+
+const ATTACKER = '0x000000000000000000000000000000000000dEaD';
+
+function retarget(chainId: number) {
+  const chain = KYBER_ROUTE_CHAINS.find((entry) => entry.chainId === chainId);
+  if (!chain) throw new Error(`missing chain ${chainId}`);
+  const pair = cloneFixture();
+  pair.route.data.routeSummary.routerAddress = chain.router;
+  Object.assign(pair.route.data.routeSummary, { chainId });
+  pair.build.data.routerAddress = chain.router;
+  Object.assign(pair.build.data, { chainId });
+  pair.build.data.data = patchKyber(recorded.build.data.data, { dstReceiver: chain.diamond });
+  return { pair, chain };
+}
+
+async function buildOn(
+  chainId: number,
+  pair: { route: unknown; build: unknown },
+  extra: { recipient?: string } = {},
+  options: Parameters<typeof buildKyberLifiSwap>[1] = {},
+) {
+  const calls: Array<{ url: string; body?: string }> = [];
+  const fetchImpl = async (url: string, init?: RequestInit): Promise<Response> => {
+    calls.push({ url, body: typeof init?.body === 'string' ? init.body : undefined });
+    if (url.includes('/routes?')) return jsonResponse(pair.route);
+    if (url.endsWith('/route/build')) return jsonResponse(pair.build);
+    throw new Error(`unexpected ${url}`);
+  };
+  const built = await buildKyberLifiSwap({
+    chainId,
+    tokenIn: recorded.request.tokenIn,
+    tokenOut: recorded.request.tokenOut,
+    amountIn: BigInt(recorded.request.amountIn),
+    treasury: WALLET,
+    ...extra,
+  }, { ...options, fetchImpl });
+  return { built, calls };
+}
+
+describe('Kyber routes on every pinned chain', () => {
+  it.each(KYBER_ROUTE_CHAINS)('builds a matching route on $slug ($chainId)', async (chain) => {
+    const { pair } = retarget(chain.chainId);
+    const { built, calls } = await buildOn(chain.chainId, pair);
+    expect(calls[0]?.url).toContain(`/${chain.slug}/api/v1/routes?`);
+    const buildBody = JSON.parse(calls[1]?.body ?? '{}') as { sender: string; recipient: string };
+    expect(getAddress(buildBody.sender)).toBe(chain.diamond);
+    expect(getAddress(buildBody.recipient)).toBe(chain.diamond);
+    expect(built.to).toBe(chain.diamond);
+    expect(built.wrappedNative).toBe(chain.wrappedNative);
+    expect(built.quotedAmountOut).toBe(BigInt(recorded.build.data.amountOut));
+    expect(built.minAmountOut).toBe(built.quotedAmountOut * 9950n / 10000n);
+    const decoded = V3.decodeFunctionData('swapTokensSingleV3ERC20ToERC20', built.data);
+    expect(getAddress(String(decoded[3]))).toBe(getAddress(WALLET));
+    const swap = decoded[5] as { callTo: string; callData: string };
+    expect(getAddress(swap.callTo)).toBe(chain.router);
+    expect(swap.callData.toLowerCase()).toContain(chain.diamond.slice(2).toLowerCase());
+  });
+
+  it('refuses a router that is not pinned', async () => {
+    const { pair } = retarget(1);
+    pair.build.data.routerAddress = ATTACKER;
+    await expect(buildOn(1, pair)).rejects.toThrow(/build router/);
+  });
+
+  it('refuses a route whose chain is not the request', async () => {
+    const { pair } = retarget(1);
+    Object.assign(pair.route.data.routeSummary, { chainId: 10 });
+    await expect(buildOn(1, pair)).rejects.toThrow(/route chain/);
+  });
+
+  it('refuses a recipient that is not the treasury', async () => {
+    const { pair } = retarget(8453);
+    await expect(buildOn(8453, pair, { recipient: ATTACKER })).rejects.toThrow(/treasury/);
+    expect(() => assembleLifiV3FromKyber({
+      chainId: 8453,
+      calldata: pair.build.data.data,
+      quotedAmountOut: BigInt(recorded.build.data.amountOut),
+      treasury: WALLET,
+      recipient: ATTACKER,
+    })).toThrow(/treasury/);
+  });
+
+  it('refuses a disabled chain and a chain Kyber does not pin', async () => {
+    const ethereum = retarget(1);
+    await expect(buildOn(1, ethereum.pair, {}, { enabledChainIds: [43114] })).rejects.toThrow(/disabled chain 1/);
+    await expect(buildKyberLifiSwap({
+      chainId: 250,
+      tokenIn: recorded.request.tokenIn,
+      tokenOut: recorded.request.tokenOut,
+      amountIn: BigInt(recorded.request.amountIn),
+      treasury: WALLET,
+    }, { fetchImpl: async () => { throw new Error('fetch must not run'); } })).rejects.toThrow(/does not support chain 250/);
+  });
+
+  it('refuses a Kyber dstReceiver that is not that chain diamond', () => {
+    const { pair, chain } = retarget(80094);
+    expect(chain.diamond).not.toBe(LIFI_DIAMOND);
+    expect(() => assembleLifiV3FromKyber({
+      chainId: 80094,
+      calldata: patchKyber(pair.build.data.data, { dstReceiver: ATTACKER }),
+      quotedAmountOut: BigInt(recorded.build.data.amountOut),
+      treasury: WALLET,
+    })).toThrow(/Li\.Fi diamond/);
   });
 });

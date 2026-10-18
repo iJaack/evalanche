@@ -138,6 +138,50 @@ describe('chain policy', () => {
     expect(policy.chains.get(43114)?.sanitySource).toBeUndefined();
   });
 
+  it('accepts a CoinGecko priceFeed and refuses a bad one', () => {
+    const fed = resolveSignerPolicy({
+      chains: { 43114: { price: { priceFeed: 'coingecko' } } },
+    }, BOUNDS);
+    expect(fed.chains.get(43114)?.priceFeed).toMatchObject({
+      provider: 'coingecko',
+      url: 'https://api.coingecko.com/api/v3/simple/price',
+    });
+    expect(fed.chains.get(1)?.priceFeed).toBeUndefined();
+    const bounded = resolveSignerPolicy({
+      chains: { 43114: { price: { priceFeed: 'coingecko', bounds: { native: { min: 1, max: 100 } } } } },
+    }, BOUNDS);
+    expect(bounded.chains.get(43114)?.priceBounds?.[NATIVE_ADDRESS.toLowerCase()]).toEqual({ min: 1, max: 100 });
+    expect(() => resolveSignerPolicy({
+      chains: { 43114: { price: { bounds: { native: { min: 0, max: 1 } } } } },
+    }, BOUNDS)).toThrow(/min must be positive/);
+    expect(() => resolveSignerPolicy({
+      chains: { 43114: { price: { bounds: { native: { min: 5, max: 1 } } } } },
+    }, BOUNDS)).toThrow(/max must be at least min/);
+
+    const withChains = resolveSignerPolicy({
+      priceFeed: 'coingecko',
+      chains: { 43114: { price: { prices: { native: 1 } } } },
+    }, BOUNDS);
+    expect(withChains.chains.get(43114)?.priceFeed).toBeUndefined();
+
+    expect(() => resolveSignerPolicy({
+      chains: { 43114: { price: { priceFeed: { provider: 'coingecko', url: 'http://api.coingecko.com/api/v3/simple/price' } } } },
+    }, BOUNDS)).toThrow(/https/);
+    expect(() => resolveSignerPolicy({
+      chains: { 43114: { price: { priceFeed: { provider: 'binance' } } } },
+    }, BOUNDS)).toThrow(/coingecko/);
+    expect(() => resolveSignerPolicy({
+      chains: { 43114: { price: { priceFeed: 'coingecko', sanitySource: 'https://prices.example/avax' } } },
+    }, BOUNDS)).toThrow(/priceFeed and sanitySource/);
+    expect(() => resolveSignerPolicy({
+      priceFeed: 'coingecko',
+      priceSourceUrl: 'https://prices.example/avax',
+    }, BOUNDS)).toThrow(/not both/);
+    expect(() => resolveSignerPolicy({
+      chains: { 25: { enabled: true, price: { priceFeed: 'coingecko' } } },
+    }, BOUNDS)).toThrow(/needs a native coin id/);
+  });
+
   it('registers the nineteen mainnets and enables only Avalanche by default', () => {
     expect(SIGNER_MAINNET_IDS).toHaveLength(19);
     const defaults = SIGNER_MAINNET_IDS.filter((id) => signerEnabledByDefault(id));
@@ -291,6 +335,102 @@ describe('chain policy on the signer', () => {
       },
     });
     expect(fed.server.address).toMatch(/^0x/);
+
+    await expect(boot({
+      chains: {
+        43114: {
+          gas: { maxFeeUsd: 5 },
+          tokenCaps: { native: '0', [getAddress(USDC)]: '1' },
+          price: { priceFeed: 'coingecko' },
+        },
+      },
+    })).rejects.toThrow(/native sanity bound/);
+    const priced = await boot({
+      chains: {
+        43114: {
+          gas: { maxFeeUsd: 5 },
+          tokenCaps: { native: '0', [getAddress(USDC)]: '1' },
+          price: { priceFeed: 'coingecko', bounds: { native: { min: 1, max: 100 } } },
+        },
+      },
+    });
+    expect(priced.server.address).toMatch(/^0x/);
+  });
+
+  it('prices native gas from a CoinGecko fixture and fails closed', async () => {
+    const now = Math.floor(Date.now() / 1000);
+    let body: unknown = { 'avalanche-2': { usd: 20, last_updated_at: now } };
+    let calls = 0;
+    const original = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (!url.includes('api.coingecko.com')) return original(input, init);
+      calls += 1;
+      expect(url.startsWith('https://api.coingecko.com/api/v3/simple/price?')).toBe(true);
+      expect(url).toContain('ids=avalanche-2');
+      expect(url).toContain('vs_currencies=usd');
+      expect(url).toContain('include_last_updated_at=true');
+      return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
+    }) as typeof fetch;
+    try {
+      const recipient = '0x000000000000000000000000000000000000bEEF';
+      const h = await boot({
+        priceTtlMs: 0,
+        allow: {
+          43114: [{ address: recipient, selectors: ['0x'], roles: ['recipient' as const] }],
+        },
+        chains: {
+          43114: {
+            gas: { maxFeeUsd: 5 },
+            tokenCaps: { native: '0' },
+            price: {
+              priceFeed: 'coingecko',
+              prices: { native: 20 },
+              bounds: { native: { min: 5, max: 50 } },
+            },
+          },
+        },
+      });
+      const send = (nonce: string) => {
+        const intent = built(h.wallet.address, 43114, 0, nonce);
+        intent.tx!.to = getAddress(recipient);
+        intent.tx!.data = '0x';
+        intent.routeHash = computeApprovedTxHash(intent.tx!);
+        return intent;
+      };
+      const intent = send('1');
+      const approval = signVerifierApproval({ intent, verifierPrivateKey: h.verifier.privateKey, verifierPublicKey: h.verifier.publicKey });
+      expect((await h.server.handle(request(h.wallet.address, 43114, approval, intent))).signedTransaction).toMatch(/^0x/);
+      expect(calls).toBe(1);
+
+      body = { 'avalanche-2': { usd: 100, last_updated_at: now } };
+      const wild = send('2');
+      const wildApproval = signVerifierApproval({ intent: wild, verifierPrivateKey: h.verifier.privateKey, verifierPublicKey: h.verifier.publicKey });
+      await expect(h.server.handle(request(h.wallet.address, 43114, wildApproval, wild))).rejects.toThrow(/outside the sanity bound/);
+
+      body = { 'avalanche-2': { usd: 35, last_updated_at: now } };
+      const wide = send('3');
+      const wideApproval = signVerifierApproval({ intent: wide, verifierPrivateKey: h.verifier.privateKey, verifierPublicKey: h.verifier.publicKey });
+      await expect(h.server.handle(request(h.wallet.address, 43114, wideApproval, wide))).rejects.toThrow(/outside the sanity bound/);
+
+      body = { 'avalanche-2': { usd: 20, last_updated_at: now - 24 * 60 * 60 } };
+      const stale = send('4');
+      const staleApproval = signVerifierApproval({ intent: stale, verifierPrivateKey: h.verifier.privateKey, verifierPublicKey: h.verifier.publicKey });
+      await expect(h.server.handle(request(h.wallet.address, 43114, staleApproval, stale))).rejects.toThrow(/stale/);
+
+      body = { 'avalanche-2': { usd: '20', last_updated_at: now } };
+      const malformed = send('5');
+      const malformedApproval = signVerifierApproval({ intent: malformed, verifierPrivateKey: h.verifier.privateKey, verifierPublicKey: h.verifier.publicKey });
+      await expect(h.server.handle(request(h.wallet.address, 43114, malformedApproval, malformed))).rejects.toThrow(/malformed/);
+
+      body = {};
+      const missing = send('6');
+      const missingApproval = signVerifierApproval({ intent: missing, verifierPrivateKey: h.verifier.privateKey, verifierPublicKey: h.verifier.publicKey });
+      await expect(h.server.handle(request(h.wallet.address, 43114, missingApproval, missing))).rejects.toThrow(/missing a price/);
+      expect(calls).toBe(6);
+    } finally {
+      globalThis.fetch = original;
+    }
   });
 
   it('prices chain 1 gas in that chain native price and caps the same token address separately', async () => {

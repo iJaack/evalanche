@@ -28,7 +28,7 @@ That path is the Grok Bot default. Every state path below is still configurable.
 | `.../config.json` | root | `0644` | yes | Allow map and paths. Source of truth. No key and no bearer token. |
 | `.../token` | root | `0640` | yes | Bearer token. Group `evalanche-signer`. Not regenerated on start or provision. |
 | `.../verifier.pub` | root | `0644` | yes | Ed25519 verifier public key. `provision` never replaces it. The private key is not stored here. |
-| `.../evalanche-1.15.0.tgz` | root | `0644` | yes | Pinned tarball. `provision` with no arguments installs this file. |
+| `.../evalanche-<version>.tgz` | root | `0644` | yes | Pinned tarball. The version is read from `package/package.json` in the staged copy after the checksum. `provision` with no tarball path installs the one `evalanche-*.tgz` here. |
 | `.../state` | `evalanche-signer` | `0700` | yes | Nonce file, audit JSONL, budget, lock, pid file. |
 | `.../state/nonces.json` | `evalanche-signer` | `0600` | yes | Nonce high-water mark. Not reset when the file already exists. |
 | `.../state/audit.jsonl` | `evalanche-signer` | `0600` | yes | Audit chain. Not rewritten by `provision`. |
@@ -36,7 +36,7 @@ That path is the Grok Bot default. Every state path below is still configurable.
 | `.../state/start.lock` | root | `0600` | yes | flock held for the whole `start`. |
 | `.../bin/grok-bot-signer.sh` | root | `0755` | yes | Script copy used after `/opt` is wiped. |
 | `/etc/evalanche-signer` | root | `0755` | no | Replica of config, verifier pubkey, and token. The signer reads this config and this verifier pubkey. |
-| `/opt/evalanche-signer` | root | `0755` | no | Pinned `evalanche@1.15.0` install. Recreated by `provision`. |
+| `/opt/evalanche-signer` | root | `0755` | no | Pinned install of the packaged version. Recreated by `provision`. |
 | `/var/lib/evalanche-signer` | root | `0755` | no | Parent of the bind mounts and the socket directory. |
 | `/var/lib/evalanche-signer/state` | `evalanche-signer` | `0700` | no | Bind mount of `.../state`. The signer opens the nonce file and the audit log here. |
 | `/var/lib/evalanche-signer/log` | `evalanche-signer` | `0700` | no | Bind mount of `.../log`. |
@@ -93,7 +93,7 @@ Root ignores every `EVALANCHE_BOX_*` variable and uses these defaults:
 | Bearer token | `$DURABLE/token` | `EVALANCHE_BOX_TOKEN_FILE` |
 | Verifier private key | not on disk | `OPS_VERIFIER_ED25519` |
 | Verifier public key | `$DURABLE/verifier.pub` | `EVALANCHE_BOX_VERIFIER_PUB` |
-| Pinned tarball | `$DURABLE/evalanche-1.15.0.tgz` | `EVALANCHE_BOX_TARBALL` |
+| Pinned tarball | `$DURABLE/evalanche-<version>.tgz` | ignored as root. When not root, `EVALANCHE_BOX_TARBALL` is only a default source file |
 | `/etc` replica | `/etc/evalanche-signer` | `EVALANCHE_BOX_ETC` |
 | Install prefix | `/opt/evalanche-signer` | `EVALANCHE_BOX_PREFIX` |
 | Ephemeral root | `/var/lib/evalanche-signer` | `EVALANCHE_BOX_EPHEMERAL` |
@@ -117,10 +117,10 @@ Build the tarball on a machine that has this repository, then copy that one file
 
 ```sh
 npm pack
-sha256sum evalanche-1.15.0.tgz
+sha256sum evalanche-$(node -p "require('./package.json').version").tgz
 ```
 
-Record that digest with the release or the CI pack artifact. On the box, pass that recorded digest. Do not hash the file you are about to install: a copy under `/home` can be replaced before `provision` reads it. `provision` copies the tarball into `/var/lib/evalanche-signer/evalanche-1.15.0.tgz`, which is root-owned, hashes that copy, and installs those same bytes. The sha256 argument is required. A digest that does not match fails before `npm` and before the pinned copy is replaced.
+`npm pack` names the file from `package.json`. At 1.17.0-rc.1 that file is `evalanche-1.17.0-rc.1.tgz`. The live box is still 1.16.0 at `b788bd5` until someone provisions this tarball. Record that digest with the release or the CI pack artifact. On the box, pass that recorded digest. Do not hash the file you are about to install: a copy under `/home` can be replaced before `provision` reads it. `provision` copies the bytes to `/var/lib/evalanche-signer/evalanche-staged.tgz`, which is root-owned, hashes that copy, and only then reads `package/package.json` from it. The pin is `/home/box/agent-data/evalanche-persist/evalanche-<version>.tgz`. The installed tree, the script directory, and the working directory are not consulted, so the copy under `.../bin` still works after `/opt` is wiped. A version that is not a release version is refused. A source named `evalanche-<other>.tgz` that does not match the inner version is refused. Those failures happen before `npm` and before the pin is replaced. As root, `EVALANCHE_BOX_TARBALL` is ignored. When the tarball path is omitted, the single `evalanche-*.tgz` already under the durable directory is the source. `start` does not need `package.json`. The sha256 argument is required. A digest that does not match fails before `npm` and before the pinned copy is replaced.
 
 ```sh
 id box
@@ -129,7 +129,7 @@ sudo -u box sudo -n true
 
 # EVALANCHE_TARBALL_SHA256 is the digest published with the release, not a hash of the local file.
 sudo /workspace/scripts/grok-bot-signer.sh provision \
-  /workspace/evalanche-1.15.0.tgz \
+  /workspace/evalanche-1.17.0-rc.1.tgz \
   "$EVALANCHE_TARBALL_SHA256"
 ```
 
@@ -403,11 +403,11 @@ A live Li.Fi quote can still insert a "LIFI Fixed Fee" step (`callTo` `0xCE40…
 
 ## Kyber route builder
 
-`buildKyberLifiSwap` fetches the KyberSwap aggregator (`https://aggregator-api.kyberswap.com/avalanche/api/v1/routes`, then `POST .../route/build`) and wraps the returned `swap` calldata as one GenericSwapFacetV3 call. The outer selector is `0x4666fc80` (`swapTokensSingleV3ERC20ToERC20`). The transaction `to` is the Li.Fi diamond `0x1231DEB6f5749EF6cE6943a275A1D3E7486F4EaE`.
+`buildKyberLifiSwap` fetches the KyberSwap aggregator (`https://aggregator-api.kyberswap.com/<slug>/api/v1/routes`, then `POST .../route/build`) and wraps the returned `swap` calldata as one GenericSwapFacetV3 call. The outer selector is `0x4666fc80` (`swapTokensSingleV3ERC20ToERC20`). The transaction `to` is that chain's Li.Fi diamond. On Avalanche that is `0x1231DEB6f5749EF6cE6943a275A1D3E7486F4EaE`. The pinned router, diamond, and wrapped native for each enabled chain are in `docs/signer-multichain.md`. A disabled chain and an unknown router are refused.
 
 The build request sets both `sender` and `recipient` to that diamond. The diamond is the router caller, and it is the address whose token balance the V3 facet measures before it forwards the output. The `treasury` argument is the V3 `receiver`. It must be the signer wallet, with the `recipient` role. `quotedAmountOut` is Kyber's `amountOut`. `minAmountOut` is `quotedAmountOut * (10000 - classCap) / 10000`, using the bought-token class cap (50 bps for a stable, 200 for a top asset, 300 otherwise).
 
-The builder throws unless the route and the build name the requested `tokenIn`, `tokenOut`, and `amountIn`, the router is the Avalanche MetaAggregationRouterV2 for chain 43114, and the build `amountOut` is within 0.1% of the route `amountOut`.
+The builder throws unless the route and the build name the requested `tokenIn`, `tokenOut`, and `amountIn`, the router is the pinned MetaAggregationRouterV2 for that chain (`0x6131B5fae19EA4f9D964eAc0408E4408b66337b5`), and the build `amountOut` is within 0.1% of the route `amountOut`. An optional `recipient` must be the treasury. Chains 4663, 59144, and 80094 use a diamond other than the canonical one, so the signer config must set `lifiDiamond` to that address. A chain other than Avalanche must set `kyberExecutors` to include `0x8F10B468b06c6FD214B65F87778827F7D113f996`.
 
 `referencePrice` is optional and stays off unless the caller sets it. Pass a bought-token amount, or a function that returns one from a second Kyber route or from CoinGecko. The builder refuses when `quotedAmountOut` is more than 1% below that reference. The signer does not run this check.
 
