@@ -656,7 +656,8 @@ chmod 755 "$prefix/node_modules/.bin/evalanche-signer"
     const installed = join(box.prefix, 'bin', 'grok-bot-signer.sh');
     await copyFile(script, installed);
     await chmod(installed, 0o755);
-    give(box, box.prefix);
+    // The dropped user has to unlink PREFIX. That needs a writable parent.
+    give(box, box.root);
     const fromOpt = spawnSync(installed, ['provision', box.tarball, digest], {
       env: box.env,
       encoding: 'utf8',
