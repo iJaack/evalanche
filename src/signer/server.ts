@@ -60,6 +60,7 @@ import { NonceStore, writeDurable } from './nonce-store';
 import { resolveSignerPolicy, rpcUrlsFor, tokenCap, type ResolvedChain, type SignerChainConfig, type SignerPolicy } from './chain-policy';
 import { assertCoinGeckoPricePlausible, coinGeckoBindings, fetchCoinGeckoSimplePrice, nativeCoinGeckoId } from './price-feed';
 import { CLMM_CHAIN_ID, assertClmmConfig, clmmFundingTokens, isClmmNpmApprove, isClmmPositionManager } from './clmm';
+import { assertDexConfig, dexVenue, isDexRouter } from './dex-venue';
 import {
   assertClobAuth,
   assertPolymarketConfig,
@@ -789,6 +790,7 @@ export class EvalancheSignerServer {
     const data = request.data ?? '0x';
     const clmmOn = chain.clmm?.enabled === true && chain.chainId === CLMM_CHAIN_ID;
     if (clmmOn && (isClmmPositionManager(request.to) || isClmmNpmApprove(request.to, data))) return true;
+    if (chain.dex?.enabled === true && isDexRouter(chain.chainId, request.to)) return true;
     if (chain.polymarket?.enabled === true && chain.chainId === PM_CHAIN_ID) {
       if (isHardDeniedContract(request.to) || isPolymarketCollateralApprove(request.to, data)) return true;
     }
@@ -936,6 +938,8 @@ export class EvalancheSignerServer {
         lifiDiamond: chain?.lifiDiamond,
         polymarket: chain?.polymarket,
         clmm: chain?.clmm,
+        chainId,
+        dex: chain?.dex,
         nowSec: Math.floor(Date.now() / 1000),
         intent,
         underlyingOf: (vault) => this.allowEntry(chainId, vault)?.underlying,
@@ -977,7 +981,9 @@ export class EvalancheSignerServer {
   }
 
   private enforceV3Slippage(call: DecodedCall, intent: SigningIntent, chainId: number): void {
-    if (call.minOut === undefined || !isLifiV3Selector(call.selector)) return;
+    if (call.minOut === undefined) return;
+    const direct = call.kind === 'dex-swap';
+    if (!direct && !isLifiV3Selector(call.selector)) return;
     const chain = this.chainFor(chainId);
     const classBps = tokenClassBps(
       chain?.slippageCaps ?? this.options.slippageCaps,
@@ -988,7 +994,10 @@ export class EvalancheSignerServer {
       deny(`maxSlippageBps exceeds the ${classBps} bps token class slippage cap`, EvalancheErrorCode.SIGNER_REJECTED);
     }
     if (intent.quotedAmountOut === undefined) {
-      deny('quotedAmountOut is required for a Li.Fi V3 swap', EvalancheErrorCode.SIGNER_REJECTED);
+      deny(
+        direct ? 'quotedAmountOut is required for a direct DEX swap' : 'quotedAmountOut is required for a Li.Fi V3 swap',
+        EvalancheErrorCode.SIGNER_REJECTED,
+      );
     }
     const quoted = BigInt(intent.quotedAmountOut);
     if (quoted <= 0n) deny('quotedAmountOut must be greater than zero', EvalancheErrorCode.SIGNER_REJECTED);
@@ -1496,6 +1505,7 @@ function assertStartup(options: SignerServerOptions): void {
     }
     assertPolymarketConfig(chain.polymarket, `chains.${chain.chainId}.polymarket`);
     assertClmmConfig(chain.clmm, chain.chainId);
+    assertDexConfig(chain.dex, chain.chainId);
   }
   if (!policy.legacy) assertEnabledChainsReady(options, policy);
 }
@@ -1520,6 +1530,12 @@ function assertEnabledChainsReady(options: SignerServerOptions, policy: SignerPo
         if (tokenCap(chain, token) === undefined) {
           throw new EvalancheError(`${label} is missing a cap for ${token}`, EvalancheErrorCode.INVALID_CONFIG);
         }
+      }
+    }
+    if (chain.dex?.enabled === true) {
+      const wrapped = dexVenue(chain.chainId)?.wrappedNative;
+      if (wrapped && tokenCap(chain, wrapped) === undefined) {
+        throw new EvalancheError(`${label} is missing a cap for ${wrapped}`, EvalancheErrorCode.INVALID_CONFIG);
       }
     }
     if (chain.maxFeeUsd === undefined || !Number.isFinite(chain.maxFeeUsd) || chain.maxFeeUsd <= 0) {

@@ -26,12 +26,15 @@ const COIN_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 /**
  * CoinGecko id for the chain's native coin. ETH-priced chains share `ethereum`.
  * Polygon is POL (`polygon-ecosystem-token`), not the legacy MATIC id.
+ * Sonic is `sonic-3`. HyperEVM's native HYPE is `hyperliquid`.
  */
 export const NATIVE_COINGECKO_IDS: Readonly<Record<number, string>> = {
   1: 'ethereum',
   10: 'ethereum',
   56: 'binancecoin',
   137: 'polygon-ecosystem-token',
+  146: 'sonic-3',
+  999: 'hyperliquid',
   4663: 'ethereum',
   8453: 'ethereum',
   42161: 'ethereum',

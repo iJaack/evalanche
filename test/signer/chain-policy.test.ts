@@ -183,13 +183,25 @@ describe('chain policy', () => {
   });
 
   it('registers the nineteen mainnets and enables only Avalanche by default', () => {
-    expect(SIGNER_MAINNET_IDS).toHaveLength(19);
+    expect([...SIGNER_MAINNET_IDS]).toEqual([
+      1, 10, 25, 56, 100, 137, 146, 999, 1284, 4663, 5000, 8453, 42161, 42220, 43114,
+      59144, 80094, 81457, 534352,
+    ]);
     const defaults = SIGNER_MAINNET_IDS.filter((id) => signerEnabledByDefault(id));
     expect(defaults).toEqual([43114]);
     expect(CHAINS[43114]?.signerEnabledByDefault).toBe(true);
     for (const id of SIGNER_MAINNET_IDS) {
       if (id !== 43114) expect(CHAINS[id]?.signerEnabledByDefault).toBeUndefined();
     }
+    expect(signerEnabledByDefault(146)).toBe(false);
+    expect(signerEnabledByDefault(999)).toBe(false);
+  });
+
+  it('rejects Fantom and zkSync Era as unknown chains', () => {
+    expect(() => resolveSignerPolicy({ chains: { 250: { enabled: true } } }, BOUNDS)).toThrow(/not one of the signer mainnets/);
+    expect(() => resolveSignerPolicy({ chains: { 324: { enabled: true } } }, BOUNDS)).toThrow(/not one of the signer mainnets/);
+    expect(CHAINS[250]).toBeUndefined();
+    expect(CHAINS[324]).toBeUndefined();
   });
 });
 

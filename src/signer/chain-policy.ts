@@ -19,6 +19,7 @@ import {
   isSignerTestnet,
 } from './chain-registry';
 import type { ClmmModuleConfig } from './clmm';
+import type { DexVenueConfig } from './dex-venue';
 import type { PolymarketModuleConfig } from './polymarket-module';
 
 export interface SlippageInput {
@@ -83,6 +84,8 @@ export interface SignerChainConfig {
   price?: ChainPriceConfig;
   polymarket?: PolymarketModuleConfig;
   clmm?: ClmmModuleConfig;
+  /** Direct router venue. Off unless enabled. See docs/signer-multichain.md. */
+  dex?: DexVenueConfig;
 }
 
 export interface SignerConfigInput {
@@ -124,6 +127,7 @@ export interface ResolvedChain {
   priceFeed?: CoinGeckoPriceFeed;
   polymarket?: PolymarketModuleConfig;
   clmm?: ClmmModuleConfig;
+  dex?: DexVenueConfig;
 }
 
 export interface SignerPolicy {
@@ -360,6 +364,7 @@ function applyChainEntry(
       : base.priceFeed,
     polymarket: entry.polymarket,
     clmm: entry.clmm,
+    dex: entry.dex,
   };
   if (next.maxFeeUsd !== undefined && (!Number.isFinite(next.maxFeeUsd) || next.maxFeeUsd < 0)) {
     fail(`${label}.gas.maxFeeUsd must be a non-negative number`);

@@ -19,7 +19,7 @@ const SUPPORTED_CHAINS = new Map([
   ['avalanche', 'avalanche'],
   ['bsc', 'bsc'],
   ['gnosis', 'gnosis'],
-  ['fantom', 'fantom'],
+  ['sonic', 'sonic'],
   ['linea', 'linea'],
   ['scroll', 'scroll'],
   ['celo', 'celo'],

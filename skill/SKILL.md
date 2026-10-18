@@ -99,7 +99,7 @@ Headless wallet SDK with ERC-8004 identity, x402 payments, Li.Fi cross-chain liq
 
 ## Supported Chains
 
-Ethereum, Base, Arbitrum, Optimism, Polygon, BSC, Avalanche, Robinhood Chain, Fantom, Gnosis, zkSync Era, Linea, Scroll, Blast, Mantle, Celo, Moonbeam, Cronos, Berachain, + testnets (Fuji, Sepolia, Base Sepolia).
+Ethereum, Base, Arbitrum, Optimism, Polygon, BSC, Avalanche, Robinhood Chain, Sonic, Gnosis, HyperEVM, Linea, Scroll, Blast, Mantle, Celo, Moonbeam, Cronos, Berachain, + testnets (Fuji, Sepolia, Base Sepolia).
 
 Routescan RPCs preferred where available, with public fallback RPCs.
 
