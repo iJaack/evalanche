@@ -23,7 +23,7 @@ import type { AllowEntry, EvalancheSignerServer, SignerServerOptions } from '../
 
 const TREASURY_KEY = '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80';
 const OTHER_KEY = '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d';
-const CHAIN_ID = 43113;
+const CHAIN_ID = 43114;
 const SPEND = '0x000000000000000000000000000000000000bEEF';
 const TOKEN = '0x0000000000000000000000000000000000000001';
 
@@ -230,7 +230,7 @@ describe('remote signer', () => {
         address: harness.wallet.address,
         token: 'test-token',
       },
-      network: 'fuji',
+      network: 'avalanche',
     });
     expect(agent.signerMode).toBe('remote');
     expect(agent.getLocalPrivateKey()).toBeUndefined();

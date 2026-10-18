@@ -57,6 +57,15 @@ import {
   type DecodedCall,
 } from './decode';
 import { NonceStore, writeDurable } from './nonce-store';
+import { resolveSignerPolicy, rpcUrlsFor, tokenCap, type ResolvedChain, type SignerChainConfig, type SignerPolicy } from './chain-policy';
+import { CLMM_CHAIN_ID, assertClmmConfig, clmmFundingTokens, isClmmNpmApprove, isClmmPositionManager } from './clmm';
+import {
+  assertClobAuth,
+  assertPolymarketConfig,
+  assertPolymarketOrder,
+  isPolymarketCollateralApprove,
+} from './polymarket-module';
+import { PM_CHAIN_ID, PM_CLOB_AUTH_DOMAIN } from './polymarket-addresses';
 import type { SpendRecord } from '../economy/types';
 import { bearerEquals } from './remote-client';
 
@@ -193,6 +202,19 @@ export interface SignerServerOptions {
    * Defaults to the Avalanche executor proxy. An empty list allows none.
    */
   kyberExecutors?: string[];
+  /**
+   * Per-chain RPC lists. Simulation uses the list for the request's chain.
+   * Two or more URLs are supported; the first success wins and a revert does
+   * not fall through.
+   */
+  rpcUrls?: Record<string, string[]>;
+  /**
+   * Per-chain policy. When this object is present it replaces chainId /
+   * chainIds for enablement. 43114 stays on unless that entry sets
+   * `enabled: false` or `killSwitch: true`. Every other chain stays off
+   * unless `enabled: true`. Old files omit this and keep their chain list.
+   */
+  chains?: Record<string, SignerChainConfig>;
   messageAllowlist?: string[];
   typedDataAllow?: TypedDataAllow[];
   explicitAllows?: ExplicitAllow[];
@@ -218,6 +240,8 @@ interface AuditEntry {
   routeHash?: string;
   keyId?: string;
   approvalSignature?: string;
+  /** Present for a polymarket-order or clob-auth signature. */
+  orderHash?: string;
 }
 
 class SignerRejection extends Error {
@@ -249,6 +273,7 @@ export class EvalancheSignerServer {
   private readonly allow: Map<number, AllowEntry[]>;
   private readonly explicitAllows: Set<string>;
   private readonly gasCap: bigint;
+  private readonly chainPolicy: SignerPolicy;
   private readonly nonces: NonceStore;
   private prevHash = AUDIT_ROOT;
   private queue: Promise<void> = Promise.resolve();
@@ -257,8 +282,9 @@ export class EvalancheSignerServer {
   private haltReason = 'signer stopped';
   private shutdownStarted = false;
   private resourcesClosed = false;
-  private simulateFn: ((tx: PendingTransaction) => Promise<SimulationResult>) | null;
-  private priceCache: { fetchedAt: number; prices: Record<string, number> } | null = null;
+  private injectedSimulate: ((tx: PendingTransaction) => Promise<SimulationResult>) | null;
+  private readonly rpcSimulators = new Map<number, (tx: PendingTransaction) => Promise<SimulationResult>>();
+  private priceCache = new Map<string, { fetchedAt: number; prices: Record<string, number> }>();
 
   private constructor(wallet: Wallet | HDNodeWallet, options: SignerServerOptions, nonces: NonceStore) {
     this.wallet = wallet;
@@ -267,11 +293,16 @@ export class EvalancheSignerServer {
     this.nonces = nonces;
     this.stateStartedAt = nonces.startedAt;
     this.policy = options.policy ? new PolicyEngine(options.policy) : null;
-    this.allowedChains = options.chainIds ?? (options.chainId !== undefined ? [options.chainId] : []);
+    this.chainPolicy = resolveSignerPolicy(options, {
+      defaultMaxFeeWei: DEFAULT_MAX_GAS_COST_WEI,
+      hardMaxFeeWei: HARD_MAX_GAS_COST_WEI,
+    });
+    this.allowedChains = this.chainPolicy.enabled;
     this.allow = indexAllow(options.allow);
+    this.augmentClmmAllow();
     this.explicitAllows = new Set(options.explicitAllows ?? []);
     this.gasCap = resolveGasCap(options.maxGasCostWei);
-    this.simulateFn = options.simulate ?? null;
+    this.injectedSimulate = options.simulate ?? null;
   }
 
   static async create(options: SignerServerOptions): Promise<EvalancheSignerServer> {
@@ -463,10 +494,14 @@ export class EvalancheSignerServer {
       if (request.kind === 'transaction') await this.simulate(request);
       const walletKey = getAddress(request.from).toLowerCase();
       this.nonces.note(walletKey, request.approval!.nonce);
+      const order = this.noteModuleReplay(request);
+      if (request.kind === 'transaction' && request.nonce !== undefined && request.nonce !== null) {
+        this.nonces.noteTxNonce(walletKey, Number(request.chainId), String(request.nonce));
+      }
       await this.nonces.persist();
       if (this.options.dryRun) {
         this.assertRunning();
-        await this.audit({ ...base, decision: 'dry_run', reason: 'verified; signature withheld' });
+        await this.audit({ ...base, decision: 'dry_run', reason: 'verified; signature withheld', ...order });
         return { requestId: request.requestId, dryRun: true, decision: 'allow' };
       }
       this.assertRunning();
@@ -485,8 +520,9 @@ export class EvalancheSignerServer {
       await this.audit({
         ...base,
         decision: 'allow',
-        reason: 'signed',
+        reason: this.allowReason(request),
         txHash: signed.signedTransaction ? keccak256(signed.signedTransaction) : undefined,
+        ...order,
       });
       return signed;
     } catch (error) {
@@ -509,7 +545,13 @@ export class EvalancheSignerServer {
     if (!request.intent || typeof request.intent !== 'string' || request.intent.trim().length === 0) {
       deny('A human-readable intent is required', EvalancheErrorCode.INVALID_PARAMS);
     }
-    if (request.kind !== 'transaction' && request.kind !== 'message' && request.kind !== 'typed-data') {
+    if (
+      request.kind !== 'transaction'
+      && request.kind !== 'message'
+      && request.kind !== 'typed-data'
+      && request.kind !== 'polymarket-order'
+      && request.kind !== 'clob-auth'
+    ) {
       deny('Unknown signing kind', EvalancheErrorCode.INVALID_PARAMS);
     }
     let from: string;
@@ -521,9 +563,12 @@ export class EvalancheSignerServer {
     if (from !== this.address) {
       deny(`Signer is ${this.address} and will not sign for ${from}`, EvalancheErrorCode.SIGNER_REJECTED);
     }
-    if (this.allowedChains.length === 0) deny('Signer chain is not configured', EvalancheErrorCode.INVALID_CONFIG);
     if (!this.allowedChains.includes(Number(request.chainId))) {
-      deny(`chainId ${request.chainId} is not allowed`, EvalancheErrorCode.SIGNER_REJECTED);
+      const known = this.chainPolicy.chains.has(Number(request.chainId));
+      if (known || this.allowedChains.length > 0) {
+        deny(`chainId ${request.chainId} is not allowed`, EvalancheErrorCode.SIGNER_REJECTED);
+      }
+      deny('Signer chain is not configured', EvalancheErrorCode.INVALID_CONFIG);
     }
     const approval = request.approval;
     if (!approval) deny('Verifier approval is required', EvalancheErrorCode.APPROVAL_INVALID);
@@ -536,7 +581,9 @@ export class EvalancheSignerServer {
     this.assertApproval(request, approval, intent);
     if (request.kind === 'transaction') this.assertTransaction(request, intent);
     else if (request.kind === 'message') this.assertMessage(request, intent);
-    else this.assertTypedData(request, intent);
+    else if (request.kind === 'typed-data') this.assertTypedData(request, intent);
+    else if (request.kind === 'polymarket-order') this.assertPolymarketKind(request, intent);
+    else this.assertClobAuthKind(request);
     return intent;
   }
 
@@ -625,23 +672,40 @@ export class EvalancheSignerServer {
     if (route.toLowerCase() !== intent.routeHash.toLowerCase()) {
       deny('routeHash does not match the approved transaction', EvalancheErrorCode.APPROVAL_INVALID);
     }
-    assertGas(intent.tx, this.gasCap);
-    if (intent.tx.type !== 0 && intent.tx.type !== 2) {
+    const chain = this.chainFor(Number(request.chainId));
+    assertGas(intent.tx, chain?.maxFeeWei ?? this.gasCap);
+    if (intent.tx.type === 113) {
+      deny('zkSync transaction type 113 is denied', EvalancheErrorCode.SIGNER_REJECTED);
+    }
+    const gasMode = chain?.gasMode ?? 'both';
+    if (gasMode === 'legacy' && intent.tx.type !== 0) {
+      deny('transaction type is not allowed', EvalancheErrorCode.SIGNER_REJECTED);
+    } else if (gasMode === 'eip1559' && intent.tx.type !== 2) {
+      deny('transaction type is not allowed', EvalancheErrorCode.SIGNER_REJECTED);
+    } else if (intent.tx.type !== 0 && intent.tx.type !== 2) {
       deny('transaction type is not allowed', EvalancheErrorCode.SIGNER_REJECTED);
     }
-    if (request.to && isHardDeniedContract(request.to)) {
+    const handled = this.moduleHandles(request);
+    if (request.to && isHardDeniedContract(request.to) && !handled) {
       deny(`Contract ${getAddress(request.to)} is a built-in Polymarket denial`, EvalancheErrorCode.SIGNER_REJECTED);
     }
     if (request.to && isSavaxInstantUnstake(request.to, request.data ?? '0x')) {
       deny('Benqi sAVAX instant unstake (redeemInstant) is denied and cannot be enabled by config', EvalancheErrorCode.SIGNER_REJECTED);
     }
-    if (intent.venue.toLowerCase() === 'polymarket' || intent.action.toLowerCase().startsWith('polymarket')) {
+    const polymarketVenue = intent.venue.toLowerCase() === 'polymarket' || intent.action.toLowerCase().startsWith('polymarket');
+    if (polymarketVenue && !handled) {
       deny('Polymarket is denied and cannot be enabled by config', EvalancheErrorCode.SIGNER_REJECTED);
     }
+    if (handled) return;
     const selector = selectorOf(request.data);
     const entry = this.allowEntry(Number(request.chainId), request.to);
     if (!entry || !entry.selectors.map((item) => item.toLowerCase()).includes(selector)) {
       deny(`Function selector ${selector} is not allowlisted`, EvalancheErrorCode.SIGNER_REJECTED);
+    }
+    if (request.to && chain?.lifiSelectors && sameAddress(request.to, chain.lifiDiamond)) {
+      if (!chain.lifiSelectors.includes(selector)) {
+        deny(`Function selector ${selector} is not allowlisted`, EvalancheErrorCode.SIGNER_REJECTED);
+      }
     }
   }
 
@@ -667,7 +731,7 @@ export class EvalancheSignerServer {
     if (isHyperliquidTypedData(typed)) {
       deny('Hyperliquid typed data is denied by domain and type', EvalancheErrorCode.SIGNER_REJECTED);
     }
-    if (isPolymarketTypedData(typed)) {
+    if (isPolymarketTypedData(typed) || isClobAuthTypedData(typed)) {
       deny('Polymarket typed data is denied and cannot be enabled by config', EvalancheErrorCode.SIGNER_REJECTED);
     }
     const permit = permitKind(typed);
@@ -710,6 +774,133 @@ export class EvalancheSignerServer {
     return Boolean(this.allowEntry(chainId, address)?.roles?.includes(role));
   }
 
+  private chainFor(chainId: number): ResolvedChain | undefined {
+    return this.chainPolicy.chains.get(chainId);
+  }
+
+  /** Calls the module decoder owns. The generic selector allowlist does not apply. */
+  private moduleHandles(request: CanonicalSigningRequest): boolean {
+    if (!request.to) return false;
+    const chain = this.chainFor(Number(request.chainId));
+    if (!chain) return false;
+    const data = request.data ?? '0x';
+    const clmmOn = chain.clmm?.enabled === true && chain.chainId === CLMM_CHAIN_ID;
+    if (clmmOn && (isClmmPositionManager(request.to) || isClmmNpmApprove(request.to, data))) return true;
+    if (chain.polymarket?.enabled === true && chain.chainId === PM_CHAIN_ID) {
+      if (isHardDeniedContract(request.to) || isPolymarketCollateralApprove(request.to, data)) return true;
+    }
+    return false;
+  }
+
+  /**
+   * When the Avalanche CLMM module is on, WAVAX and USDC can be approved to
+   * the position manager. A swap still spends them through the existing
+   * allow map. This does not add the ERC-20 transfer selector, and it leaves
+   * a transfer selector the operator already configured in place. Disabled
+   * leaves the allow map unchanged.
+   */
+  private augmentClmmAllow(): void {
+    const chain = this.chainPolicy.chains.get(CLMM_CHAIN_ID);
+    if (chain?.clmm?.enabled !== true) return;
+    const { wavax, usdc } = clmmFundingTokens();
+    const approve = '0x095ea7b3';
+    const entries = this.allow.get(CLMM_CHAIN_ID) ?? [];
+    for (const token of [wavax, usdc]) {
+      const existing = entries.find((entry) => getAddress(entry.address) === token);
+      if (existing) {
+        if (!existing.selectors.includes(approve)) existing.selectors.push(approve);
+        const roles = new Set(existing.roles ?? []);
+        roles.add('token');
+        existing.roles = [...roles];
+        if (existing.decimals === undefined) existing.decimals = token === usdc ? 6 : 18;
+      } else {
+        entries.push({
+          address: token,
+          selectors: [approve],
+          decimals: token === usdc ? 6 : 18,
+          roles: ['token'],
+        });
+      }
+    }
+    this.allow.set(CLMM_CHAIN_ID, entries);
+  }
+
+  private assertPolymarketKind(request: CanonicalSigningRequest, intent: SigningIntent): void {
+    const chain = this.chainFor(Number(request.chainId));
+    if (chain?.polymarket?.enabled !== true || Number(request.chainId) !== PM_CHAIN_ID) {
+      deny('Polymarket is denied and cannot be enabled by config', EvalancheErrorCode.SIGNER_REJECTED);
+    }
+    const typed = request.typedData;
+    if (!typed) deny('typedData is required', EvalancheErrorCode.INVALID_PARAMS);
+    const route = computeTypedDataRouteHash(typed);
+    if (route.toLowerCase() !== intent.routeHash.toLowerCase()) {
+      deny('routeHash does not match the typed data', EvalancheErrorCode.APPROVAL_INVALID);
+    }
+    try {
+      assertPolymarketOrder({
+        config: chain.polymarket,
+        typed,
+        intent,
+        wallet: this.address,
+        now: Date.now(),
+        orderHash: route,
+        state: {
+          hasHash: (hash) => this.nonces.hasOrderHash(hash),
+          hasSalt: (salt) => this.nonces.hasOrderSalt(salt),
+          countSince: (at) => this.nonces.ordersSince(at),
+        },
+      });
+    } catch (error) {
+      deny(error instanceof Error ? error.message : 'Polymarket order was rejected', EvalancheErrorCode.SIGNER_REJECTED);
+    }
+  }
+
+  private assertClobAuthKind(request: CanonicalSigningRequest): void {
+    const chain = this.chainFor(Number(request.chainId));
+    const typed = request.typedData;
+    if (!typed) deny('typedData is required', EvalancheErrorCode.INVALID_PARAMS);
+    const intent = request.structuredIntent;
+    if (intent) {
+      const route = computeTypedDataRouteHash(typed);
+      if (route.toLowerCase() !== intent.routeHash.toLowerCase()) {
+        deny('routeHash does not match the typed data', EvalancheErrorCode.APPROVAL_INVALID);
+      }
+    }
+    try {
+      assertClobAuth({
+        config: chain?.polymarket,
+        typed,
+        wallet: this.address,
+        now: Date.now(),
+        orderHash: computeTypedDataRouteHash(typed),
+        state: {
+          hasHash: (hash) => this.nonces.hasOrderHash(hash),
+          hasSalt: (salt) => this.nonces.hasOrderSalt(salt),
+          countSince: (at) => this.nonces.ordersSince(at),
+        },
+      });
+    } catch (error) {
+      deny(error instanceof Error ? error.message : 'clob-auth was rejected', EvalancheErrorCode.SIGNER_REJECTED);
+    }
+  }
+
+  private noteModuleReplay(request: CanonicalSigningRequest): { orderHash?: string } {
+    if ((request.kind !== 'polymarket-order' && request.kind !== 'clob-auth') || !request.typedData) return {};
+    const orderHash = computeTypedDataRouteHash(request.typedData);
+    const salt = request.kind === 'polymarket-order'
+      ? decimalSalt(request.typedData.value?.salt)
+      : String(request.typedData.value?.timestamp ?? '');
+    this.nonces.noteOrder(orderHash, salt, Date.now(), request.kind === 'clob-auth' ? 'auth' : 'order');
+    return { orderHash };
+  }
+
+  private allowReason(request: CanonicalSigningRequest): string {
+    if (request.kind === 'polymarket-order') {
+      return 'signed; expiration, nonce, feeRateBps, and taker are not signed and not enforced';
+    }
+    return 'signed';
+  }
+
   private addressAllowed(chainId: number, address: string): boolean {
     let checksum: string;
     try {
@@ -722,6 +913,7 @@ export class EvalancheSignerServer {
 
   private decode(request: CanonicalSigningRequest, intent: SigningIntent): DecodedCall[] {
     const chainId = Number(request.chainId);
+    const chain = this.chainFor(chainId);
     let decoded: DecodedCall[];
     try {
       decoded = decodeCalldata(request.to ?? '', request.data ?? '0x', {
@@ -737,14 +929,20 @@ export class EvalancheSignerServer {
           const entry = this.allowEntry(chainId, to);
           return Boolean(entry?.selectors.includes(selector.toLowerCase()));
         },
-        kyberExecutors: this.options.kyberExecutors,
+        kyberExecutors: chain?.kyberExecutors ?? this.options.kyberExecutors,
+        lifiDiamond: chain?.lifiDiamond,
+        polymarket: chain?.polymarket,
+        clmm: chain?.clmm,
+        nowSec: Math.floor(Date.now() / 1000),
+        intent,
         underlyingOf: (vault) => this.allowEntry(chainId, vault)?.underlying,
       });
     } catch (error) {
       deny(error instanceof Error ? error.message : 'Calldata could not be decoded', EvalancheErrorCode.SIGNER_REJECTED);
     }
-    const spends = decoded.filter((call) => call.kind !== 'erc20-approve' && call.kind !== 'erc20-increase-allowance' && call.kind !== 'erc2612-permit' && call.kind !== 'permit2');
-    const approvals = decoded.filter((call) => call.kind === 'erc20-approve' || call.kind === 'erc20-increase-allowance' || call.kind === 'erc2612-permit' || call.kind === 'permit2');
+    const moduleCall = (call: DecodedCall) => call.kind === 'polymarket-call' || call.kind === 'clmm-call';
+    const spends = decoded.filter((call) => !moduleCall(call) && call.kind !== 'erc20-approve' && call.kind !== 'erc20-increase-allowance' && call.kind !== 'erc2612-permit' && call.kind !== 'permit2');
+    const approvals = decoded.filter((call) => !moduleCall(call) && (call.kind === 'erc20-approve' || call.kind === 'erc20-increase-allowance' || call.kind === 'erc2612-permit' || call.kind === 'permit2'));
     if (spends.length > 0) this.assertAmount(sumAmounts(spends), intent.amountIn, 'decoded amount');
     for (const call of approvals) this.assertAmount(call.amount, intent.amountIn, 'decoded approval amount');
     for (const call of decoded) {
@@ -759,7 +957,7 @@ export class EvalancheSignerServer {
         if (call.minOut < BigInt(intent.minAmountOut)) {
           deny('decoded minOut is below intent minAmountOut', EvalancheErrorCode.SIGNER_REJECTED);
         }
-        this.enforceV3Slippage(call, intent);
+        this.enforceV3Slippage(call, intent, chainId);
       }
     }
     if (actionRequiresMinAmountOut(intent.action) && !decoded.some((call) => call.minOut !== undefined)) {
@@ -775,9 +973,14 @@ export class EvalancheSignerServer {
     return decoded;
   }
 
-  private enforceV3Slippage(call: DecodedCall, intent: SigningIntent): void {
+  private enforceV3Slippage(call: DecodedCall, intent: SigningIntent, chainId: number): void {
     if (call.minOut === undefined || !isLifiV3Selector(call.selector)) return;
-    const classBps = tokenClassBps(this.options.slippageCaps, intent.tokenOut?.address);
+    const chain = this.chainFor(chainId);
+    const classBps = tokenClassBps(
+      chain?.slippageCaps ?? this.options.slippageCaps,
+      intent.tokenOut?.address,
+      chain?.avalancheSlippageDefaults ?? true,
+    );
     if (intent.maxSlippageBps !== undefined && intent.maxSlippageBps > classBps) {
       deny(`maxSlippageBps exceeds the ${classBps} bps token class slippage cap`, EvalancheErrorCode.SIGNER_REJECTED);
     }
@@ -794,8 +997,7 @@ export class EvalancheSignerServer {
       } catch {
         capped = outAddress;
       }
-      const caps = this.options.tokenCaps ?? {};
-      const cap = caps[capped] ?? caps[capped.toLowerCase()] ?? caps[outAddress] ?? caps[outAddress.toLowerCase()];
+      const cap = chain ? tokenCap(chain, capped) : undefined;
       if (cap !== undefined && quoted > BigInt(cap)) {
         deny('quotedAmountOut exceeds the configured token cap', EvalancheErrorCode.SIGNER_REJECTED);
       }
@@ -830,23 +1032,27 @@ export class EvalancheSignerServer {
         deny(`Spending policy rejected the transaction: ${result.reason}`, EvalancheErrorCode.POLICY_VIOLATION);
       }
     }
-    const caps = this.options.tokenCaps ?? {};
+    const chainId = Number(request.chainId);
+    const chain = this.chainFor(chainId);
     const nativeValue = BigInt(request.value && request.value.length > 0 ? request.value : '0');
-    const nativeCap = caps.native ?? caps[NATIVE_ADDRESS] ?? caps[NATIVE_ADDRESS.toLowerCase()];
+    const nativeCap = chain ? tokenCap(chain, 'native') ?? tokenCap(chain, NATIVE_ADDRESS) : undefined;
     if (nativeCap !== undefined && nativeValue > BigInt(nativeCap)) {
       deny('Transaction value exceeds the native token cap (oversize)', EvalancheErrorCode.SIGNER_REJECTED);
     }
-    const spends = this.pricedSpends(request, decoded);
+    const spends = this.pricedSpends(request, decoded, chain);
     const byAsset = new Map<string, bigint>();
     for (const spend of spends) {
       byAsset.set(spend.address, (byAsset.get(spend.address) ?? 0n) + spend.amount);
     }
     for (const [address, amount] of byAsset) {
       if (address === NATIVE_ADDRESS) continue;
-      const cap = caps[address] ?? caps[address.toLowerCase()];
+      const cap = chain ? tokenCap(chain, address) : undefined;
       if (cap !== undefined && amount > BigInt(cap)) {
         deny('Decoded token amount exceeds the configured per-transaction cap (oversize)', EvalancheErrorCode.SIGNER_REJECTED);
       }
+    }
+    if (request.kind === 'transaction' && chain?.maxFeeUsd !== undefined) {
+      await this.enforceGasUsd(request, chain);
     }
     if (this.options.maxPerTxUsd !== undefined && request.kind === 'transaction') {
       let micros = 0n;
@@ -854,14 +1060,14 @@ export class EvalancheSignerServer {
       for (const [address, amount] of byAsset) {
         const native = address === NATIVE_ADDRESS;
         if (native) nativeCounted = true;
-        const price = await this.priceOf(address);
+        const price = await this.priceOf(chainId, address);
         if (price === null) deny(`No price for ${address}; refusing to sign without a cap`, EvalancheErrorCode.SIGNER_REJECTED);
         const decimals = native ? 18 : this.allowEntry(Number(request.chainId), address)?.decimals;
         if (decimals === undefined) deny(`No configured decimals for ${address}; refusing to price the decoded amount`, EvalancheErrorCode.SIGNER_REJECTED);
         micros += usdMicros(amount, decimals, price);
       }
       if (!nativeCounted && nativeValue > 0n) {
-        const price = await this.priceOf(NATIVE_ADDRESS);
+        const price = await this.priceOf(chainId, NATIVE_ADDRESS);
         if (price === null) deny('No price for native value; refusing to sign without a cap', EvalancheErrorCode.SIGNER_REJECTED);
         micros += usdMicros(nativeValue, 18, price);
       }
@@ -870,8 +1076,26 @@ export class EvalancheSignerServer {
     }
   }
 
-  private pricedSpends(request: CanonicalSigningRequest, decoded: DecodedCall[]): Array<{ address: string; amount: bigint }> {
-    const capsOn = Object.keys(this.options.tokenCaps ?? {}).length > 0 || this.options.maxPerTxUsd !== undefined;
+  private async enforceGasUsd(request: CanonicalSigningRequest, chain: ResolvedChain): Promise<void> {
+    if (chain.maxFeeUsd === undefined) return;
+    const limit = BigInt(request.gasLimit && request.gasLimit.length > 0 ? request.gasLimit : '0');
+    const gasPrice = BigInt(request.gasPrice && request.gasPrice.length > 0 ? request.gasPrice : '0');
+    const maxFee = BigInt(request.maxFeePerGas && request.maxFeePerGas.length > 0 ? request.maxFeePerGas : '0');
+    const priceWei = gasPrice > maxFee ? gasPrice : maxFee;
+    const cost = limit * priceWei;
+    const price = await this.priceOf(chain.chainId, NATIVE_ADDRESS);
+    if (price === null) deny('No price for native gas; refusing to sign without a cap', EvalancheErrorCode.SIGNER_REJECTED);
+    const micros = usdMicros(cost, 18, price);
+    const capMicros = BigInt(Math.round(chain.maxFeeUsd * 1_000_000));
+    if (micros > capMicros) deny('gas cost exceeds the USD cap', EvalancheErrorCode.SIGNER_REJECTED);
+  }
+
+  private pricedSpends(
+    request: CanonicalSigningRequest,
+    decoded: DecodedCall[],
+    chain: ResolvedChain | undefined,
+  ): Array<{ address: string; amount: bigint }> {
+    const capsOn = Object.keys(chain?.tokenCaps ?? {}).length > 0 || this.options.maxPerTxUsd !== undefined;
     const spends: Array<{ address: string; amount: bigint }> = [];
     for (const call of decoded) {
       if (call.amount === undefined) continue;
@@ -893,23 +1117,30 @@ export class EvalancheSignerServer {
     await writeDurable(budgetPath(this.options.nonceStorePath), `${body}\n`);
   }
 
-  private async priceOf(address: string): Promise<number | null> {
-    const prices = await this.prices();
+  private async priceOf(chainId: number, address: string): Promise<number | null> {
+    const chain = this.chainFor(chainId);
+    if (chain?.priceIds && !priceIdListed(chain.priceIds, address)) return null;
+    const prices = await this.pricesFor(chain);
     const value = prices[getAddress(address).toLowerCase()];
     return typeof value === 'number' && Number.isFinite(value) ? value : null;
   }
 
-  private async prices(): Promise<Record<string, number>> {
-    const local = addressPrices(this.options.prices);
-    if (!this.options.priceSourceUrl) return local;
+  private async pricesFor(chain: ResolvedChain | undefined): Promise<Record<string, number>> {
+    const local = this.chainPolicy.legacy
+      ? addressPrices(this.options.prices)
+      : { ...(chain?.localPrices ?? {}) };
+    const source = this.chainPolicy.legacy
+      ? (chain?.sanitySource ?? this.options.priceSourceUrl)
+      : chain?.sanitySource;
+    if (!source) return local;
     const ttl = this.options.priceTtlMs ?? DEFAULT_PRICE_TTL_MS;
     const now = Date.now();
-    if (this.priceCache && now - this.priceCache.fetchedAt < ttl) {
-      return { ...local, ...this.priceCache.prices };
-    }
+    const cacheKey = this.chainPolicy.legacy ? source : `${chain?.chainId ?? 'none'}|${source}`;
+    const cached = this.priceCache.get(cacheKey);
+    if (cached && now - cached.fetchedAt < ttl) return { ...local, ...cached.prices };
     let response: Response;
     try {
-      response = await fetch(this.options.priceSourceUrl, { signal: AbortSignal.timeout(5_000) });
+      response = await fetch(source, { signal: AbortSignal.timeout(5_000) });
     } catch (error) {
       deny(`Price source request failed: ${error instanceof Error ? error.message : String(error)}`, EvalancheErrorCode.NETWORK_ERROR);
     }
@@ -925,13 +1156,13 @@ export class EvalancheSignerServer {
         // Symbol keys are ignored. Prices are by address only.
       }
     }
-    this.priceCache = { fetchedAt: now, prices: remote };
+    this.priceCache.set(cacheKey, { fetchedAt: now, prices: remote });
     return { ...local, ...remote };
   }
 
   private async simulate(request: CanonicalSigningRequest): Promise<void> {
     if (!request.to) deny('Transaction is missing to; refusing to sign', EvalancheErrorCode.SIMULATION_FAILED);
-    const simulate = await this.simulator();
+    const simulate = await this.simulator(Number(request.chainId));
     const result = await simulate({
       from: this.address,
       to: request.to,
@@ -945,12 +1176,28 @@ export class EvalancheSignerServer {
     }
   }
 
-  private async simulator(): Promise<(tx: PendingTransaction) => Promise<SimulationResult>> {
-    if (this.simulateFn) return this.simulateFn;
-    if (!this.options.rpcUrl) deny('Simulation requires rpcUrl or an injected simulator', EvalancheErrorCode.SIMULATION_FAILED);
-    const provider = new JsonRpcProvider(this.options.rpcUrl);
-    this.simulateFn = (tx) => simulateTransaction(provider, tx);
-    return this.simulateFn;
+  private async simulator(chainId: number): Promise<(tx: PendingTransaction) => Promise<SimulationResult>> {
+    if (this.injectedSimulate) return this.injectedSimulate;
+    const cached = this.rpcSimulators.get(chainId);
+    if (cached) return cached;
+    const chain = this.chainFor(chainId);
+    const urls = chain && chain.rpcUrls.length > 0
+      ? rpcUrlsFor(chain)
+      : (this.options.rpcUrl ? [this.options.rpcUrl] : []);
+    if (urls.length === 0) deny('Simulation requires rpcUrl or an injected simulator', EvalancheErrorCode.SIMULATION_FAILED);
+    const fn = async (tx: PendingTransaction): Promise<SimulationResult> => {
+      let last: SimulationResult = { success: false, revertReason: 'no rpc' };
+      for (let index = 0; index < urls.length; index += 1) {
+        const provider = new JsonRpcProvider(urls[index]);
+        const result = await simulateTransaction(provider, tx);
+        last = result;
+        if (result.success) return result;
+        if (!isTransportFailure(result.revertReason) || index === urls.length - 1) return result;
+      }
+      return last;
+    };
+    this.rpcSimulators.set(chainId, fn);
+    return fn;
   }
 
   private async produce(request: CanonicalSigningRequest): Promise<SigningResult> {
@@ -980,6 +1227,9 @@ export class EvalancheSignerServer {
       this.assertRunning();
       const signature = await this.wallet.signMessage(toUtf8Bytes((request.message ?? '').normalize('NFC')));
       return { requestId: request.requestId, signature };
+    }
+    if (request.kind !== 'typed-data' && request.kind !== 'polymarket-order' && request.kind !== 'clob-auth') {
+      deny('Unknown signing kind', EvalancheErrorCode.INVALID_PARAMS);
     }
     const typed = request.typedData;
     if (!typed) deny('typedData is required', EvalancheErrorCode.INVALID_PARAMS);
@@ -1185,6 +1435,50 @@ function assertStartup(options: SignerServerOptions): void {
   }
   assertSlippageCaps(options.slippageCaps);
   assertKyberExecutors(options.kyberExecutors);
+  const policy = resolveSignerPolicy(options, {
+    defaultMaxFeeWei: DEFAULT_MAX_GAS_COST_WEI,
+    hardMaxFeeWei: HARD_MAX_GAS_COST_WEI,
+  });
+  for (const chain of policy.chains.values()) {
+    if (chain.polymarket?.enabled && chain.chainId !== PM_CHAIN_ID) {
+      throw new EvalancheError('Polymarket module is only supported on chain 137', EvalancheErrorCode.INVALID_CONFIG);
+    }
+    assertPolymarketConfig(chain.polymarket, `chains.${chain.chainId}.polymarket`);
+    assertClmmConfig(chain.clmm, chain.chainId);
+  }
+  if (!policy.legacy) assertEnabledChainsReady(options, policy);
+}
+
+function assertEnabledChainsReady(options: SignerServerOptions, policy: SignerPolicy): void {
+  const allow = indexAllow(options.allow);
+  for (const chain of policy.chains.values()) {
+    if (!chain.enabled) continue;
+    const label = `chains.${chain.chainId}`;
+    if (chain.tokenCaps.native === undefined) {
+      throw new EvalancheError(`${label} is missing a native cap`, EvalancheErrorCode.INVALID_CONFIG);
+    }
+    for (const entry of allow.get(chain.chainId) ?? []) {
+      if (!entry.roles?.includes('token')) continue;
+      if (tokenCap(chain, entry.address) === undefined) {
+        throw new EvalancheError(`${label} is missing a cap for ${entry.address}`, EvalancheErrorCode.INVALID_CONFIG);
+      }
+    }
+    if (chain.clmm?.enabled === true && chain.chainId === CLMM_CHAIN_ID) {
+      const { wavax, usdc } = clmmFundingTokens();
+      for (const token of [wavax, usdc]) {
+        if (tokenCap(chain, token) === undefined) {
+          throw new EvalancheError(`${label} is missing a cap for ${token}`, EvalancheErrorCode.INVALID_CONFIG);
+        }
+      }
+    }
+    if (chain.maxFeeUsd === undefined || !Number.isFinite(chain.maxFeeUsd) || chain.maxFeeUsd <= 0) {
+      throw new EvalancheError(`${label}.gas.maxFeeUsd must be a positive number`, EvalancheErrorCode.INVALID_CONFIG);
+    }
+    const native = chain.localPrices?.[NATIVE_ADDRESS.toLowerCase()];
+    if (!chain.sanitySource && (typeof native !== 'number' || !Number.isFinite(native))) {
+      throw new EvalancheError(`${label} is missing a native price or price.sanitySource`, EvalancheErrorCode.INVALID_CONFIG);
+    }
+  }
 }
 
 function assertKyberExecutors(list: string[] | undefined): void {
@@ -1245,7 +1539,11 @@ function addressInList(list: string[] | undefined, address: string): boolean {
 }
 
 /** Bought-token class cap. Stables win over top. Unlisted tokens use the other cap. */
-export function tokenClassBps(caps: SlippageCaps | undefined, tokenOut: string | undefined): number {
+export function tokenClassBps(
+  caps: SlippageCaps | undefined,
+  tokenOut: string | undefined,
+  avalancheDefaults = true,
+): number {
   const stable = caps?.stableBps ?? DEFAULT_STABLE_SLIPPAGE_BPS;
   const top = caps?.topBps ?? DEFAULT_TOP_SLIPPAGE_BPS;
   const other = caps?.otherBps ?? DEFAULT_OTHER_SLIPPAGE_BPS;
@@ -1256,8 +1554,8 @@ export function tokenClassBps(caps: SlippageCaps | undefined, tokenOut: string |
   } catch {
     return other;
   }
-  if (addressInList(DEFAULT_AVALANCHE_STABLES, address) || addressInList(caps?.stables, address)) return stable;
-  if (addressInList(DEFAULT_AVALANCHE_TOP, address) || addressInList(caps?.top, address)) return top;
+  if ((avalancheDefaults && addressInList(DEFAULT_AVALANCHE_STABLES, address)) || addressInList(caps?.stables, address)) return stable;
+  if ((avalancheDefaults && addressInList(DEFAULT_AVALANCHE_TOP, address)) || addressInList(caps?.top, address)) return top;
   return other;
 }
 
@@ -1384,6 +1682,43 @@ function isPolymarketTypedData(typed: TypedDataPayload): boolean {
   if (/polymarket|ctf exchange/i.test(String(typed.domain?.name ?? ''))) return true;
   const contract = typed.domain?.verifyingContract;
   return typeof contract === 'string' && isHardDeniedContract(contract);
+}
+
+function isClobAuthTypedData(typed: TypedDataPayload): boolean {
+  return String(typed.domain?.name ?? '').toLowerCase() === PM_CLOB_AUTH_DOMAIN.toLowerCase();
+}
+
+function sameAddress(left: string, right: string): boolean {
+  try {
+    return getAddress(left) === getAddress(right);
+  } catch {
+    return false;
+  }
+}
+
+function decimalSalt(value: unknown): string {
+  if (typeof value === 'bigint') return value.toString();
+  if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) return String(value);
+  if (typeof value === 'string' && /^(0|[1-9][0-9]*)$/.test(value)) return BigInt(value).toString();
+  return String(value ?? '');
+}
+
+function priceIdListed(ids: Record<string, string>, address: string): boolean {
+  if (address === NATIVE_ADDRESS || address === 'native') return Object.prototype.hasOwnProperty.call(ids, 'native') || Object.prototype.hasOwnProperty.call(ids, NATIVE_ADDRESS);
+  try {
+    const checksum = getAddress(address);
+    return Object.prototype.hasOwnProperty.call(ids, checksum)
+      || Object.prototype.hasOwnProperty.call(ids, checksum.toLowerCase())
+      || Object.prototype.hasOwnProperty.call(ids, address);
+  } catch {
+    return false;
+  }
+}
+
+function isTransportFailure(reason: string | undefined): boolean {
+  if (!reason) return true;
+  if (/revert|execution|insufficient|allowance|transfer amount|custom error|panic/i.test(reason)) return false;
+  return /timeout|timed out|network|ECONN|ENOTFOUND|EAI_AGAIN|fetch failed|socket|SERVER_ERROR|bad gateway|503|502|429|unavailable|failed to detect network|could not coalesce|missing response/i.test(reason);
 }
 
 function typedParty(typed: TypedDataPayload, field: 'owner' | 'spender'): string | null {

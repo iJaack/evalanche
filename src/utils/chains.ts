@@ -31,6 +31,11 @@ export interface ChainConfig {
   gasZipSupported?: boolean;
   /** Whether this is a testnet */
   isTestnet?: boolean;
+  /**
+   * Signer default. Only Avalanche C-Chain is on. Every other chain, including
+   * testnets, stays off until config enables a mainnet explicitly.
+   */
+  signerEnabledByDefault?: boolean;
 }
 
 function envRpcList(key: string): string[] {
@@ -233,6 +238,7 @@ export const CHAINS: Record<number, ChainConfig> = {
     explorer: 'https://snowtrace.io',
     routescanExplorer: 'https://snowtrace.io',
     lifiChainKey: 'AVA',
+    signerEnabledByDefault: true,
   },
 
   59144: {

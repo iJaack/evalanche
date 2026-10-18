@@ -67,6 +67,35 @@ export interface SigningIntent {
   signalRefs?: string[];
   routeHash: string;
   tx?: ApprovedTransaction;
+  /**
+   * Polymarket order fields. Present only for kind `polymarket-order`.
+   * `orderType` is FOK. expiration, nonce, feeRateBps, and taker are not
+   * signed by the exchange, so this object cannot make them enforceable.
+   */
+  polymarket?: {
+    conditionId: string;
+    tokenId: string;
+    outcome: string;
+    side: 'BUY' | 'SELL';
+    limitPrice: string;
+    size: string;
+    notionalUsd: string;
+    orderType: string;
+    negRisk: boolean;
+    verifyingContract: string;
+    mid: string;
+    balance?: string;
+    navUsd: string;
+    marketOpenUsd: string;
+    totalOpenUsd: string;
+    perOrderPctNav?: number;
+    perMarketPctNav?: number;
+    totalOpenPctNav?: number;
+  };
+  /** Treasury-owned Uniswap v3 position token ids, checked by the verifier. */
+  clmm?: {
+    ownedTokenIds: string[];
+  };
 }
 
 export type ApprovalDecision = 'approve' | 'deny';
@@ -97,7 +126,7 @@ export interface SigningContext {
   structuredIntent?: SigningIntent;
 }
 
-export type SigningKind = 'transaction' | 'message' | 'typed-data';
+export type SigningKind = 'transaction' | 'message' | 'typed-data' | 'polymarket-order' | 'clob-auth';
 
 export interface TypedDataPayload {
   domain: Record<string, unknown>;
@@ -181,7 +210,7 @@ export { canonicalJson } from './jcs';
 const INTENT_FIELDS = [
   'version', 'intentId', 'nonce', 'createdAt', 'expiresAt', 'wallet', 'chainId', 'venue', 'action',
   'tokenIn', 'tokenOut', 'amountIn', 'minAmountOut', 'quotedAmountOut', 'maxSlippageBps', 'tier', 'sleeve',
-  'sizePctOfTreasury', 'postFrictionEvUsd', 'signalRefs', 'routeHash', 'tx',
+  'sizePctOfTreasury', 'postFrictionEvUsd', 'signalRefs', 'routeHash', 'tx', 'polymarket', 'clmm',
 ] as const;
 
 const TOKEN_FIELDS = ['address', 'symbol', 'decimals'] as const;
@@ -316,7 +345,59 @@ export function assertIntentShape(value: unknown): SigningIntent {
     intent.tx = normalizeApprovedTx(record.tx as ApprovedTransaction);
     if (intent.tx.chainId !== intent.chainId) reject('tx.chainId does not match intent.chainId');
   }
+  if (record.polymarket !== undefined) intent.polymarket = polymarketOrder(record.polymarket);
+  if (record.clmm !== undefined) intent.clmm = clmmOwned(record.clmm);
   return intent;
+}
+
+const POLYMARKET_INTENT_FIELDS = [
+  'conditionId', 'tokenId', 'outcome', 'side', 'limitPrice', 'size', 'notionalUsd', 'orderType',
+  'negRisk', 'verifyingContract', 'mid', 'balance', 'navUsd', 'marketOpenUsd', 'totalOpenUsd',
+  'perOrderPctNav', 'perMarketPctNav', 'totalOpenPctNav',
+] as const;
+
+function polymarketOrder(value: unknown): NonNullable<SigningIntent['polymarket']> {
+  const record = assertExactKeys(value, POLYMARKET_INTENT_FIELDS, 'polymarket');
+  if (typeof record.negRisk !== 'boolean') reject('polymarket.negRisk must be boolean');
+  if (record.side !== 'BUY' && record.side !== 'SELL') reject('polymarket.side must be BUY or SELL');
+  let verifyingContract: string;
+  try {
+    verifyingContract = getAddress(String(record.verifyingContract));
+  } catch {
+    reject('polymarket.verifyingContract is not an address');
+  }
+  const order: NonNullable<SigningIntent['polymarket']> = {
+    conditionId: nfc(record.conditionId, 'polymarket.conditionId'),
+    tokenId: decimal(record.tokenId, 'polymarket.tokenId'),
+    outcome: nfc(record.outcome, 'polymarket.outcome'),
+    side: record.side,
+    limitPrice: nfc(record.limitPrice, 'polymarket.limitPrice'),
+    size: decimal(record.size, 'polymarket.size'),
+    notionalUsd: nfc(record.notionalUsd, 'polymarket.notionalUsd'),
+    orderType: nfc(record.orderType, 'polymarket.orderType'),
+    negRisk: record.negRisk,
+    verifyingContract,
+    mid: nfc(record.mid, 'polymarket.mid'),
+    navUsd: nfc(record.navUsd, 'polymarket.navUsd'),
+    marketOpenUsd: nfc(record.marketOpenUsd, 'polymarket.marketOpenUsd'),
+    totalOpenUsd: nfc(record.totalOpenUsd, 'polymarket.totalOpenUsd'),
+  };
+  if (record.balance !== undefined) order.balance = decimal(record.balance, 'polymarket.balance');
+  for (const name of ['perOrderPctNav', 'perMarketPctNav', 'totalOpenPctNav'] as const) {
+    if (record[name] === undefined) continue;
+    const pct = integer(record[name], `polymarket.${name}`);
+    if (pct < 0) reject(`polymarket.${name} must be a non-negative integer`);
+    order[name] = pct;
+  }
+  return order;
+}
+
+function clmmOwned(value: unknown): NonNullable<SigningIntent['clmm']> {
+  const record = assertExactKeys(value, ['ownedTokenIds'], 'clmm');
+  if (!Array.isArray(record.ownedTokenIds)) reject('clmm.ownedTokenIds must be an array');
+  return {
+    ownedTokenIds: record.ownedTokenIds.map((entry, index) => decimal(entry, `clmm.ownedTokenIds[${index}]`)),
+  };
 }
 
 /** Canonical intent JSON. Object keys are sorted at every level. */
@@ -360,6 +441,10 @@ type RouteRequest = Pick<CanonicalSigningRequest, 'kind' | 'data' | 'message' | 
 
 /** Payload whose keccak256 is the routeHash for a signing request. */
 export function routeMaterial(request: RouteRequest): string {
+  if (request.kind === 'polymarket-order' || request.kind === 'clob-auth' || request.kind === 'typed-data') {
+    const typed = request.typedData ?? { domain: {}, types: {}, value: {} };
+    return canonicalJson({ domain: typed.domain, types: typed.types, value: typed.value });
+  }
   if (request.kind === 'transaction') {
     return canonicalJson(normalizeApprovedTx({
       to: request.to ?? '',
@@ -381,7 +466,7 @@ export function routeMaterial(request: RouteRequest): string {
 
 export function computeRequestRouteHash(request: RouteRequest): string {
   if (request.kind === 'message') return computeMessageRouteHash(request.message ?? '');
-  if (request.kind === 'typed-data') {
+  if (request.kind === 'typed-data' || request.kind === 'polymarket-order' || request.kind === 'clob-auth') {
     const typed = request.typedData ?? { domain: {}, types: {}, value: {} };
     return computeTypedDataRouteHash(typed);
   }

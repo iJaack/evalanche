@@ -7,6 +7,10 @@
 
 import { Interface, MaxUint256, getAddress } from 'ethers';
 import { EvalancheError, EvalancheErrorCode } from '../utils/errors';
+import { decodeClmmCalldata, isClmmNpmApprove, isClmmPositionManager, type ClmmModuleConfig } from './clmm';
+import type { SigningIntent } from './intent';
+import { decodePolymarketTransaction, isPolymarketCollateral, isPolymarketCollateralApprove, isPolymarketDeniedAddress, polymarketSpenderDenied, type PolymarketModuleConfig } from './polymarket-module';
+import { POLYMARKET_DENY_CONTRACTS as POLYMARKET_DENY_LIST } from './polymarket-addresses';
 
 export const SAVAX_CONTRACT = '0x2b2C81e08f1Af8835a78Bb2A90AE924ACE0eA4bE';
 export const REDEEM_INSTANT_SELECTOR = '0xfbc3b807';
@@ -38,15 +42,11 @@ export const KYBER_SWAP_SELECTOR = '0xe21fd0e9';
  */
 export const KYBER_AGGREGATION_EXECUTOR = '0x8F10B468b06c6FD214B65F87778827F7D113f996';
 
-/** Polymarket protocol contracts. Config cannot put these back on the allowlist. */
-export const POLYMARKET_DENY_CONTRACTS = [
-  '0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E',
-  '0x4D97DCd97eC945f40cF65F87097ACe5EA0476045',
-  '0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB',
-  '0xE111180000d2663C0091e4f400237545B87B996B',
-  '0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296',
-  '0xe2222d279d744050d28e00520010520000310F59',
-] as const;
+/**
+ * Polymarket protocol contracts. Config cannot put these back on the allowlist.
+ * The Polymarket module, when enabled, may still sign the gated calls.
+ */
+export const POLYMARKET_DENY_CONTRACTS = POLYMARKET_DENY_LIST;
 
 const ERC20 = new Interface([
   'function transfer(address to, uint256 amount)',
@@ -119,7 +119,9 @@ export type DecodedKind =
   | 'erc4626-redeem'
   | 'savax-submit'
   | 'savax-request-redeem'
-  | 'lifi-swap';
+  | 'lifi-swap'
+  | 'polymarket-call'
+  | 'clmm-call';
 
 export interface DecodedCall {
   kind: DecodedKind;
@@ -138,6 +140,8 @@ export interface DecodedCall {
    * Absent when a vault deposit has no configured underlying.
    */
   asset?: string;
+  /** Present for a gated Polymarket or CLMM call. Generic amount checks skip these. */
+  moduleOp?: string;
 }
 
 export interface DecodeOptions {
@@ -160,6 +164,13 @@ export interface DecodeOptions {
    * AggregationExecutorProxy. An empty list allows none.
    */
   kyberExecutors?: readonly string[];
+  /** Li.Fi diamond used for Kyber destination checks. Defaults to the canonical diamond. */
+  lifiDiamond?: string;
+  polymarket?: PolymarketModuleConfig;
+  clmm?: ClmmModuleConfig;
+  /** Unix seconds. CLMM deadlines are checked against this clock. */
+  nowSec?: number;
+  intent?: SigningIntent;
 }
 
 export type AllowRole = 'dex' | 'spender' | 'recipient' | 'token' | 'vault';
@@ -220,7 +231,22 @@ export function selectorOf(data: string | undefined): string {
 export function decodeCalldata(to: string, data: string, options: DecodeOptions, depth = 0): DecodedCall[] {
   if (depth > 2) fail('Nested multicall is too deep to decode');
   const selector = selectorOf(data);
-  if (isHardDeniedContract(to)) fail(`Contract ${getAddress(to)} is a built-in Polymarket denial`);
+  if (isClmmPositionManager(to) || (options.clmm?.enabled && isClmmNpmApprove(to, data))) {
+    const calls = decodeClmmCalldata(to, data, options.clmm, options.wallet, options.value, options.nowSec ?? Math.floor(Date.now() / 1000), options.intent, depth);
+    return calls.map((call) => ({
+      kind: 'clmm-call' as const,
+      selector,
+      amount: call.op === 'approve' ? call.amount : undefined,
+      asset: call.token,
+      moduleOp: call.op,
+      receiver: call.recipient,
+    }));
+  }
+  if (isHardDeniedContract(to)) {
+    if (!options.polymarket?.enabled) fail(`Contract ${getAddress(to)} is a built-in Polymarket denial`);
+    const gated = decodePolymarketTransaction(to, data, options.polymarket);
+    return [{ kind: 'polymarket-call', selector, moduleOp: gated.op }];
+  }
   if (isSavaxInstantUnstake(to, data)) {
     fail('Benqi sAVAX instant unstake (redeemInstant) is denied and cannot be enabled by config');
   }
@@ -230,6 +256,11 @@ export function decodeCalldata(to: string, data: string, options: DecodeOptions,
   if ((selector === SELECTOR.erc2612Permit || selector === SELECTOR.permit2)
     && !options.explicitAllows.has(selector === SELECTOR.permit2 ? 'permit2' : 'permit')) {
     fail('Permit calldata is denied unless explicitly allowed');
+  }
+
+  if (isPolymarketCollateralApprove(to, data) && isPolymarketCollateral(to)) {
+    const gated = decodePolymarketTransaction(to, data, options.polymarket);
+    return [{ kind: 'polymarket-call', selector, moduleOp: gated.op }];
   }
 
   if (!options.allowSelector(to, selector)) {
@@ -277,6 +308,11 @@ function decodeOne(to: string, data: string, selector: string, options: DecodeOp
         // reject a spender that also has the dex role. Roles are additive.
         if (amount === MaxUint256) fail('Unlimited ERC-20 approval is denied');
         const spender = getAddress(String(decoded[0]));
+        const polymarketDenial = polymarketSpenderDenied(spender, amount, options.polymarket);
+        if (polymarketDenial) fail(polymarketDenial);
+        if (polymarketDenial === null && isPolymarketDeniedAddress(spender)) {
+          return { kind: 'erc20-approve', selector, amount, spender, asset: getAddress(to) };
+        }
         if (!options.allowRole(spender, 'spender')) fail('approve spender is not allowlisted');
         requireRole(options, getAddress(to), 'token', 'token contract');
         return { kind: 'erc20-approve', selector, amount, spender, asset: getAddress(to) };
@@ -480,7 +516,7 @@ function decodeSwap(to: string, data: string, selector: string, options: DecodeO
  * A non-Kyber dex is not inner-decoded.
  */
 function assertKyberLegs(legs: SwapLeg[], options: DecodeOptions): void {
-  const diamond = getAddress(LIFI_DIAMOND);
+  const diamond = getAddress(options.lifiDiamond ?? LIFI_DIAMOND);
   const router = getAddress(KYBER_META_AGGREGATION_ROUTER_V2);
   for (let i = 0; i < legs.length; i += 1) {
     const leg = legs[i];

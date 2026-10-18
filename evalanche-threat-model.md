@@ -176,6 +176,8 @@ The real condition is the shared uid 1000 with passwordless sudo. `/proc/<pid>/e
 
 In this deployment, the signer's job is to enforce policy against mistakes, confused agents, and bad inputs: the allowlist and roles, caps, decode checks, nonce, expiry, and the verifier's Ed25519 approval. It is not a security boundary against root.
 
+Each chain enabled after Avalanche re-opens TM-008 for that chain: the same host still holds the key, and a new RPC, cap, and allow map is another place a bad input can move funds. Polymarket's L2 API secret, if the box starts using the CLOB, is a new box-wide secret and is not stored by this signer. The Polymarket module and the Avalanche Uniswap v3 LP module ship disabled. Turning either on is a config change, not a change to this acceptance. The LP module can mint a treasury-owned position NFT. It cannot transfer or approve that NFT.
+
 The verifier's Ed25519 approval private key is the bot secret `OPS_VERIFIER_ED25519`. Only `verifier.pub` is on disk, mode `0644`. `provision` refuses a `verifier.key` file and does not copy a private key into `/etc`. A reset of the box wipes `/etc`, `/opt`, and `/var`, and it restores `/home` as uid 1000. The verifier pubkey, the token, the config, the audit log, the nonce store, and the pinned tarball live under `/home/box/agent-data/evalanche-persist`. `provision` chowns that tree back to root and to the signer user, reuses the existing signer uid, reuses the existing `evalanche-signer` group gid, and bind-mounts state and log onto `/var/lib/evalanche-signer`. It fails closed if those owners do not stick. Nonces must still be there after the reset. There is no boot hook.
 
 Exit triggers (PROPOSED, pending owner confirmation; the 2027-01-16 review stays pending confirmation):

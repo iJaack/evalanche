@@ -20,10 +20,21 @@ export interface WalletNonce {
   used: string[];
 }
 
+export interface PolymarketOrderRecord {
+  hash: string;
+  salt: string;
+  at: number;
+  /** `auth` is a one-use clob-auth and does not count toward the daily order cap. */
+  kind?: 'order' | 'auth';
+}
+
 interface NonceFile {
   version: 1;
   startedAt: number;
   wallets: Record<string, WalletNonce>;
+  /** Last signed EOA transaction nonce, keyed by wallet then chain id. */
+  txNonces?: Record<string, Record<string, string>>;
+  polymarketOrders?: PolymarketOrderRecord[];
 }
 
 export class NonceStore {
@@ -31,6 +42,8 @@ export class NonceStore {
   private readonly path: string;
   private readonly held: HeldLock;
   private wallets: Record<string, WalletNonce>;
+  private txNonces: Record<string, Record<string, string>>;
+  private orders: PolymarketOrderRecord[];
   private closed = false;
 
   private constructor(path: string, held: HeldLock, file: NonceFile) {
@@ -38,6 +51,8 @@ export class NonceStore {
     this.held = held;
     this.startedAt = file.startedAt;
     this.wallets = file.wallets;
+    this.txNonces = file.txNonces ?? {};
+    this.orders = file.polymarketOrders ?? [];
   }
 
   static async open(path: string, initNonces: boolean, options: HoldLockOptions = {}): Promise<NonceStore> {
@@ -63,8 +78,41 @@ export class NonceStore {
     this.wallets[wallet] = entry;
   }
 
+  /** Records the proposer-chosen EOA nonce for one chain. Approval nonces stay global. */
+  noteTxNonce(wallet: string, chainId: number, nonce: string): void {
+    const byChain = this.txNonces[wallet] ?? {};
+    byChain[String(chainId)] = nonce;
+    this.txNonces[wallet] = byChain;
+  }
+
+  txNonce(wallet: string, chainId: number): string | undefined {
+    return this.txNonces[wallet]?.[String(chainId)];
+  }
+
+  noteOrder(hash: string, salt: string, at: number, kind: 'order' | 'auth' = 'order'): void {
+    this.orders.push({ hash, salt, at, kind });
+  }
+
+  hasOrderHash(hash: string): boolean {
+    return this.orders.some((order) => order.hash === hash);
+  }
+
+  hasOrderSalt(salt: string): boolean {
+    return this.orders.some((order) => order.kind !== 'auth' && order.salt === salt);
+  }
+
+  ordersSince(atMs: number): number {
+    return this.orders.filter((order) => order.kind !== 'auth' && order.at >= atMs).length;
+  }
+
   async persist(): Promise<void> {
-    const body: NonceFile = { version: 1, startedAt: this.startedAt, wallets: this.wallets };
+    const body: NonceFile = {
+      version: 1,
+      startedAt: this.startedAt,
+      wallets: this.wallets,
+      txNonces: this.txNonces,
+      polymarketOrders: this.orders,
+    };
     await writeDurable(this.path, `${JSON.stringify(body)}\n`);
   }
 
