@@ -47,6 +47,10 @@ Gated Polygon transactions, and only these:
 
 - `pauseUser()` on the standard V2 exchange `0xE111180000d2663C0091e4f400237545B87B996B` or the neg-risk V2 exchange `0xe2222d279d744050d28e00520010520000310F59`. That is the user self-pause. `unpauseUser` and admin `pauseTrading` stay denied. The V3 exchange stays denied.
 
+`pauseUser()` does not stop matching in the same block. The exchange waits its own pause delay before the pause takes effect. The call covers only the exchange it is sent to, so the standard V2 exchange and the neg-risk V2 exchange each need their own call. The signer cannot undo it: `unpauseUser` stays denied.
+
+To cut off the venue, revoke first and pause last. Send `approve(spender, 0)` for the collateral allowance, then CTF `setApprovalForAll(V2 exchange, false)` for each current V2 exchange, then `pauseUser()` on each of those exchanges.
+
 Split, merge, onramp, offramp, and every other call to the exchanges stay denied. A second collateral-adapter pair was not verified, so it is not pinned and stays denied.
 
 A Polymarket L2 API secret is a new box-wide secret. This signer does not store it.

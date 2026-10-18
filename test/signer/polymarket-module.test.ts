@@ -670,7 +670,7 @@ describe('polymarket signer path', () => {
         verifierPrivateKey: on.verifier.privateKey,
         verifierPublicKey: on.verifier.publicKey,
       }),
-    })).rejects.toThrow(/Polymarket is denied|not 137|chain/);
+    })).rejects.toThrow('Polymarket is denied and cannot be enabled by config');
   });
 
   it('signs setApprovalForAll(false) and pauseUser as kill switches', async () => {
