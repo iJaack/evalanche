@@ -28,6 +28,8 @@ const STRANGER = getAddress('0x000000000000000000000000000000000000beef');
 const ATTACKER = getAddress('0x000000000000000000000000000000000000dead');
 const WRONG_ROUTER = getAddress('0x0000000000000000000000000000000000000002');
 const CAP = '1000000000000000000000';
+const QUOTE = 10_000n;
+const MIN_OUT = 9_700n;
 
 const SWAP_ROUTER_02 = new Interface([
   'function exactInputSingle((address tokenIn,address tokenOut,uint24 fee,address recipient,uint256 amountIn,uint256 amountOutMinimum,uint160 sqrtPriceLimitX96) params) payable returns (uint256 amountOut)',
@@ -64,6 +66,8 @@ interface Leg {
   amountIn?: bigint;
   minOut?: bigint;
   deadline?: bigint;
+  fee?: number;
+  sqrtPriceLimitX96?: bigint;
 }
 
 function swapCall(venue: PinnedDexVenue, patch: Leg = {}): string {
@@ -71,8 +75,10 @@ function swapCall(venue: PinnedDexVenue, patch: Leg = {}): string {
   const tokenOut = patch.tokenOut ?? OUT;
   const recipient = patch.recipient ?? WALLET;
   const amountIn = patch.amountIn ?? 1000n;
-  const minOut = patch.minOut ?? 1n;
+  const minOut = patch.minOut ?? MIN_OUT;
   const until = patch.deadline ?? deadline();
+  const fee = patch.fee ?? 500;
+  const sqrtPriceLimitX96 = patch.sqrtPriceLimitX96 ?? 0n;
   if (venue.style === 'uniswap-v2') {
     return V2.encodeFunctionData('swapExactTokensForTokens', [amountIn, minOut, [tokenIn, tokenOut], recipient, until]);
   }
@@ -80,22 +86,22 @@ function swapCall(venue: PinnedDexVenue, patch: Leg = {}): string {
     return SWAP_ROUTER.encodeFunctionData('exactInputSingle', [{
       tokenIn,
       tokenOut,
-      fee: 500,
+      fee,
       recipient,
       deadline: until,
       amountIn,
       amountOutMinimum: minOut,
-      sqrtPriceLimitX96: 0n,
+      sqrtPriceLimitX96,
     }]);
   }
   return SWAP_ROUTER_02.encodeFunctionData('exactInputSingle', [{
     tokenIn,
     tokenOut,
-    fee: 500,
+    fee,
     recipient,
     amountIn,
     amountOutMinimum: minOut,
-    sqrtPriceLimitX96: 0n,
+    sqrtPriceLimitX96,
   }]);
 }
 
@@ -154,10 +160,24 @@ function tokenAllow(addresses: string[], extra: Array<Record<string, unknown>> =
   ];
 }
 
+function defaultPools(venue: PinnedDexVenue): DexVenueConfig['pools'] {
+  const pool: { tokenA: string; tokenB: string; fee?: number } = {
+    tokenA: venue.wrappedNative,
+    tokenB: OUT,
+  };
+  if (venue.style !== 'uniswap-v2') pool.fee = 500;
+  return [pool];
+}
+
 function venueDex(venue: PinnedDexVenue, dex?: DexVenueConfig): DexVenueConfig {
-  const config = dex ?? { enabled: true };
-  if (venue.chainId !== 5000 || config.enabled !== true || dex !== undefined) return config;
-  return { ...config, poolDepthVerified: true, verifiedAt: '2026-10-18' };
+  let config = dex ?? { enabled: true };
+  if (config.enabled === true && config.pools === undefined) {
+    config = { ...config, pools: defaultPools(venue) };
+  }
+  if (venue.chainId === 5000 && config.enabled === true && dex === undefined) {
+    config = { ...config, poolDepthVerified: true, verifiedAt: '2026-10-18' };
+  }
+  return config;
 }
 
 async function bootVenue(
@@ -224,7 +244,8 @@ async function send(
     venue: venue.name,
     action: 'swap',
     amountIn: '1000',
-    minAmountOut: '1',
+    minAmountOut: MIN_OUT.toString(),
+    quotedAmountOut: QUOTE.toString(),
     tokenIn: { address: venue.wrappedNative, symbol: 'IN', decimals: 18 },
     tokenOut: { address: OUT, symbol: 'OUT', decimals: 18 },
     routeHash: computeApprovedTxHash(tx),
@@ -293,7 +314,8 @@ for (const venue of DEX_VENUES) {
 
     it('rejects a multicall when an inner recipient is not the treasury', async () => {
       const h = await bootVenue(venue);
-      await expect(send(h, venue, badMulticall(venue), '1')).rejects.toThrow(/treasury/);
+      const pattern = venue.style === 'uniswap-v2' ? /DEX selector/ : /treasury/;
+      await expect(send(h, venue, badMulticall(venue), '1')).rejects.toThrow(pattern);
     });
 
     it('rejects the pinned router while the venue is off, even if the selector is allowlisted', async () => {
@@ -353,7 +375,7 @@ describe('direct venue startup', () => {
     await expect(boot({
       25: {
         enabled: true,
-        dex: { enabled: true },
+        dex: { enabled: true, pools: [{ tokenA: venue.wrappedNative, tokenB: OUT }] },
         gas: { maxFeeUsd: 1 },
         tokenCaps: { native: '0', [OUT]: CAP },
         price: { prices: { native: 1 } },
@@ -374,10 +396,11 @@ describe('Mantle pool depth acknowledgement', () => {
   const venue = DEX_VENUES.find((item) => item.chainId === 5000)!;
 
   function mantleChain(dex: DexVenueConfig): Record<string, SignerChainConfig> {
+    const withPools = dex.pools ? dex : { ...dex, pools: [{ tokenA: venue.wrappedNative, tokenB: OUT, fee: 500 }] };
     return {
       5000: {
         enabled: true,
-        dex,
+        dex: withPools,
         gas: { maxFeeUsd: 1 },
         tokenCaps: { native: '0', [venue.wrappedNative]: CAP, [OUT]: CAP },
         price: { prices: { native: 1 } },
@@ -418,7 +441,13 @@ describe('packed path', () => {
     const nowSec = Math.floor(Date.now() / 1000);
     const input = {
       chainId: venue.chainId,
-      config: { enabled: true } satisfies DexVenueConfig,
+      config: {
+        enabled: true,
+        pools: [
+          { tokenA: venue.wrappedNative, tokenB: MID, fee: 500 },
+          { tokenA: MID, tokenB: OUT, fee: 500 },
+        ],
+      } satisfies DexVenueConfig,
       wallet: WALLET,
       value: 0n,
       tokenIn: venue.wrappedNative,
@@ -436,7 +465,7 @@ describe('packed path', () => {
       recipient: WALLET,
       deadline: deadline(),
       amountIn: 1000n,
-      amountOutMinimum: 1n,
+      amountOutMinimum: MIN_OUT,
     }]);
     const decoded = decodeDexCalldata(venue.router, data, input);
     expect(decoded).toHaveLength(1);
@@ -452,8 +481,182 @@ describe('packed path', () => {
       recipient: WALLET,
       deadline: deadline(),
       amountIn: 1000n,
-      amountOutMinimum: 1n,
+      amountOutMinimum: MIN_OUT,
     }]);
     expect(() => decodeDexCalldata(venue.router, bad, input)).toThrow(/not allowlisted/);
+
+    const thinHop = solidityPacked(
+      ['address', 'uint24', 'address', 'uint24', 'address'],
+      [venue.wrappedNative, 500, MID, 3000, OUT],
+    );
+    const thin = SWAP_ROUTER.encodeFunctionData('exactInput', [{
+      path: thinHop,
+      recipient: WALLET,
+      deadline: deadline(),
+      amountIn: 1000n,
+      amountOutMinimum: MIN_OUT,
+    }]);
+    expect(() => decodeDexCalldata(venue.router, thin, input)).toThrow(/DEX pool is not allowlisted/);
+  });
+});
+
+describe('direct venue quote and pool allowlist', () => {
+  const gnosis = DEX_VENUES.find((item) => item.chainId === 100)!;
+  const cronos = DEX_VENUES.find((item) => item.chainId === 25)!;
+
+  it('refuses a deadline in the past and a deadline more than 600 seconds ahead', async () => {
+    const h = await bootVenue(gnosis);
+    const past = BigInt(Math.floor(Date.now() / 1000) - 30);
+    await expect(send(h, gnosis, happyCall(gnosis, { deadline: past }), '1')).rejects.toThrow(/not in the future/);
+    await expect(send(h, gnosis, happyCall(gnosis, { deadline: deadline(601) }), '2')).rejects.toThrow(/10 minutes/);
+  });
+
+  it('refuses a non-zero transaction value', async () => {
+    const h = await bootVenue(gnosis);
+    await expect(send(h, gnosis, happyCall(gnosis), '1', gnosis.router, {}, '1')).rejects.toThrow(/value must be 0/);
+  });
+
+  it('refuses a nested multicall', async () => {
+    const h = await bootVenue(gnosis);
+    const inner = swapCall(gnosis);
+    const nested = SWAP_ROUTER_02.encodeFunctionData('multicall(uint256,bytes[])', [deadline(), [inner]]);
+    const outer = SWAP_ROUTER_02.encodeFunctionData('multicall(uint256,bytes[])', [deadline(), [nested]]);
+    await expect(send(h, gnosis, outer, '1')).rejects.toThrow(/nested DEX multicall/);
+  });
+
+  it('refuses trailing calldata bytes', async () => {
+    const h = await bootVenue(gnosis);
+    await expect(send(h, gnosis, `${happyCall(gnosis)}00`, '1')).rejects.toThrow(/trailing bytes/);
+  });
+
+  it('refuses the plain multicall(bytes[]) variant on SwapRouter02', async () => {
+    const h = await bootVenue(gnosis);
+    const plain = SWAP_ROUTER_02.encodeFunctionData('multicall(bytes[])', [[swapCall(gnosis)]]);
+    await expect(send(h, gnosis, plain, '1')).rejects.toThrow(/DEX selector/);
+  });
+
+  it('refuses both multicall selectors on the Cronos VVS router', async () => {
+    const h = await bootVenue(cronos);
+    const inner = swapCall(cronos);
+    const plain = V2.encodeFunctionData('multicall(bytes[])', [[inner]]);
+    const timed = V2.encodeFunctionData('multicall(uint256,bytes[])', [deadline(), [inner]]);
+    await expect(send(h, cronos, plain, '1')).rejects.toThrow(/DEX selector/);
+    await expect(send(h, cronos, timed, '2')).rejects.toThrow(/DEX selector/);
+    expect(cronos.outerSelectors).toEqual([V2.getFunction('swapExactTokensForTokens')!.selector.toLowerCase()]);
+  });
+
+  it('refuses an amount above the token cap', async () => {
+    const h = await bootVenue(gnosis, { caps: { [gnosis.wrappedNative]: '999' } });
+    await expect(send(h, gnosis, happyCall(gnosis), '1')).rejects.toThrow(/oversize/);
+  });
+
+  it('refuses an amountIn sum that does not match the intent', async () => {
+    const h = await bootVenue(gnosis);
+    const first = swapCall(gnosis, { amountIn: 600n });
+    const second = swapCall(gnosis, { amountIn: 600n });
+    const data = SWAP_ROUTER_02.encodeFunctionData('multicall(uint256,bytes[])', [deadline(), [first, second]]);
+    await expect(send(h, gnosis, data, '1')).rejects.toThrow(/amountIn does not match the intent/);
+  });
+
+  it('refuses a non-zero sqrtPriceLimitX96', async () => {
+    const h = await bootVenue(gnosis);
+    await expect(send(h, gnosis, happyCall(gnosis, { sqrtPriceLimitX96: 1n }), '1')).rejects.toThrow(/sqrtPriceLimitX96/);
+  });
+
+  it('refuses a fee tier that is outside the pool allowlist', async () => {
+    const h = await bootVenue(gnosis);
+    await expect(send(h, gnosis, happyCall(gnosis, { fee: 3000 }), '1')).rejects.toThrow(/DEX pool is not allowlisted/);
+  });
+
+  it('refuses a v2 hop that is outside the pool allowlist', async () => {
+    const h = await bootVenue(cronos, { tokens: [cronos.wrappedNative, MID, OUT] });
+    const data = V2.encodeFunctionData('swapExactTokensForTokens', [
+      1000n,
+      MIN_OUT,
+      [cronos.wrappedNative, MID, OUT],
+      WALLET,
+      deadline(),
+    ]);
+    await expect(send(h, cronos, data, '1')).rejects.toThrow(/DEX pool is not allowlisted/);
+  });
+
+  it('signs a v2 path when every hop is allowlisted', async () => {
+    const h = await bootVenue(cronos, {
+      tokens: [cronos.wrappedNative, MID, OUT],
+      dex: {
+        enabled: true,
+        pools: [
+          { tokenA: cronos.wrappedNative, tokenB: MID },
+          { tokenA: MID, tokenB: OUT },
+        ],
+      },
+    });
+    const data = V2.encodeFunctionData('swapExactTokensForTokens', [
+      1000n,
+      MIN_OUT,
+      [cronos.wrappedNative, MID, OUT],
+      WALLET,
+      deadline(),
+    ]);
+    const signed = await send(h, cronos, data, '1');
+    expect(signed.signedTransaction).toMatch(/^0x/);
+  });
+
+  it('fails closed when the quote is missing and when minOut is below the quote floor', async () => {
+    const h = await bootVenue(gnosis);
+    await expect(send(h, gnosis, happyCall(gnosis), '1', gnosis.router, {
+      quotedAmountOut: undefined,
+    })).rejects.toThrow(/quotedAmountOut is required for a direct DEX swap/);
+    await expect(send(h, gnosis, happyCall(gnosis, { minOut: 9699n }), '2', gnosis.router, {
+      minAmountOut: '9699',
+      quotedAmountOut: '10000',
+    })).rejects.toThrow(/quoted slippage floor/);
+  });
+
+  it('refuses a quote above the bought-token cap', async () => {
+    const h = await bootVenue(gnosis, { caps: { [OUT]: '100' } });
+    await expect(send(h, gnosis, happyCall(gnosis, { minOut: 97n }), '1', gnosis.router, {
+      minAmountOut: '97',
+      quotedAmountOut: '101',
+    })).rejects.toThrow(/quotedAmountOut exceeds the configured token cap/);
+  });
+
+  it('refuses to start an enabled venue without a pool allowlist', async () => {
+    await expect(boot({
+      25: {
+        enabled: true,
+        dex: { enabled: true },
+        gas: { maxFeeUsd: 1 },
+        tokenCaps: { native: '0', [cronos.wrappedNative]: CAP, [OUT]: CAP },
+        price: { prices: { native: 1 } },
+      },
+    }, {
+      43114: [{ address: ATTACKER, selectors: ['0x'], roles: ['recipient'] }],
+      25: tokenAllow([cronos.wrappedNative, OUT]),
+    })).rejects.toThrow(/pools must list at least one pool/);
+    await expect(boot({
+      25: {
+        enabled: true,
+        dex: { enabled: true, pools: [{ tokenA: cronos.wrappedNative, tokenB: OUT, fee: 500 }] },
+        gas: { maxFeeUsd: 1 },
+        tokenCaps: { native: '0', [cronos.wrappedNative]: CAP, [OUT]: CAP },
+        price: { prices: { native: 1 } },
+      },
+    }, {
+      43114: [{ address: ATTACKER, selectors: ['0x'], roles: ['recipient'] }],
+      25: tokenAllow([cronos.wrappedNative, OUT]),
+    })).rejects.toThrow(/must not set a fee on a v2 pool/);
+    await expect(boot({
+      100: {
+        enabled: true,
+        dex: { enabled: true, pools: [{ tokenA: gnosis.wrappedNative, tokenB: OUT }] },
+        gas: { maxFeeUsd: 1 },
+        tokenCaps: { native: '0', [gnosis.wrappedNative]: CAP, [OUT]: CAP },
+        price: { prices: { native: 1 } },
+      },
+    }, {
+      43114: [{ address: ATTACKER, selectors: ['0x'], roles: ['recipient'] }],
+      100: tokenAllow([gnosis.wrappedNative, OUT]),
+    })).rejects.toThrow(/requires a fee tier on a v3 pool/);
   });
 });

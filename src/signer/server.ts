@@ -981,7 +981,9 @@ export class EvalancheSignerServer {
   }
 
   private enforceV3Slippage(call: DecodedCall, intent: SigningIntent, chainId: number): void {
-    if (call.minOut === undefined || !isLifiV3Selector(call.selector)) return;
+    if (call.minOut === undefined) return;
+    const direct = call.kind === 'dex-swap';
+    if (!direct && !isLifiV3Selector(call.selector)) return;
     const chain = this.chainFor(chainId);
     const classBps = tokenClassBps(
       chain?.slippageCaps ?? this.options.slippageCaps,
@@ -992,7 +994,10 @@ export class EvalancheSignerServer {
       deny(`maxSlippageBps exceeds the ${classBps} bps token class slippage cap`, EvalancheErrorCode.SIGNER_REJECTED);
     }
     if (intent.quotedAmountOut === undefined) {
-      deny('quotedAmountOut is required for a Li.Fi V3 swap', EvalancheErrorCode.SIGNER_REJECTED);
+      deny(
+        direct ? 'quotedAmountOut is required for a direct DEX swap' : 'quotedAmountOut is required for a Li.Fi V3 swap',
+        EvalancheErrorCode.SIGNER_REJECTED,
+      );
     }
     const quoted = BigInt(intent.quotedAmountOut);
     if (quoted <= 0n) deny('quotedAmountOut must be greater than zero', EvalancheErrorCode.SIGNER_REJECTED);

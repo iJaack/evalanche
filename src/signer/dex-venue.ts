@@ -5,8 +5,8 @@
  * requires every path token to carry the token role, requires the recipient
  * to be the treasury, requires a nonzero amountOutMin, and caps the deadline
  * at ten minutes. Multicall is signed only when every inner call passes those
- * same checks. Nested multicall is denied. Chains with no such router stay
- * out of this map and cannot be enabled.
+ * same checks. Nested multicall is denied. Every hop must match dex.pools.
+ * Chains with no such router stay out of this map and cannot be enabled.
  *
  * Addresses were read from the public RPCs named in docs/signer-multichain.md
  * on 18 October 2026. The venue stays off until chains[id].dex.enabled is true,
@@ -62,6 +62,13 @@ export interface PinnedDexVenue {
   innerSelectors: readonly string[];
 }
 
+/** One unordered token pair. V3 entries also pin the fee tier. V2 entries omit fee. */
+export interface DexPoolConfig {
+  tokenA: string;
+  tokenB: string;
+  fee?: number;
+}
+
 export interface DexVenueConfig {
   /** Default false. The chain's own enabled flag is separate. */
   enabled?: boolean;
@@ -72,12 +79,24 @@ export interface DexVenueConfig {
   /** Must equal the pinned wrapped native. Omitted uses the pin. */
   wrappedNative?: string;
   /**
+   * Required when enabled. A hop is signed only when its pair, and its fee
+   * tier on v3, is in this list. The match is unordered.
+   */
+  pools?: DexPoolConfig[];
+  /**
    * Mantle 5000 only. The signer does not read pool reserves. This flag is
-   * the operator's acknowledgement that Agni depth was rechecked.
+   * the operator's acknowledgement that Agni depth was rechecked. The best
+   * Agni pool on 18 October 2026 was about $14k, so the venue stays off.
    */
   poolDepthVerified?: boolean;
   /** YYYY-MM-DD of that recheck. Required with poolDepthVerified on Mantle. */
   verifiedAt?: string;
+}
+
+interface NormalizedPool {
+  tokenA: string;
+  tokenB: string;
+  fee?: number;
 }
 
 export interface DecodedDexSwap {
@@ -124,7 +143,7 @@ export const DEX_VENUES: readonly PinnedDexVenue[] = [
     router: pin('0x145863Eb42Cf62847A6Ca784e6416C1682b1b2Ae'),
     factory: pin('0x3B44B2a187a7b3824131F8db5a74194D0a42Fc15'),
     wrappedNative: pin('0x5C7F8A570d578ED84E63fdFA7b1eE72dEae1AE23'),
-    outerSelectors: [SEL_V2_EXACT, SEL_MULTICALL, SEL_MULTICALL_DEADLINE],
+    outerSelectors: [SEL_V2_EXACT],
     innerSelectors: [SEL_V2_EXACT],
   },
   {
@@ -193,6 +212,7 @@ export function assertDexConfig(config: DexVenueConfig | undefined, chainId: num
     failConfig(`${label}.dex.wrappedNative does not match the pinned wrapped native ${venue.wrappedNative}`);
   }
   if (config.selectors !== undefined) normalizeOuter(config.selectors, venue, `${label}.dex.selectors`);
+  readPools(config, venue, `${label}.dex`, 'config');
   if (chainId === 5000) assertMantleDepth(config, label);
 }
 
@@ -233,11 +253,13 @@ export function decodeDexCalldata(to: string, data: string, input: DexDecodeInpu
   const outer = input.config.selectors === undefined
     ? new Set(venue.outerSelectors)
     : new Set(normalizeOuter(input.config.selectors, venue, 'DEX selectors'));
-  if (depth === 0 && !outer.has(selector)) fail(`DEX selector ${selector} is denied`);
-  if (depth > 0 && !venue.innerSelectors.includes(selector)) fail(`DEX selector ${selector} is denied`);
   if (selector === SEL_MULTICALL || selector === SEL_MULTICALL_DEADLINE) {
+    if (depth > 0) fail('nested DEX multicall is denied');
+    if (!outer.has(selector)) fail(`DEX selector ${selector} is denied`);
     return decodeMulticall(to, data, selector, input, venue, depth);
   }
+  if (depth === 0 && !outer.has(selector)) fail(`DEX selector ${selector} is denied`);
+  if (depth > 0 && !venue.innerSelectors.includes(selector)) fail(`DEX selector ${selector} is denied`);
   const swap = decodeSwap(data, selector, venue, treasury, input);
   if (depth === 0) assertIntentTotals([swap], input);
   return [swap];
@@ -254,9 +276,8 @@ function decodeMulticall(
   if (depth > 0) fail('nested DEX multicall is denied');
   const timed = selector === SEL_MULTICALL_DEADLINE;
   // SwapRouter02 puts the deadline on multicall. A bare multicall has none,
-  // so it is denied on that style. V2 and SwapRouter carry the deadline on
-  // each inner swap, and a timed multicall is still accepted when the router
-  // style has that selector in the outer set.
+  // so it is denied on that style. SwapRouter carries the deadline on each
+  // inner swap. VVS has neither multicall selector, so both are denied there.
   if (venue.style === 'swap-router02' && !timed) fail('DEX multicall is missing a deadline');
   const iface = ifaceFor(venue.style);
   const fn = timed ? 'multicall(uint256,bytes[])' : 'multicall(bytes[])';
@@ -276,12 +297,12 @@ function decodeSwap(
   treasury: string,
   input: DexDecodeInput,
 ): DecodedDexSwap {
-  if (venue.style === 'uniswap-v2') return decodeV2(data, selector, treasury, input);
-  if (venue.style === 'swap-router') return decodeRouterV1(data, selector, treasury, input);
-  return decodeRouter02(data, selector, treasury, input);
+  if (venue.style === 'uniswap-v2') return decodeV2(data, selector, treasury, input, venue);
+  if (venue.style === 'swap-router') return decodeRouterV1(data, selector, treasury, input, venue);
+  return decodeRouter02(data, selector, treasury, input, venue);
 }
 
-function decodeV2(data: string, selector: string, treasury: string, input: DexDecodeInput): DecodedDexSwap {
+function decodeV2(data: string, selector: string, treasury: string, input: DexDecodeInput, venue: PinnedDexVenue): DecodedDexSwap {
   if (selector !== SEL_V2_EXACT) fail(`DEX selector ${selector} is denied`);
   const decoded = decodeExact(V2, 'swapExactTokensForTokens', data);
   const amountIn = asBigint(decoded[0]);
@@ -290,10 +311,11 @@ function decodeV2(data: string, selector: string, treasury: string, input: DexDe
   const recipient = checksum(String(decoded[3]), 'DEX recipient');
   assertDeadline(asBigint(decoded[4]), input.nowSec);
   assertLeg(path, amountIn, minOut, recipient, treasury, input);
+  assertHops(pathHops(path), input.config, venue);
   return { selector, tokenIn: path[0], tokenOut: path[path.length - 1], amountIn, minOut, recipient };
 }
 
-function decodeRouterV1(data: string, selector: string, treasury: string, input: DexDecodeInput): DecodedDexSwap {
+function decodeRouterV1(data: string, selector: string, treasury: string, input: DexDecodeInput, venue: PinnedDexVenue): DecodedDexSwap {
   if (selector === SEL_EXACT_INPUT_SINGLE) {
     const decoded = decodeExact(SWAP_ROUTER, 'exactInputSingle', data);
     const params = decoded[0] as Record<string, unknown>;
@@ -302,24 +324,27 @@ function decodeRouterV1(data: string, selector: string, treasury: string, input:
     assertDeadline(asBigint(params.deadline), input.nowSec);
     const amountIn = asBigint(params.amountIn);
     const minOut = asBigint(params.amountOutMinimum);
+    assertSqrt(params.sqrtPriceLimitX96);
     assertLeg(path, amountIn, minOut, recipient, treasury, input);
+    assertHops([{ tokenA: path[0], tokenB: path[1], fee: asFee(params.fee) }], input.config, venue);
     return { selector, tokenIn: path[0], tokenOut: path[1], amountIn, minOut, recipient };
   }
   if (selector === SEL_EXACT_INPUT) {
     const decoded = decodeExact(SWAP_ROUTER, 'exactInput', data);
     const params = decoded[0] as Record<string, unknown>;
-    const path = decodeV3Path(String(params.path), input);
+    const decodedPath = decodeV3Path(String(params.path), input);
     const recipient = checksum(String(params.recipient), 'DEX recipient');
     assertDeadline(asBigint(params.deadline), input.nowSec);
     const amountIn = asBigint(params.amountIn);
     const minOut = asBigint(params.amountOutMinimum);
-    assertLeg(path, amountIn, minOut, recipient, treasury, input);
-    return { selector, tokenIn: path[0], tokenOut: path[path.length - 1], amountIn, minOut, recipient };
+    assertLeg(decodedPath.tokens, amountIn, minOut, recipient, treasury, input);
+    assertHops(decodedPath.hops, input.config, venue);
+    return { selector, tokenIn: decodedPath.tokens[0], tokenOut: decodedPath.tokens[decodedPath.tokens.length - 1], amountIn, minOut, recipient };
   }
   fail(`DEX selector ${selector} is denied`);
 }
 
-function decodeRouter02(data: string, selector: string, treasury: string, input: DexDecodeInput): DecodedDexSwap {
+function decodeRouter02(data: string, selector: string, treasury: string, input: DexDecodeInput, venue: PinnedDexVenue): DecodedDexSwap {
   if (selector === SEL_EXACT_INPUT_SINGLE_02) {
     const decoded = decodeExact(SWAP_ROUTER_02, 'exactInputSingle', data);
     const params = decoded[0] as Record<string, unknown>;
@@ -327,18 +352,21 @@ function decodeRouter02(data: string, selector: string, treasury: string, input:
     const recipient = checksum(String(params.recipient), 'DEX recipient');
     const amountIn = asBigint(params.amountIn);
     const minOut = asBigint(params.amountOutMinimum);
+    assertSqrt(params.sqrtPriceLimitX96);
     assertLeg(path, amountIn, minOut, recipient, treasury, input);
+    assertHops([{ tokenA: path[0], tokenB: path[1], fee: asFee(params.fee) }], input.config, venue);
     return { selector, tokenIn: path[0], tokenOut: path[1], amountIn, minOut, recipient };
   }
   if (selector === SEL_EXACT_INPUT_02) {
     const decoded = decodeExact(SWAP_ROUTER_02, 'exactInput', data);
     const params = decoded[0] as Record<string, unknown>;
-    const path = decodeV3Path(String(params.path), input);
+    const decodedPath = decodeV3Path(String(params.path), input);
     const recipient = checksum(String(params.recipient), 'DEX recipient');
     const amountIn = asBigint(params.amountIn);
     const minOut = asBigint(params.amountOutMinimum);
-    assertLeg(path, amountIn, minOut, recipient, treasury, input);
-    return { selector, tokenIn: path[0], tokenOut: path[path.length - 1], amountIn, minOut, recipient };
+    assertLeg(decodedPath.tokens, amountIn, minOut, recipient, treasury, input);
+    assertHops(decodedPath.hops, input.config, venue);
+    return { selector, tokenIn: decodedPath.tokens[0], tokenOut: decodedPath.tokens[decodedPath.tokens.length - 1], amountIn, minOut, recipient };
   }
   fail(`DEX selector ${selector} is denied`);
 }
@@ -370,24 +398,110 @@ function assertLeg(
   if (path[path.length - 1] !== tokenOut) fail('DEX path tokenOut does not match the intent');
 }
 
+function pathHops(path: string[]): NormalizedPool[] {
+  const hops: NormalizedPool[] = [];
+  for (let i = 1; i < path.length; i += 1) hops.push({ tokenA: path[i - 1], tokenB: path[i] });
+  return hops;
+}
+
+function assertHops(hops: NormalizedPool[], config: DexVenueConfig | undefined, venue: PinnedDexVenue): void {
+  if (!config) fail('DEX pool allowlist is empty');
+  const pools = readPools(config, venue, 'DEX', 'runtime');
+  for (const hop of hops) {
+    const allowed = pools.some((pool) => samePair(pool, hop) && pool.fee === hop.fee);
+    if (!allowed) fail('DEX pool is not allowlisted');
+  }
+}
+
+function readPools(
+  config: DexVenueConfig,
+  venue: PinnedDexVenue,
+  label: string,
+  mode: 'runtime' | 'config',
+): NormalizedPool[] {
+  const reject: (message: string) => never = mode === 'config' ? failConfig : fail;
+  const prefix = mode === 'config' ? `${label}.pools` : 'DEX pool allowlist';
+  const raw = config.pools;
+  if (!Array.isArray(raw) || raw.length === 0) {
+    reject(mode === 'config' ? `${prefix} must list at least one pool` : 'DEX pool allowlist is empty');
+  }
+  const v2 = venue.style === 'uniswap-v2';
+  const out: NormalizedPool[] = [];
+  const seen = new Set<string>();
+  for (const entry of raw) {
+    if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) reject(`${prefix} must be a list of pool objects`);
+    const tokenA = checksum(String(entry.tokenA), `${prefix} tokenA`, mode);
+    const tokenB = checksum(String(entry.tokenB), `${prefix} tokenB`, mode);
+    if (tokenA === tokenB) reject(`${prefix} token pair must be two different addresses`);
+    let fee: number | undefined;
+    if (entry.fee !== undefined) {
+      if (v2) reject(`${prefix} must not set a fee on a v2 pool`);
+      if (!Number.isInteger(entry.fee) || entry.fee <= 0 || entry.fee > 1_000_000) {
+        reject(`${prefix} fee must be a positive integer up to 1000000`);
+      }
+      fee = entry.fee;
+    } else if (!v2) {
+      reject(`${prefix} requires a fee tier on a v3 pool`);
+    }
+    const key = poolKey(tokenA, tokenB, fee);
+    if (seen.has(key)) reject(`${prefix} lists the same pool twice`);
+    seen.add(key);
+    out.push({ tokenA, tokenB, fee });
+  }
+  return out;
+}
+
+function samePair(left: NormalizedPool, right: NormalizedPool): boolean {
+  return (left.tokenA === right.tokenA && left.tokenB === right.tokenB)
+    || (left.tokenA === right.tokenB && left.tokenB === right.tokenA);
+}
+
+function poolKey(tokenA: string, tokenB: string, fee: number | undefined): string {
+  const [a, b] = tokenA.toLowerCase() < tokenB.toLowerCase() ? [tokenA, tokenB] : [tokenB, tokenA];
+  return `${a}|${b}|${fee ?? ''}`;
+}
+
+function assertSqrt(value: unknown): void {
+  if (asBigint(value) !== 0n) fail('DEX sqrtPriceLimitX96 must be 0');
+}
+
+function asFee(value: unknown): number {
+  if (typeof value === 'bigint') {
+    if (value < 0n || value > 0xffffffn) fail('DEX fee tier could not be decoded');
+    return Number(value);
+  }
+  if (typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 0xffffff) return value;
+  fail('DEX fee tier could not be decoded');
+}
+
 /** Uniswap v3 packed path: token (20) + fee (3) + token, at most three tokens. */
-function decodeV3Path(path: string, input: DexDecodeInput): string[] {
+function decodeV3Path(path: string, input: DexDecodeInput): { tokens: string[]; hops: NormalizedPool[] } {
   const hex = path.startsWith('0x') || path.startsWith('0X') ? path.slice(2) : path;
   if (!/^[0-9a-fA-F]*$/.test(hex) || hex.length % 2 !== 0) fail('DEX path could not be decoded');
   const bytes = Buffer.from(hex, 'hex');
   if (bytes.length < 43) fail('DEX path could not be decoded');
   const tokens: string[] = [];
+  const hops: NormalizedPool[] = [];
   let offset = 0;
+  let pendingFee: number | undefined;
   while (offset < bytes.length) {
     if (bytes.length - offset < 20) fail('DEX path could not be decoded');
-    tokens.push(erc20(`0x${bytes.subarray(offset, offset + 20).toString('hex')}`, input));
+    const token = erc20(`0x${bytes.subarray(offset, offset + 20).toString('hex')}`, input);
+    if (tokens.length > 0) {
+      if (pendingFee === undefined) fail('DEX path could not be decoded');
+      hops.push({ tokenA: tokens[tokens.length - 1], tokenB: token, fee: pendingFee });
+      pendingFee = undefined;
+    }
+    tokens.push(token);
     offset += 20;
     if (offset === bytes.length) break;
     if (bytes.length - offset < 23) fail('DEX path could not be decoded');
+    pendingFee = (bytes[offset] << 16) | (bytes[offset + 1] << 8) | bytes[offset + 2];
     offset += 3;
   }
+  if (pendingFee !== undefined) fail('DEX path could not be decoded');
   if (tokens.length < 2 || tokens.length > 3) fail('DEX path must contain 2 or 3 tokens');
-  return tokens;
+  return { tokens, hops };
 }
 
 function erc20(token: string, input: DexDecodeInput): string {
