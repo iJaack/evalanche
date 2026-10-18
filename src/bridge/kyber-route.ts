@@ -18,6 +18,7 @@ import { EvalancheError, EvalancheErrorCode } from '../utils/errors';
 import { safeFetch } from '../utils/safe-fetch';
 import {
   KYBER_SWAP_SELECTOR,
+  LIFI_DIAMOND,
   LIFI_NATIVE_SENTINEL,
   SELECTOR,
   isNativeAsset,
@@ -117,9 +118,28 @@ interface KyberEnvelope {
 
 type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
 
+/**
+ * The signer config this route will be submitted to.
+ * An omitted `lifiDiamond` is the signer's canonical default. It must equal
+ * the builder pin. HyperEVM, Robinhood, Linea, and Berachain disagree with
+ * that default, so those chains are refused until the pinned diamond is set.
+ * `router` and `wrappedNative`, when set, must equal the pins.
+ */
+export interface KyberSignerPins {
+  lifiDiamond?: string;
+  router?: string;
+  wrappedNative?: string;
+}
+
 export interface KyberLifiSwapOptions {
   /** Test double. Production uses {@link safeFetch}. */
   fetchImpl?: FetchLike;
+  /**
+   * Signer diamond, router, and wrapped native. The builder refuses when
+   * these disagree with its pins. An omitted diamond is the canonical Li.Fi
+   * diamond the signer uses when `lifiDiamond` is unset.
+   */
+  signer?: KyberSignerPins;
   /**
    * Independent bought-token amount, or a fetcher that returns one
    * (a second Kyber route, CoinGecko, or another source). The builder
@@ -144,6 +164,38 @@ function chainRoute(chainId: number, enabledChainIds?: readonly number[]): Kyber
   const enabled = enabledChainIds ?? KYBER_ROUTE_CHAIN_IDS;
   if (!enabled.includes(chainId)) fail(`Kyber route builder refuses disabled chain ${chainId}`);
   return route;
+}
+
+function readSignerAddress(value: string, label: string): string {
+  try {
+    return getAddress(value);
+  } catch {
+    fail(`${label} is not an address`);
+  }
+}
+
+/**
+ * The signer defaults an omitted diamond to the canonical Li.Fi diamond.
+ * A chain whose pin is a different diamond fails closed until config sets it.
+ * Router and wrapped native are checked only when the signer config sets them.
+ */
+function assertSignerPins(pinned: KyberRouteChain, signer?: KyberSignerPins): void {
+  const diamond = readSignerAddress(signer?.lifiDiamond ?? LIFI_DIAMOND, 'signer lifiDiamond');
+  if (diamond !== getAddress(pinned.diamond)) {
+    fail(`Kyber Li.Fi diamond does not match the signer config for chain ${pinned.chainId}`);
+  }
+  if (signer?.router !== undefined) {
+    const router = readSignerAddress(signer.router, 'signer router');
+    if (router !== getAddress(pinned.router)) {
+      fail(`Kyber router does not match the signer config for chain ${pinned.chainId}`);
+    }
+  }
+  if (signer?.wrappedNative !== undefined) {
+    const wrapped = readSignerAddress(signer.wrappedNative, 'signer wrappedNative');
+    if (wrapped !== getAddress(pinned.wrappedNative)) {
+      fail(`Kyber wrapped native does not match the signer config for chain ${pinned.chainId}`);
+    }
+  }
 }
 
 function treasuryAddress(value: string): string {
@@ -367,9 +419,11 @@ export function assembleLifiV3FromKyber(input: {
   recipient?: string;
   slippageCaps?: SlippageCaps;
   enabledChainIds?: readonly number[];
+  signer?: KyberSignerPins;
 }): KyberLifiSwap {
   const chainId = input.chainId;
   const pinned = chainRoute(chainId, input.enabledChainIds);
+  assertSignerPins(pinned, input.signer);
   const treasury = treasuryAddress(input.treasury);
   assertRecipientIsTreasury(input.recipient, treasury);
   const desc = readKyberSwap(input.calldata);
@@ -437,6 +491,7 @@ export async function buildKyberLifiSwap(
 ): Promise<KyberLifiSwap> {
   if (request.amountIn <= 0n) fail('amountIn must be greater than zero');
   const pinned = chainRoute(request.chainId, options.enabledChainIds);
+  assertSignerPins(pinned, options.signer);
   const treasury = treasuryAddress(request.treasury);
   assertRecipientIsTreasury(request.recipient, treasury);
   const slug = pinned.slug;
@@ -491,5 +546,6 @@ export async function buildKyberLifiSwap(
     recipient: request.recipient,
     slippageCaps: request.slippageCaps,
     enabledChainIds: options.enabledChainIds,
+    signer: options.signer,
   });
 }

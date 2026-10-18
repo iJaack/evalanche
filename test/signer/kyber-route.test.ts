@@ -289,7 +289,13 @@ async function buildOn(
 describe('Kyber routes on every pinned chain', () => {
   it.each(KYBER_ROUTE_CHAINS)('builds a matching route on $slug ($chainId)', async (chain) => {
     const { pair } = retarget(chain.chainId);
-    const { built, calls } = await buildOn(chain.chainId, pair);
+    const { built, calls } = await buildOn(chain.chainId, pair, {}, {
+      signer: {
+        lifiDiamond: chain.diamond,
+        router: chain.router,
+        wrappedNative: chain.wrappedNative,
+      },
+    });
     expect(calls[0]?.url).toContain(`/${chain.slug}/api/v1/routes?`);
     const buildBody = JSON.parse(calls[1]?.body ?? '{}') as { sender: string; recipient: string };
     expect(getAddress(buildBody.sender)).toBe(chain.diamond);
@@ -374,6 +380,43 @@ describe('Kyber routes on every pinned chain', () => {
       calldata: patchKyber(pair.build.data.data, { dstReceiver: ATTACKER }),
       quotedAmountOut: BigInt(recorded.build.data.amountOut),
       treasury: WALLET,
+      signer: { lifiDiamond: chain.diamond },
     })).toThrow(/Li\.Fi diamond/);
+  });
+
+  it('fails closed when the signer diamond, router, or wrapped native disagrees', async () => {
+    const sonic = retarget(146);
+    const hyper = retarget(999);
+    const { built } = await buildOn(146, sonic.pair);
+    expect(built.to).toBe(sonic.chain.diamond);
+    expect(built.wrappedNative).toBe('0x039e2fB66102314Ce7b64Ce5Ce3E5183bc94aD38');
+
+    await expect(buildKyberLifiSwap({
+      chainId: 999,
+      tokenIn: recorded.request.tokenIn,
+      tokenOut: recorded.request.tokenOut,
+      amountIn: BigInt(recorded.request.amountIn),
+      treasury: WALLET,
+    }, { fetchImpl: async () => { throw new Error('fetch must not run'); } })).rejects.toThrow(/diamond does not match the signer config for chain 999/);
+
+    await expect(buildOn(999, hyper.pair, {}, { signer: { lifiDiamond: LIFI_DIAMOND } })).rejects.toThrow(/chain 999/);
+    const agreed = await buildOn(999, hyper.pair, {}, {
+      signer: {
+        lifiDiamond: hyper.chain.diamond,
+        router: hyper.chain.router,
+        wrappedNative: hyper.chain.wrappedNative,
+      },
+    });
+    expect(agreed.built.to).toBe('0x0a0758d937d1059c356D4714e57F5df0239bce1A');
+    expect(agreed.built.wrappedNative).toBe('0x5555555555555555555555555555555555555555');
+
+    await expect(buildOn(146, sonic.pair, {}, { signer: { lifiDiamond: hyper.chain.diamond } })).rejects.toThrow(/chain 146/);
+    await expect(buildOn(146, sonic.pair, {}, { signer: { router: ATTACKER } })).rejects.toThrow(/router does not match the signer config/);
+    await expect(buildOn(146, sonic.pair, {}, { signer: { wrappedNative: ATTACKER } })).rejects.toThrow(/wrapped native does not match the signer config/);
+
+    for (const chainId of [4663, 59144, 80094]) {
+      const { pair } = retarget(chainId);
+      await expect(buildOn(chainId, pair)).rejects.toThrow(new RegExp(`chain ${chainId}`));
+    }
   });
 });

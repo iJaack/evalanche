@@ -407,7 +407,7 @@ A live Li.Fi quote can still insert a "LIFI Fixed Fee" step (`callTo` `0xCE40…
 
 The build request sets both `sender` and `recipient` to that diamond. The diamond is the router caller, and it is the address whose token balance the V3 facet measures before it forwards the output. The `treasury` argument is the V3 `receiver`. It must be the signer wallet, with the `recipient` role. `quotedAmountOut` is Kyber's `amountOut`. `minAmountOut` is `quotedAmountOut * (10000 - classCap) / 10000`, using the bought-token class cap (50 bps for a stable, 200 for a top asset, 300 otherwise).
 
-The builder throws unless the route and the build name the requested `tokenIn`, `tokenOut`, and `amountIn`, the router is the pinned MetaAggregationRouterV2 for that chain (`0x6131B5fae19EA4f9D964eAc0408E4408b66337b5`), and the build `amountOut` is within 0.1% of the route `amountOut`. An optional `recipient` must be the treasury. Chains 4663, 59144, 80094, and 999 use a diamond other than the canonical one, so the signer config must set `lifiDiamond` to that address. A chain other than Avalanche must set `kyberExecutors` to include `0x8F10B468b06c6FD214B65F87778827F7D113f996`.
+The builder throws unless the route and the build name the requested `tokenIn`, `tokenOut`, and `amountIn`, the router is the pinned MetaAggregationRouterV2 for that chain (`0x6131B5fae19EA4f9D964eAc0408E4408b66337b5`), and the build `amountOut` is within 0.1% of the route `amountOut`. An optional `recipient` must be the treasury. Chains 4663, 59144, 80094, and 999 use a diamond other than the canonical one, so the signer config must set `lifiDiamond` to that address. Sonic 146 uses the canonical diamond `0x1231DEB6f5749EF6cE6943a275A1D3E7486F4EaE` and wrapped S `0x039e2fB66102314Ce7b64Ce5Ce3E5183bc94aD38`. HyperEVM 999 uses diamond `0x0a0758d937d1059c356D4714e57F5df0239bce1A` and WHYPE `0x5555555555555555555555555555555555555555`. Pass the signer chain's `lifiDiamond` as `signer.lifiDiamond`. An omitted value is compared with the canonical diamond and refused when the pin is different. `signer.router` and `signer.wrappedNative`, when set, must equal the pin. A chain other than Avalanche must set `kyberExecutors` to include `0x8F10B468b06c6FD214B65F87778827F7D113f996`.
 
 `referencePrice` is optional and stays off unless the caller sets it. Pass a bought-token amount, or a function that returns one from a second Kyber route or from CoinGecko. The builder refuses when `quotedAmountOut` is more than 1% below that reference. The signer does not run this check.
 
@@ -426,6 +426,22 @@ const swap = await buildKyberLifiSwap({
 // swap.to is the diamond, swap.data is 0x4666fc80, swap.value is 0 for ERC-20 in.
 // Put swap.quotedAmountOut and swap.minAmountOut on the signing intent.
 ```
+
+On HyperEVM, pass the signer diamond or the builder refuses before it calls Kyber:
+
+```js
+const hyper = await buildKyberLifiSwap({
+  chainId: 999,
+  tokenIn,
+  tokenOut,
+  amountIn,
+  treasury: wallet,
+}, {
+  signer: { lifiDiamond: '0x0a0758d937d1059c356D4714e57F5df0239bce1A' },
+});
+```
+
+`buildDirectDexSwap` builds a Cronos VVS, Gnosis SwapRouter02, or Celo SwapRouter02 intent from the same `dex` config the signer boots with. `quotedAmountOut` is required. `minAmountOut` is the quote after the bought-token class slippage. Hops come only from `dex.pools`. `sqrtPriceLimitX96` is 0, value is 0, and the deadline stays inside the next 600 seconds. Cronos is `swapExactTokensForTokens` only. Gnosis and Celo use a timed multicall. Mantle is refused unless `poolDepthVerified` is set and `verifiedAt` is on or before today. The best Agni pool is about $14k, so leave that venue off.
 
 ## Li.Fi V3 slippage
 
