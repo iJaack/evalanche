@@ -230,7 +230,7 @@ describe('remote signer', () => {
         address: harness.wallet.address,
         token: 'test-token',
       },
-      network: 'fuji',
+      network: 'avalanche',
     });
     expect(agent.signerMode).toBe('remote');
     expect(agent.getLocalPrivateKey()).toBeUndefined();
