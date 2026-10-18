@@ -191,9 +191,9 @@ describe('second-review signer regressions', () => {
     } as never)).rejects.toThrow(/symlink|root|writable/i);
   });
 
-  for (const [field, val] of [['to', ATTACKER], ['value', '1'], ['gasPrice', '30000000001'], ['type', 2], ['chainId', 43113], ['nonce', 5], ['maxFeePerGas', '1']] as const) {
+  for (const [field, val] of [['to', ATTACKER], ['value', '1'], ['gasPrice', '30000000001'], ['type', 2], ['chainId', 1], ['nonce', 5], ['maxFeePerGas', '1']] as const) {
     it(`R-${field}: tampering ${field} after approval is denied`, async () => {
-      const h = await boot({ chainIds: [CHAIN, 43113] });
+      const h = await boot({ chainIds: [CHAIN, 1] });
       const data = ERC20.encodeFunctionData('approve', [DIAMOND, 1_000_000n]);
       const req = build(h, USDC, data, { action: 'approve', minAmountOut: undefined });
       (req as unknown as Record<string, unknown>)[field] = val;

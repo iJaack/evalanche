@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Add a per-chain signer policy for the nineteen mainnets. Avalanche 43114 stays on unless `enabled` is false or `killSwitch` is true. Every other chain stays off until `enabled` is true. Testnets cannot be enabled. An old file with no `chains` object keeps its chain list, shared token caps, gas cap, price source, and Avalanche slippage defaults.
+- Key token caps, RPC lists, gas mode, Li.Fi diamond selectors, Kyber executors, and price feeds by chain. The same token address on two chains does not share a cap. Gas mode is legacy, EIP-1559, or both. zkSync type 113 stays denied. Simulation uses the request chain's RPC list and does not fall through a revert.
+- Add a Polymarket module on Polygon 137, off by default. `polymarket-order` signs the V2 Order typehash and requires maker and signer to be the treasury, signature type 0, an allowlisted market, a price inside the mid band, and FOK. The exchange does not sign expiration, nonce, feeRateBps, or taker, so the signer does not enforce them. `clob-auth` and the V3 exchange are separate flags and stay off. CTF `setApprovalForAll` to a current V2 exchange, CTF and NegRiskAdapter redeems, and a zero ERC-20 revoke are the only gated transactions. Split, merge, and positive approvals stay denied. Generic typed data still cannot sign these domains.
+- Add an Avalanche Uniswap v3 concentrated-liquidity module, off by default. It allows an exact WAVAX or USDC approve to the NonfungiblePositionManager, plus mint, collect, decreaseLiquidity, and burn on the allowlisted pool. The recipient is the treasury. Deadlines must fall inside ten minutes. NFT transfer and approval selectors stay blocked. `increaseLiquidity` stays blocked unless the config flag is set. A multicall is signed only when every inner call passes the same checks. While the module is on, WAVAX and USDC are added to the 43114 allow map so a swap can fund the position. The Grok Bot provision template is unchanged.
+
 ## 1.15.0
 
 - Add a pluggable signer so an agent can sign without a local private key in the Evalanche process.

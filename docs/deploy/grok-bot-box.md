@@ -194,6 +194,8 @@ Capture that stdout into the bot secret `OPS_VERIFIER_ED25519`. Do not redirect 
 
 Leave out `privateKey`, `keystorePath`, `token`, and `dryRun` unless dry-run must stay on even for `start --live`. Roles are additive: a native send needs `recipient`, and an address may carry `recipient` together with `dex`.
 
+This example stays a single-chain Avalanche file. It does not set `chains`, and it does not enable Polymarket or the Uniswap v3 LP module. Those modules stay off until a config names them. The provision template is the same JSON. See `docs/signer-multichain.md`.
+
 Create the bearer token once, in the persistent directory. The start script reads this file. It does not generate a new token:
 
 ```sh
