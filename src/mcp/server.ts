@@ -2716,7 +2716,7 @@ export class EvalancheMCPServer {
             capabilities: { tools: {} },
             serverInfo: {
               name: 'evalanche',
-              version: '1.17.0-rc.1',
+              version: '1.17.0-rc.2',
             },
           });
 

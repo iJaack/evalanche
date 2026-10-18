@@ -18,11 +18,13 @@ import { EvalancheError, EvalancheErrorCode } from '../utils/errors';
 import { safeFetch } from '../utils/safe-fetch';
 import {
   KYBER_SWAP_SELECTOR,
+  LIFI_DIAMOND,
   LIFI_NATIVE_SENTINEL,
   SELECTOR,
   isNativeAsset,
 } from '../signer/decode';
-import { tokenClassBps, type SlippageCaps } from '../signer/server';
+import { type SlippageCaps } from '../signer/server';
+import { proposerSlippageBps } from './slippage';
 import {
   KYBER_ROUTE_CHAIN_IDS,
   kyberRouteChain,
@@ -117,9 +119,34 @@ interface KyberEnvelope {
 
 type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
 
+/**
+ * The signer config this route will be submitted to.
+ * An omitted `lifiDiamond` is the signer's canonical default. It must equal
+ * the builder pin. HyperEVM, Robinhood, Linea, and Berachain disagree with
+ * that default, so those chains are refused until the pinned diamond is set.
+ * `router` and `wrappedNative`, when set, must equal the pins.
+ */
+export interface KyberSignerPins {
+  lifiDiamond?: string;
+  router?: string;
+  wrappedNative?: string;
+  /**
+   * Slippage caps from the signer chain config. Required off Avalanche.
+   * The builder uses these as the ceiling so minOut is not looser than the
+   * signer's per-class cap.
+   */
+  slippageCaps?: SlippageCaps;
+}
+
 export interface KyberLifiSwapOptions {
   /** Test double. Production uses {@link safeFetch}. */
   fetchImpl?: FetchLike;
+  /**
+   * Signer diamond, router, and wrapped native. The builder refuses when
+   * these disagree with its pins. An omitted diamond is the canonical Li.Fi
+   * diamond the signer uses when `lifiDiamond` is unset.
+   */
+  signer?: KyberSignerPins;
   /**
    * Independent bought-token amount, or a fetcher that returns one
    * (a second Kyber route, CoinGecko, or another source). The builder
@@ -144,6 +171,38 @@ function chainRoute(chainId: number, enabledChainIds?: readonly number[]): Kyber
   const enabled = enabledChainIds ?? KYBER_ROUTE_CHAIN_IDS;
   if (!enabled.includes(chainId)) fail(`Kyber route builder refuses disabled chain ${chainId}`);
   return route;
+}
+
+function readSignerAddress(value: string, label: string): string {
+  try {
+    return getAddress(value);
+  } catch {
+    fail(`${label} is not an address`);
+  }
+}
+
+/**
+ * The signer defaults an omitted diamond to the canonical Li.Fi diamond.
+ * A chain whose pin is a different diamond fails closed until config sets it.
+ * Router and wrapped native are checked only when the signer config sets them.
+ */
+function assertSignerPins(pinned: KyberRouteChain, signer?: KyberSignerPins): void {
+  const diamond = readSignerAddress(signer?.lifiDiamond ?? LIFI_DIAMOND, 'signer lifiDiamond');
+  if (diamond !== getAddress(pinned.diamond)) {
+    fail(`Kyber Li.Fi diamond does not match the signer config for chain ${pinned.chainId}`);
+  }
+  if (signer?.router !== undefined) {
+    const router = readSignerAddress(signer.router, 'signer router');
+    if (router !== getAddress(pinned.router)) {
+      fail(`Kyber router does not match the signer config for chain ${pinned.chainId}`);
+    }
+  }
+  if (signer?.wrappedNative !== undefined) {
+    const wrapped = readSignerAddress(signer.wrappedNative, 'signer wrappedNative');
+    if (wrapped !== getAddress(pinned.wrappedNative)) {
+      fail(`Kyber wrapped native does not match the signer config for chain ${pinned.chainId}`);
+    }
+  }
 }
 
 function treasuryAddress(value: string): string {
@@ -318,9 +377,20 @@ async function assertQuotedNearReference(
   }
 }
 
-function classFloor(quoted: bigint, tokenOut: string, caps: SlippageCaps | undefined): bigint {
+function classFloor(
+  quoted: bigint,
+  tokenOut: string,
+  chainId: number,
+  caps: SlippageCaps | undefined,
+  signerCaps: SlippageCaps | undefined,
+): bigint {
   if (quoted <= 0n) fail('Kyber amountOut must be greater than zero');
-  const bps = tokenClassBps(caps, tokenOut);
+  const bps = proposerSlippageBps({
+    chainId,
+    tokenOut,
+    slippageCaps: caps,
+    signerSlippageCaps: signerCaps,
+  });
   const floor = quoted * (10_000n - BigInt(bps)) / 10_000n;
   if (floor <= 0n) fail('Kyber amountOut is too small to leave a positive slippage floor');
   return floor;
@@ -367,9 +437,11 @@ export function assembleLifiV3FromKyber(input: {
   recipient?: string;
   slippageCaps?: SlippageCaps;
   enabledChainIds?: readonly number[];
+  signer?: KyberSignerPins;
 }): KyberLifiSwap {
   const chainId = input.chainId;
   const pinned = chainRoute(chainId, input.enabledChainIds);
+  assertSignerPins(pinned, input.signer);
   const treasury = treasuryAddress(input.treasury);
   assertRecipientIsTreasury(input.recipient, treasury);
   const desc = readKyberSwap(input.calldata);
@@ -391,7 +463,13 @@ export function assembleLifiV3FromKyber(input: {
   const tokenIn = String(desc.srcToken);
   const tokenOut = String(desc.dstToken);
   const nativeIn = isNativeAsset(tokenIn);
-  const minAmountOut = classFloor(input.quotedAmountOut, isNativeAsset(tokenOut) ? tokenOut : getAddress(tokenOut), input.slippageCaps);
+  const minAmountOut = classFloor(
+    input.quotedAmountOut,
+    isNativeAsset(tokenOut) ? tokenOut : getAddress(tokenOut),
+    chainId,
+    input.slippageCaps,
+    input.signer?.slippageCaps,
+  );
   const router = getAddress(pinned.router);
   const data = LIFI_V3.encodeFunctionData('swapTokensSingleV3ERC20ToERC20', [
     `0x${'00'.repeat(32)}`,
@@ -437,11 +515,18 @@ export async function buildKyberLifiSwap(
 ): Promise<KyberLifiSwap> {
   if (request.amountIn <= 0n) fail('amountIn must be greater than zero');
   const pinned = chainRoute(request.chainId, options.enabledChainIds);
+  assertSignerPins(pinned, options.signer);
   const treasury = treasuryAddress(request.treasury);
   assertRecipientIsTreasury(request.recipient, treasury);
   const slug = pinned.slug;
   const tokenIn = aggregatorToken(request.tokenIn);
   const tokenOut = aggregatorToken(request.tokenOut);
+  const bps = proposerSlippageBps({
+    chainId: request.chainId,
+    tokenOut,
+    slippageCaps: request.slippageCaps,
+    signerSlippageCaps: options.signer?.slippageCaps,
+  });
   const headers = {
     accept: 'application/json',
     'content-type': 'application/json',
@@ -453,7 +538,6 @@ export async function buildKyberLifiSwap(
   routeUrl.searchParams.set('amountIn', request.amountIn.toString());
   const route = await readKyber(routeUrl.toString(), { method: 'GET', headers }, options.fetchImpl);
   if (!route.data?.routeSummary) fail('Kyber route response has no routeSummary');
-  const bps = tokenClassBps(request.slippageCaps, tokenOut);
   const diamond = getAddress(pinned.diamond);
   const build = await readKyber(`${KYBER_AGGREGATOR_API}/${slug}/api/v1/route/build`, {
     method: 'POST',
@@ -491,5 +575,6 @@ export async function buildKyberLifiSwap(
     recipient: request.recipient,
     slippageCaps: request.slippageCaps,
     enabledChainIds: options.enabledChainIds,
+    signer: options.signer,
   });
 }
