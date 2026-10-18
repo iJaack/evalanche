@@ -8,6 +8,7 @@
 import { Interface, MaxUint256, getAddress } from 'ethers';
 import { EvalancheError, EvalancheErrorCode } from '../utils/errors';
 import { decodeClmmCalldata, isClmmNpmApprove, isClmmPositionManager, type ClmmModuleConfig } from './clmm';
+import { decodeDexCalldata, isDexRouter, type DexVenueConfig } from './dex-venue';
 import type { SigningIntent } from './intent';
 import { decodePolymarketTransaction, isPolymarketCollateral, isPolymarketCollateralApprove, isPolymarketDeniedAddress, polymarketSpenderDenied, type PolymarketModuleConfig } from './polymarket-module';
 import { POLYMARKET_DENY_CONTRACTS as POLYMARKET_DENY_LIST } from './polymarket-addresses';
@@ -121,7 +122,8 @@ export type DecodedKind =
   | 'savax-request-redeem'
   | 'lifi-swap'
   | 'polymarket-call'
-  | 'clmm-call';
+  | 'clmm-call'
+  | 'dex-swap';
 
 export interface DecodedCall {
   kind: DecodedKind;
@@ -168,7 +170,11 @@ export interface DecodeOptions {
   lifiDiamond?: string;
   polymarket?: PolymarketModuleConfig;
   clmm?: ClmmModuleConfig;
-  /** Unix seconds. CLMM deadlines are checked against this clock. */
+  /** Chain of this call. Set by the signer so a pinned DEX router is decoded. */
+  chainId?: number;
+  /** Direct swap venue for `chainId`. Absent or disabled denies that router. */
+  dex?: DexVenueConfig;
+  /** Unix seconds. CLMM and DEX deadlines are checked against this clock. */
   nowSec?: number;
   intent?: SigningIntent;
 }
@@ -261,6 +267,28 @@ export function decodeCalldata(to: string, data: string, options: DecodeOptions,
   if (isPolymarketCollateralApprove(to, data) && isPolymarketCollateral(to)) {
     const gated = decodePolymarketTransaction(to, data, options.polymarket);
     return [{ kind: 'polymarket-call', selector, moduleOp: gated.op }];
+  }
+
+  if (options.chainId !== undefined && isDexRouter(options.chainId, to)) {
+    const swaps = decodeDexCalldata(to, data, {
+      chainId: options.chainId,
+      config: options.dex,
+      wallet: options.wallet,
+      value: options.value,
+      tokenIn: options.tokenIn,
+      tokenOut: options.tokenOut,
+      amountIn: options.amountIn,
+      allowRole: (address) => options.allowRole(address, 'token'),
+      nowSec: options.nowSec ?? Math.floor(Date.now() / 1000),
+    }, depth);
+    return swaps.map((swap) => ({
+      kind: 'dex-swap' as const,
+      selector: swap.selector,
+      amount: swap.amountIn,
+      minOut: swap.minOut,
+      receiver: swap.recipient,
+      asset: swap.tokenIn,
+    }));
   }
 
   if (!options.allowSelector(to, selector)) {
