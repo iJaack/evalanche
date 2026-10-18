@@ -6,12 +6,12 @@
     <title>Evalanche — Multi-EVM agent wallet SDK</title>
     <meta
       name="description"
-      content="Evalanche v1.11.0 is a multi-EVM agent wallet SDK for identity, payments, cross-chain execution, policy-guarded automation, and official-CLI-backed Polymarket execution."
+      content="Evalanche v1.14.0 is an Avalanche-first, multi-EVM agent wallet SDK for identity, payments, cross-chain execution, Avalanche L1s, and policy-guarded automation."
     />
     <meta property="og:title" content="Evalanche — Multi-EVM agent wallet SDK" />
     <meta
       property="og:description"
-      content="Avalanche-first agent wallet infrastructure with policy-guarded execution, hardened MCP HTTP transport, and official Polymarket CLI routing."
+      content="Avalanche-first agent wallet infrastructure on the official Avalanche SDK, with Avalanche L1 discovery, policy-guarded execution, and a hardened MCP server."
     />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://evalanche.xyz" />
@@ -20,7 +20,7 @@
     <meta name="twitter:title" content="Evalanche — Multi-EVM agent wallet SDK" />
     <meta
       name="twitter:description"
-      content="Avalanche-first agent wallet infrastructure with policy-guarded execution, hardened MCP HTTP transport, and official Polymarket CLI routing."
+      content="Avalanche-first agent wallet infrastructure on the official Avalanche SDK, with Avalanche L1 discovery, policy-guarded execution, and a hardened MCP server."
     />
     <meta name="twitter:image" content="https://evalanche.xyz/social-card.svg" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
@@ -47,12 +47,13 @@
             <h1 class="ev-wordmark">
               <span class="ev-red">eva</span>lanche
             </h1>
-            <p class="ev-tagline">Avalanche-first agent wallet infrastructure with multi-EVM execution, policy rails, and official-CLI-backed Polymarket flows.</p>
-            <div class="ev-release-pill">Now shipping v1.11.0</div>
+            <p class="ev-tagline">Avalanche-first agent wallet infrastructure with multi-EVM execution, Avalanche L1 support, and policy rails.</p>
+            <div class="ev-release-pill">Now shipping v1.14.0</div>
             <div class="ev-badges">
               <span class="ev-badge">ERC-8004</span>
               <span class="ev-badge">x402</span>
               <span class="ev-badge">Headless wallets</span>
+              <span class="ev-badge">Avalanche L1s</span>
               <span class="ev-badge">Holdings</span>
               <span class="ev-badge">Polymarket</span>
               <span class="ev-badge">Hyperliquid</span>
@@ -69,21 +70,22 @@
           <div class="ev-hero-code">
             <div class="ev-code-bar">
               <span class="ev-dot"></span><span class="ev-dot"></span><span class="ev-dot"></span>
-              <span class="ev-code-title">evalanche-v1.11.0.ts</span>
+              <span class="ev-code-title">evalanche-v1.14.0.ts</span>
             </div>
-            <pre class="ev-code-body"><code>const { agent } = await Evalanche.boot({ network: "polygon" });
+            <pre class="ev-code-body"><code>import { Evalanche, listAvalancheL1s, getAvalancheL1Network } from "evalanche";
 
-await agent.mcp().call("pm_approve", {});
+// Live mainnet or Fuji EVM L1 catalog
+const l1s = await listAvalancheL1s();
 
-const balances = await agent.mcp().call("pm_balances", {});
+// Checks the RPC's eth_chainId before use
+const network = await getAvalancheL1Network(4337); // Beam
 
-const topup = await agent.bridgeTokensDetailed({
-  fromChain: "base",
-  toChain: "polygon",
-  fromToken: "USDC",
-  toToken: "USDC",
-  amount: "25",
-});</code></pre>
+const agent = new Evalanche({
+  privateKey: process.env.AGENT_PRIVATE_KEY,
+  network,
+});
+
+console.log(agent.getChainInfo()); // BEAM, not AVAX</code></pre>
           </div>
         </div>
       </header>
@@ -105,7 +107,7 @@ const topup = await agent.bridgeTokensDetailed({
             <div class="ev-feature-card">
               <span class="ev-feature-badge">Markets</span>
               <h3 class="ev-feature-title">More than wallet plumbing</h3>
-              <p class="ev-feature-body">Holdings, DeFi, Polymarket, Hyperliquid, CoinGecko, Avalanche L1s, and cross-chain execution live behind the same agent-facing surface.</p>
+              <p class="ev-feature-body">Holdings, DeFi, Hyperliquid perpetuals, Polymarket, CoinGecko, Avalanche L1s, Robinhood Chain, and LI.FI cross-chain execution live behind the same agent-facing surface.</p>
             </div>
             <div class="ev-feature-card">
               <span class="ev-feature-badge">Infrastructure</span>
@@ -118,28 +120,28 @@ const topup = await agent.bridgeTokensDetailed({
 
       <section class="ev-section" id="install">
         <div class="ev-container">
-          <h2 class="ev-section-title">Why v1.11.0 matters</h2>
+          <h2 class="ev-section-title">Why v1.14.0 matters</h2>
           <div class="ev-steps">
             <div class="ev-step">
               <div class="ev-step-meta">
                 <span class="ev-step-num">01</span>
-                <span class="ev-step-label">Hardened local MCP transport</span>
+                <span class="ev-step-label">Official Avalanche SDK by default</span>
               </div>
-              <pre class="ev-step-code"><code>HTTP MCP now requires an explicit bearer token, stays on loopback by default, enforces request timeouts, and rejects oversized request bodies before parsing.</code></pre>
+              <pre class="ev-step-code"><code>Native X/P/C operations now run on the official @avalanche-sdk/client. The legacy Core wallet and vulnerable HPKE dependency trees are gone from fresh installs, and clean consumer audits report zero production vulnerabilities.</code></pre>
             </div>
             <div class="ev-step">
               <div class="ev-step-meta">
                 <span class="ev-step-num">02</span>
-                <span class="ev-step-label">Official Polymarket CLI routing</span>
+                <span class="ev-step-label">Avalanche L1 discovery</span>
               </div>
-              <pre class="ev-step-code"><code>Authenticated Polymarket tools now route through the official CLI with JSON-only parsing, no argv secrets, and redacted subprocess failures.</code></pre>
+              <pre class="ev-step-code"><code>Live mainnet and Fuji L1 catalog lookup, RPC chain ID verification, and native-token preservation, exposed as public SDK and MCP helpers. L1 wallets are EVM-only.</code></pre>
             </div>
             <div class="ev-step">
               <div class="ev-step-meta">
                 <span class="ev-step-num">03</span>
-                <span class="ev-step-label">Policy-aware execution helpers</span>
+                <span class="ev-step-label">Leaner, hardened runtime</span>
               </div>
-              <pre class="ev-step-code"><code>Approve-and-call, proxy upgrades, Li.Fi bridge/swap execution, and Gas.zip funding now route through the active spending policy before they can broadcast value.</code></pre>
+              <pre class="ev-step-code"><code>dYdX support is removed (Hyperliquid remains for perpetuals). X/P/C routing, offline signing, network switching and HTTP limits are hardened. Requires Node.js 20 or newer.</code></pre>
             </div>
           </div>
         </div>
