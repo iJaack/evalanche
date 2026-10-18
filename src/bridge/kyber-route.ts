@@ -17,20 +17,21 @@ import { Interface, getAddress } from 'ethers';
 import { EvalancheError, EvalancheErrorCode } from '../utils/errors';
 import { safeFetch } from '../utils/safe-fetch';
 import {
-  KYBER_META_AGGREGATION_ROUTER_V2,
   KYBER_SWAP_SELECTOR,
-  LIFI_DIAMOND,
   LIFI_NATIVE_SENTINEL,
   SELECTOR,
   isNativeAsset,
 } from '../signer/decode';
 import { tokenClassBps, type SlippageCaps } from '../signer/server';
+import {
+  KYBER_ROUTE_CHAIN_IDS,
+  kyberRouteChain,
+  type KyberRouteChain,
+} from './kyber-chains';
 
 export const KYBER_AGGREGATOR_API = 'https://aggregator-api.kyberswap.com';
-
-const CHAIN_SLUG: Record<number, string> = {
-  43114: 'avalanche',
-};
+export { KYBER_ROUTE_CHAIN_IDS, KYBER_ROUTE_CHAINS, kyberRouteChain } from './kyber-chains';
+export type { KyberRouteChain } from './kyber-chains';
 
 /** Build `amountOut` may differ from the route quote by at most this many bps. */
 const ROUTE_BUILD_AMOUNT_TOLERANCE_BPS = 10n;
@@ -55,6 +56,11 @@ export interface KyberLifiSwapRequest {
   amountIn: bigint;
   /** V3 receiver. Must be the signer wallet when the tx is submitted. */
   treasury: string;
+  /**
+   * V3 receiver. Must equal `treasury`. Omitted means `treasury`.
+   * A different address is refused.
+   */
+  recipient?: string;
   slippageCaps?: SlippageCaps;
 }
 
@@ -79,6 +85,8 @@ export interface KyberLifiSwap {
   tokenIn: string;
   tokenOut: string;
   amountIn: bigint;
+  /** Wrapped native on this chain. Native swaps still use the `0xeeee…` sentinel. */
+  wrappedNative: string;
 }
 
 interface KyberRouteSummary {
@@ -119,16 +127,43 @@ export interface KyberLifiSwapOptions {
    * means the check is off. The signer never calls this.
    */
   referencePrice?: bigint | ((request: KyberReferenceRequest) => Promise<bigint> | bigint);
+  /**
+   * Chain ids the treasury signer has enabled. A pinned Kyber chain that is
+   * not in this list is refused. Omitted means every pinned Kyber chain.
+   */
+  enabledChainIds?: readonly number[];
 }
 
 function fail(message: string): never {
   throw new EvalancheError(message, EvalancheErrorCode.INVALID_PARAMS);
 }
 
-function chainSlug(chainId: number): string {
-  const slug = CHAIN_SLUG[chainId];
-  if (!slug) fail(`Kyber route builder does not support chain ${chainId}`);
-  return slug;
+function chainRoute(chainId: number, enabledChainIds?: readonly number[]): KyberRouteChain {
+  const route = kyberRouteChain(chainId);
+  if (!route) fail(`Kyber route builder does not support chain ${chainId}`);
+  const enabled = enabledChainIds ?? KYBER_ROUTE_CHAIN_IDS;
+  if (!enabled.includes(chainId)) fail(`Kyber route builder refuses disabled chain ${chainId}`);
+  return route;
+}
+
+function treasuryAddress(value: string): string {
+  try {
+    return getAddress(value);
+  } catch {
+    fail('treasury is not an address');
+  }
+}
+
+/** The V3 receiver is the treasury. Any other recipient is refused. */
+function assertRecipientIsTreasury(recipient: string | undefined, treasury: string): void {
+  if (recipient === undefined) return;
+  let decoded: string;
+  try {
+    decoded = getAddress(recipient);
+  } catch {
+    fail('recipient is not the treasury');
+  }
+  if (decoded !== treasury) fail('recipient is not the treasury');
 }
 
 /** Kyber and Li.Fi both use the `0xeeee…` sentinel for native. */
@@ -156,9 +191,8 @@ function parseUnits(value: string | undefined, label: string): bigint {
   return BigInt(value);
 }
 
-function chainRouter(chainId: number): string {
-  chainSlug(chainId);
-  return getAddress(KYBER_META_AGGREGATION_ROUTER_V2);
+function chainRouter(chainId: number, enabledChainIds?: readonly number[]): string {
+  return getAddress(chainRoute(chainId, enabledChainIds).router);
 }
 
 function assertChainId(reported: number | string | undefined, chainId: number, label: string): void {
@@ -223,10 +257,11 @@ function assertKyberResponsesMatchRequest(
   route: KyberEnvelope,
   build: KyberEnvelope,
   calldata: string,
+  enabledChainIds?: readonly number[],
 ): bigint {
   const summary = route.data?.routeSummary;
   if (!summary) fail('Kyber route response has no routeSummary');
-  const router = chainRouter(request.chainId);
+  const router = chainRouter(request.chainId, enabledChainIds);
   assertChainId(summary.chainId, request.chainId, 'Kyber route');
   assertChainId(build.data?.chainId, request.chainId, 'Kyber build');
   if (!sameToken(summary.tokenIn, tokenIn)) fail('Kyber route tokenIn does not match the request');
@@ -329,18 +364,16 @@ export function assembleLifiV3FromKyber(input: {
   calldata: string;
   quotedAmountOut: bigint;
   treasury: string;
+  recipient?: string;
   slippageCaps?: SlippageCaps;
+  enabledChainIds?: readonly number[];
 }): KyberLifiSwap {
   const chainId = input.chainId;
-  chainSlug(chainId);
-  let treasury: string;
-  try {
-    treasury = getAddress(input.treasury);
-  } catch {
-    fail('treasury is not an address');
-  }
+  const pinned = chainRoute(chainId, input.enabledChainIds);
+  const treasury = treasuryAddress(input.treasury);
+  assertRecipientIsTreasury(input.recipient, treasury);
   const desc = readKyberSwap(input.calldata);
-  const diamond = getAddress(LIFI_DIAMOND);
+  const diamond = getAddress(pinned.diamond);
   let dstReceiver: string;
   try {
     dstReceiver = getAddress(String(desc.dstReceiver));
@@ -359,7 +392,7 @@ export function assembleLifiV3FromKyber(input: {
   const tokenOut = String(desc.dstToken);
   const nativeIn = isNativeAsset(tokenIn);
   const minAmountOut = classFloor(input.quotedAmountOut, isNativeAsset(tokenOut) ? tokenOut : getAddress(tokenOut), input.slippageCaps);
-  const router = getAddress(KYBER_META_AGGREGATION_ROUTER_V2);
+  const router = getAddress(pinned.router);
   const data = LIFI_V3.encodeFunctionData('swapTokensSingleV3ERC20ToERC20', [
     `0x${'00'.repeat(32)}`,
     'evalanche',
@@ -389,6 +422,7 @@ export function assembleLifiV3FromKyber(input: {
     tokenIn: nativeIn ? tokenIn : getAddress(tokenIn),
     tokenOut: isNativeAsset(tokenOut) ? tokenOut : getAddress(tokenOut),
     amountIn,
+    wrappedNative: getAddress(pinned.wrappedNative),
   };
 }
 
@@ -402,7 +436,10 @@ export async function buildKyberLifiSwap(
   options: KyberLifiSwapOptions = {},
 ): Promise<KyberLifiSwap> {
   if (request.amountIn <= 0n) fail('amountIn must be greater than zero');
-  const slug = chainSlug(request.chainId);
+  const pinned = chainRoute(request.chainId, options.enabledChainIds);
+  const treasury = treasuryAddress(request.treasury);
+  assertRecipientIsTreasury(request.recipient, treasury);
+  const slug = pinned.slug;
   const tokenIn = aggregatorToken(request.tokenIn);
   const tokenOut = aggregatorToken(request.tokenOut);
   const headers = {
@@ -417,7 +454,7 @@ export async function buildKyberLifiSwap(
   const route = await readKyber(routeUrl.toString(), { method: 'GET', headers }, options.fetchImpl);
   if (!route.data?.routeSummary) fail('Kyber route response has no routeSummary');
   const bps = tokenClassBps(request.slippageCaps, tokenOut);
-  const diamond = getAddress(LIFI_DIAMOND);
+  const diamond = getAddress(pinned.diamond);
   const build = await readKyber(`${KYBER_AGGREGATOR_API}/${slug}/api/v1/route/build`, {
     method: 'POST',
     headers,
@@ -431,7 +468,15 @@ export async function buildKyberLifiSwap(
   }, options.fetchImpl);
   const calldata = build.data?.data;
   if (!calldata || !calldata.startsWith('0x')) fail('Kyber build response has no calldata');
-  const quotedAmountOut = assertKyberResponsesMatchRequest(request, tokenIn, tokenOut, route, build, calldata);
+  const quotedAmountOut = assertKyberResponsesMatchRequest(
+    request,
+    tokenIn,
+    tokenOut,
+    route,
+    build,
+    calldata,
+    options.enabledChainIds,
+  );
   await assertQuotedNearReference(quotedAmountOut, {
     chainId: request.chainId,
     tokenIn,
@@ -442,7 +487,9 @@ export async function buildKyberLifiSwap(
     chainId: request.chainId,
     calldata,
     quotedAmountOut,
-    treasury: request.treasury,
+    treasury,
+    recipient: request.recipient,
     slippageCaps: request.slippageCaps,
+    enabledChainIds: options.enabledChainIds,
   });
 }

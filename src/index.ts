@@ -57,8 +57,8 @@ export { X402Client, X402Facilitator } from './x402';
 export type { PaymentRequirements, PayAndFetchOptions, PayAndFetchResult } from './x402';
 
 export { BridgeClient, LiFiClient, GasZipClient, NATIVE_TOKEN } from './bridge';
-export { KYBER_AGGREGATOR_API, assembleLifiV3FromKyber, buildKyberLifiSwap } from './bridge/kyber-route';
-export type { KyberLifiSwap, KyberLifiSwapOptions, KyberLifiSwapRequest, KyberReferenceRequest } from './bridge/kyber-route';
+export { KYBER_AGGREGATOR_API, KYBER_ROUTE_CHAIN_IDS, KYBER_ROUTE_CHAINS, assembleLifiV3FromKyber, buildKyberLifiSwap, kyberRouteChain } from './bridge/kyber-route';
+export type { KyberLifiSwap, KyberLifiSwapOptions, KyberLifiSwapRequest, KyberReferenceRequest, KyberRouteChain } from './bridge/kyber-route';
 export type {
   BridgeQuoteParams,
   BridgeQuote,
@@ -131,6 +131,7 @@ export type {
 } from './holdings';
 
 export { CoinGeckoClient } from './market/coingecko';
+export { COINGECKO_SIMPLE_PRICE_URL, NATIVE_COINGECKO_IDS, parseCoinGeckoSimplePrice } from './signer/price-feed';
 export { PolymarketCli, PolymarketClient, POLYMARKET_CLOB_HOST, PolymarketSide } from './polymarket';
 export type {
   PolymarketCliOptions,

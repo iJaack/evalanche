@@ -598,6 +598,35 @@ chmod 755 "$prefix/node_modules/.bin/evalanche-signer"
     expect(readFileSync(noncePath, 'utf8')).toBe('nonce-stays\n');
     expect(readFileSync(box.npmLog, 'utf8').trim().split('\n')).toHaveLength(calls);
   });
+
+  it('names the pinned tarball from package.json when the override is unset', async () => {
+    const box = await provisionLayout();
+    const derived = join(box.durable, 'evalanche-1.16.0.tgz');
+    const digest = createHash('sha256').update(readFileSync(box.tarball)).digest('hex');
+    const env = { ...box.env };
+    delete env.EVALANCHE_BOX_TARBALL;
+    const run = (args: string[]) => spawnSync(script, args, {
+      env,
+      encoding: 'utf8',
+      timeout: 20_000,
+      ...(box.drop ? { uid: box.drop.uid, gid: box.drop.gid } : {}),
+    });
+    const missing = run(['provision', '', digest]);
+    expect(missing.status).not.toBe(0);
+    expect(`${missing.stderr}`).toMatch(/evalanche-1\.16\.0\.tgz/);
+    expect(existsSync(box.npmLog)).toBe(false);
+
+    await mkdir(box.durable, { recursive: true });
+    if (box.drop) {
+      const chowned = spawnSync('chown', ['-R', `${box.drop.uid}:${box.drop.gid}`, box.durable]);
+      if (chowned.status !== 0) throw new Error(chowned.stderr?.toString() || 'chown failed');
+    }
+    await writeFile(derived, readFileSync(box.tarball));
+    const ready = run(['provision', '', digest]);
+    expect(ready.status, ready.stderr).toBe(0);
+    expect(existsSync(derived)).toBe(true);
+    expect(existsSync(join(box.prefix, 'dist/signer/cli.mjs'))).toBe(true);
+  });
 });
 
 /** Opt-in. The default suite must not call sudo, unshare, or userdel. */
@@ -811,7 +840,10 @@ test "$before" = "$after"
 printf '%s\\n' 'reset-ownership-ok'
 `;
     const file = join(tmpdir(), `gbs-reset-${process.pid}.sh`);
-    const signerCopy = join(tmpdir(), `grok-bot-signer-${process.pid}.sh`);
+    const signerHome = join(tmpdir(), `gbs-reset-src-${process.pid}`);
+    const signerCopy = join(signerHome, 'scripts', 'grok-bot-signer.sh');
+    await mkdir(join(signerHome, 'scripts'), { recursive: true });
+    await writeFile(join(signerHome, 'package.json'), '{"name":"evalanche","version":"1.16.0"}\n');
     await copyFile(script, signerCopy);
     await chmod(signerCopy, 0o755);
     await writeFile(file, scriptBody.replaceAll('$SCRIPT', signerCopy).replaceAll('$NODE', process.execPath), { mode: 0o755 });
@@ -822,7 +854,7 @@ printf '%s\\n' 'reset-ownership-ok'
     expect(`${result.stdout}\n${result.stderr}`, result.stderr).toContain('reset-ownership-ok');
     expect(result.status, result.stderr).toBe(0);
     await rm(file, { force: true });
-    await rm(signerCopy, { force: true });
+    await rm(signerHome, { recursive: true, force: true });
   }, 180_000);
 });
 

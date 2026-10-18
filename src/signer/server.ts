@@ -58,6 +58,7 @@ import {
 } from './decode';
 import { NonceStore, writeDurable } from './nonce-store';
 import { resolveSignerPolicy, rpcUrlsFor, tokenCap, type ResolvedChain, type SignerChainConfig, type SignerPolicy } from './chain-policy';
+import { coinGeckoBindings, fetchCoinGeckoSimplePrice, nativeCoinGeckoId } from './price-feed';
 import { CLMM_CHAIN_ID, assertClmmConfig, clmmFundingTokens, isClmmNpmApprove, isClmmPositionManager } from './clmm';
 import {
   assertClobAuth,
@@ -189,6 +190,8 @@ export interface SignerServerOptions {
   prices?: Record<string, number>;
   tokenCaps?: Record<string, string>;
   priceSourceUrl?: string;
+  /** Legacy file only. CoinGecko simple/price. Not copied onto `chains`. */
+  priceFeed?: 'coingecko' | { provider?: string; url?: string; maxAgeMs?: number };
   priceTtlMs?: number;
   /** Tightens the hard gas-cost cap. Values above the hard cap are refused. */
   maxGasCostWei?: string;
@@ -1119,16 +1122,27 @@ export class EvalancheSignerServer {
 
   private async priceOf(chainId: number, address: string): Promise<number | null> {
     const chain = this.chainFor(chainId);
-    if (chain?.priceIds && !priceIdListed(chain.priceIds, address)) return null;
+    if (chain?.priceIds && !priceIdListed(chain.priceIds, address) && !this.feedPricesNative(chain, address)) return null;
     const prices = await this.pricesFor(chain);
     const value = prices[getAddress(address).toLowerCase()];
     return typeof value === 'number' && Number.isFinite(value) ? value : null;
+  }
+
+  /** The CoinGecko native id still prices gas when `price.ids` omits `native`. */
+  private feedPricesNative(chain: ResolvedChain, address: string): boolean {
+    if (!chain.priceFeed) return false;
+    if (address !== NATIVE_ADDRESS && address !== 'native') return false;
+    return nativeCoinGeckoId(chain.chainId, chain.priceIds) !== undefined;
   }
 
   private async pricesFor(chain: ResolvedChain | undefined): Promise<Record<string, number>> {
     const local = this.chainPolicy.legacy
       ? addressPrices(this.options.prices)
       : { ...(chain?.localPrices ?? {}) };
+    if (chain?.priceFeed) {
+      const remote = await this.coinGeckoPrices(chain);
+      return { ...local, ...remote };
+    }
     const source = this.chainPolicy.legacy
       ? (chain?.sanitySource ?? this.options.priceSourceUrl)
       : chain?.sanitySource;
@@ -1158,6 +1172,39 @@ export class EvalancheSignerServer {
     }
     this.priceCache.set(cacheKey, { fetchedAt: now, prices: remote });
     return { ...local, ...remote };
+  }
+
+  private async coinGeckoPrices(chain: ResolvedChain): Promise<Record<string, number>> {
+    const feed = chain.priceFeed;
+    if (!feed) return {};
+    let bindings;
+    try {
+      bindings = coinGeckoBindings(chain.chainId, chain.priceIds);
+    } catch (error) {
+      deny(error instanceof Error ? error.message : 'Price feed has no ids', EvalancheErrorCode.INVALID_CONFIG);
+    }
+    if (bindings.length === 0) deny('Price feed has no ids', EvalancheErrorCode.SIGNER_REJECTED);
+    const ttl = this.options.priceTtlMs ?? DEFAULT_PRICE_TTL_MS;
+    const now = Date.now();
+    const cacheKey = `${chain.chainId}|coingecko|${feed.url}|${bindings.map((binding) => `${binding.address}=${binding.coinId}`).join(',')}`;
+    const cached = this.priceCache.get(cacheKey);
+    if (cached && now - cached.fetchedAt < ttl) return cached.prices;
+    try {
+      const remote = await fetchCoinGeckoSimplePrice({
+        url: feed.url,
+        bindings,
+        maxAgeMs: feed.maxAgeMs,
+        nowMs: now,
+      });
+      this.priceCache.set(cacheKey, { fetchedAt: now, prices: remote });
+      return remote;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Price feed request failed';
+      const code = message.startsWith('Price feed request failed')
+        ? EvalancheErrorCode.NETWORK_ERROR
+        : EvalancheErrorCode.SIGNER_REJECTED;
+      deny(message, code);
+    }
   }
 
   private async simulate(request: CanonicalSigningRequest): Promise<void> {
@@ -1475,7 +1522,9 @@ function assertEnabledChainsReady(options: SignerServerOptions, policy: SignerPo
       throw new EvalancheError(`${label}.gas.maxFeeUsd must be a positive number`, EvalancheErrorCode.INVALID_CONFIG);
     }
     const native = chain.localPrices?.[NATIVE_ADDRESS.toLowerCase()];
-    if (!chain.sanitySource && (typeof native !== 'number' || !Number.isFinite(native))) {
+    const staticNative = typeof native === 'number' && Number.isFinite(native);
+    const feedNative = Boolean(chain.priceFeed && nativeCoinGeckoId(chain.chainId, chain.priceIds));
+    if (!chain.sanitySource && !staticNative && !feedNative) {
       throw new EvalancheError(`${label} is missing a native price or price.sanitySource`, EvalancheErrorCode.INVALID_CONFIG);
     }
   }

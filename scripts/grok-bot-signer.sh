@@ -39,7 +39,6 @@ if [ "$(id -u)" -eq 0 ]; then
   TOKEN_FILE=$DURABLE/token
   VERIFIER_KEY=$DURABLE/verifier.key
   VERIFIER_PUB=$DURABLE/verifier.pub
-  TARBALL=$DURABLE/evalanche-1.15.0.tgz
   LOCK=$STATE/start.lock
   SKIP_ROOT=0
 else
@@ -66,12 +65,12 @@ else
   TOKEN_FILE=${EVALANCHE_BOX_TOKEN_FILE:-$DURABLE/token}
   VERIFIER_KEY=${EVALANCHE_BOX_VERIFIER_KEY:-$DURABLE/verifier.key}
   VERIFIER_PUB=${EVALANCHE_BOX_VERIFIER_PUB:-$DURABLE/verifier.pub}
-  TARBALL=${EVALANCHE_BOX_TARBALL:-$DURABLE/evalanche-1.15.0.tgz}
   LOCK=${EVALANCHE_BOX_LOCK:-$STATE/start.lock}
   SKIP_ROOT=${EVALANCHE_BOX_SKIP_ROOT:-0}
 fi
-# Hashed and installed from here. /var is root-owned; /home is not.
-STAGED_TARBALL=$EPHEMERAL/evalanche-1.15.0.tgz
+# TARBALL and STAGED_TARBALL are set in provision. start does not need them.
+# The pinned name is evalanche-<package.json version>.tgz. As root,
+# EVALANCHE_BOX_TARBALL is ignored. A non-root run may set that override.
 
 usage() {
   echo "usage: grok-bot-signer.sh start [--live] | init [--live] | stop | health | provision [tarball] <sha256>" >&2
@@ -1161,6 +1160,69 @@ refuse_verifier_private_key() {
   done
 }
 
+# Read the version from package.json next to this script, one directory up,
+# or under PREFIX. stdout is the version. Errors go to stderr.
+package_version() {
+  script_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd) || return 1
+  node -e '
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const scriptDir = process.argv[1];
+    const prefix = process.argv[2] || "";
+    const candidates = [
+      path.join(scriptDir, "package.json"),
+      path.join(scriptDir, "..", "package.json"),
+    ];
+    if (prefix) candidates.push(path.join(prefix, "package.json"));
+    let file = "";
+    for (const candidate of candidates) {
+      try {
+        if (fs.statSync(candidate).isFile()) {
+          file = candidate;
+          break;
+        }
+      } catch (error) {
+        continue;
+      }
+    }
+    if (!file) {
+      console.error("package.json is required to name the pinned tarball");
+      process.exit(1);
+    }
+    let parsed;
+    try {
+      parsed = JSON.parse(fs.readFileSync(file, "utf8"));
+    } catch (error) {
+      console.error("package.json is not JSON");
+      process.exit(1);
+    }
+    const version = parsed && parsed.version;
+    if (typeof version !== "string" || !/^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.]+)?$/.test(version)) {
+      console.error("package.json version is not a release version");
+      process.exit(1);
+    }
+    process.stdout.write(version);
+  ' "$script_dir" "$PREFIX"
+}
+
+# Pin evalanche-<version>.tgz. Root ignores EVALANCHE_BOX_TARBALL.
+resolve_pinned_tarball() {
+  if [ "$(id -u)" -ne 0 ] && [ -n "${EVALANCHE_BOX_TARBALL:-}" ]; then
+    TARBALL=$EVALANCHE_BOX_TARBALL
+  else
+    version=$(package_version) || exit 1
+    TARBALL=$DURABLE/evalanche-${version}.tgz
+  fi
+  case "$TARBALL" in
+    */*) ;;
+    *)
+      echo "pinned tarball path must include a directory" >&2
+      exit 1
+      ;;
+  esac
+  STAGED_TARBALL=$EPHEMERAL/${TARBALL##*/}
+}
+
 # Idempotent. Recreates the user, /opt, and /etc from the persistent directory.
 # Does not generate a verifier key, rewrite the token, or reset nonce or audit files.
 provision_signer() {
@@ -1169,6 +1231,7 @@ provision_signer() {
   if [ -n "${3:-}" ]; then
     usage
   fi
+  resolve_pinned_tarball
   if [ -z "$src" ]; then
     src=$TARBALL
   fi

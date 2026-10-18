@@ -12,6 +12,7 @@
 import { getAddress } from 'ethers';
 import { EvalancheError, EvalancheErrorCode } from '../utils/errors';
 import { LIFI_DIAMOND, NATIVE_ADDRESS } from './decode';
+import { nativeCoinGeckoId, normalizeCoinGeckoFeed, type CoinGeckoPriceFeed } from './price-feed';
 import {
   SIGNER_DEFAULT_CHAIN_ID,
   assertSignerChainCanBeEnabled,
@@ -48,6 +49,12 @@ export interface ChainPriceConfig {
   /** HTTPS feed of address → USD. Replaces priceSourceUrl for this chain. */
   sanitySource?: string;
   /**
+   * CoinGecko `simple/price` feed. Static `prices` may be omitted when this
+   * is set. `ids` map an address, or `native`, to a CoinGecko coin id.
+   * The native id defaults from the chain when `ids` omits it.
+   */
+  priceFeed?: 'coingecko' | { provider?: string; url?: string; maxAgeMs?: number };
+  /**
    * USD prices for this chain only. Keys are addresses or "native".
    * They are not shared with another chain.
    */
@@ -82,6 +89,8 @@ export interface SignerConfigInput {
   slippageCaps?: SlippageInput;
   kyberExecutors?: string[];
   priceSourceUrl?: string;
+  /** Legacy file only. Not copied onto `chains`. */
+  priceFeed?: 'coingecko' | { provider?: string; url?: string; maxAgeMs?: number };
   chains?: Record<string, SignerChainConfig>;
 }
 
@@ -104,6 +113,7 @@ export interface ResolvedChain {
   /** Lowercase address → USD. Present only for this chain. */
   localPrices?: Record<string, number>;
   sanitySource?: string;
+  priceFeed?: CoinGeckoPriceFeed;
   polymarket?: PolymarketModuleConfig;
   clmm?: ClmmModuleConfig;
 }
@@ -283,6 +293,7 @@ function blankChain(
     lifiDiamond: LIFI_DIAMOND,
     kyberExecutors: legacy || chainId === SIGNER_DEFAULT_CHAIN_ID ? config.kyberExecutors : config.kyberExecutors,
     sanitySource: legacy ? config.priceSourceUrl : undefined,
+    priceFeed: legacy ? normalizeCoinGeckoFeed(config.priceFeed, 'priceFeed') : undefined,
   };
 }
 
@@ -313,6 +324,9 @@ function applyChainEntry(
     priceIds: entry.price?.ids,
     localPrices: normalizeLocalPrices(entry.price?.prices, `${label}.price.prices`) ?? base.localPrices,
     sanitySource: assertHttps(entry.price?.sanitySource, `${label}.price.sanitySource`) ?? base.sanitySource,
+    priceFeed: entry.price?.priceFeed !== undefined
+      ? normalizeCoinGeckoFeed(entry.price.priceFeed, `${label}.price.priceFeed`)
+      : base.priceFeed,
     polymarket: entry.polymarket,
     clmm: entry.clmm,
   };
@@ -320,11 +334,20 @@ function applyChainEntry(
     fail(`${label}.gas.maxFeeUsd must be a non-negative number`);
   }
   assertSlippage(next.slippageCaps, `${label}.slippageCaps`);
+  if (next.priceFeed && next.sanitySource) {
+    fail(`${label}.price sets priceFeed and sanitySource`);
+  }
   if (next.priceIds) {
     for (const [key, value] of Object.entries(next.priceIds)) {
       if (typeof value !== 'string' || value.length === 0) fail(`${label}.price.ids values must be strings`);
       if (key !== 'native') checksum(key, `${label}.price.ids`);
+      if (next.priceFeed && !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value)) {
+        fail(`${label}.price.ids values must be CoinGecko coin ids`);
+      }
     }
+  }
+  if (next.priceFeed && !nativeCoinGeckoId(id, next.priceIds) && next.localPrices?.[NATIVE_ADDRESS.toLowerCase()] === undefined) {
+    fail(`${label}.price.priceFeed needs a native coin id`);
   }
   if (id !== SIGNER_DEFAULT_CHAIN_ID && entry.kyberExecutors === undefined && !config.chains) {
     next.kyberExecutors = base.kyberExecutors;
@@ -336,6 +359,10 @@ export function resolveSignerPolicy(config: SignerConfigInput, bounds: GasCapBou
   if (config.priceSourceUrl && !config.priceSourceUrl.startsWith('https://')) {
     fail('Price source URL must be https');
   }
+  if (config.priceFeed && config.priceSourceUrl) {
+    fail('set priceFeed or priceSourceUrl, not both');
+  }
+  if (!config.chains && config.priceFeed) normalizeCoinGeckoFeed(config.priceFeed, 'priceFeed');
   assertSlippage(config.slippageCaps, 'slippageCaps');
   const rawCaps = config.tokenCaps ?? {};
   const chainKeyed = isChainKeyedCaps(rawCaps);

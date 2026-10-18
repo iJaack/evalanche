@@ -14,9 +14,32 @@ Each entry may set:
 - `gas.mode`: `legacy` (type 0), `eip1559` (type 2), or `both`. Type 113 is denied on every chain. `gas.maxFeeWei` is still the native gas-cost cap and cannot exceed 1 native token. `gas.maxFeeUsd` is required and must be positive for every enabled chain. It prices that chain's own native token. An old file with no `chains` object keeps the wei cap and does not require the USD cap.
 - `tokenCaps`. Keyed by chain, then by address or `native`. The same address on two chains does not share a cap. A top-level `tokenCaps` whose keys are chain ids is the same map. A non-empty address-keyed `tokenCaps` cannot be combined with `chains`. Every enabled chain needs a `native` cap and a cap for each allowlisted token, including WAVAX and USDC when the LP module is on. A disabled chain does not.
 - `slippageCaps`, `lifiDiamond`, `lifiSelectors`, and `kyberExecutors`. Avalanche keeps the built-in stable and top slippage classes. Other chains use only the lists in config. An omitted Kyber list on a non-Avalanche chain allows no executor.
-- `price.ids`, `price.prices`, and `price.sanitySource`. Prices belong to that chain. `price.prices` is an address, or `native`, to a USD number. `price.sanitySource` is an HTTPS feed keyed by address. An enabled chain needs one of those for its native token so the USD gas cap can be checked. The global `prices` map and `priceSourceUrl` stay on the old single-chain file and are not applied to other chains. When `ids` is set, an address missing from it has no price.
+- `price.ids`, `price.prices`, `price.sanitySource`, and `price.priceFeed`. Prices belong to that chain. `price.prices` is an address, or `native`, to a USD number. `price.sanitySource` is an HTTPS feed keyed by address. `price.priceFeed` is `coingecko`, or `{ provider: "coingecko", url, maxAgeMs }`. It cannot be combined with `sanitySource`. The URL must be `https://api.coingecko.com/api/v3/simple/price` or `https://pro-api.coingecko.com/api/v3/simple/price`. The signer requests `ids`, `vs_currencies=usd`, and `include_last_updated_at=true`. `price.ids` maps an address or `native` to a coin id. When `native` is omitted, the default is `ethereum` on 1, 10, 4663, 8453, 42161, and 59144, `binancecoin` on 56, `polygon-ecosystem-token` on 137, `avalanche-2` on 43114, and `berachain-bera` on 80094. A chain with no default id must set `native` or a static native price. A feed price must be a positive finite USD number whose `last_updated_at` is within 10 minutes, or `maxAgeMs`. A malformed, missing, or stale price is refused and the previous value is not kept. A static price is optional and the feed replaces it on success. An enabled chain needs a static native price, `sanitySource`, or a price feed with a native coin id. The global `prices` map, `priceSourceUrl`, and `priceFeed` stay on the old single-chain file and are not copied once `chains` is set. When `ids` is set, an address missing from it has no price, except the native coin when the feed supplies a default id.
 
 Enabling a chain other than Avalanche re-opens TM-008 for that chain. The signer is still not a boundary against root.
+
+## Kyber routes
+
+`buildKyberLifiSwap` can build a same-chain swap on each enabled chain in the table below. The router, diamond, and wrapped native are pinned. A chain that is not in the table is refused. A pinned chain that is not in `enabledChainIds` is refused. Omitted `enabledChainIds` means the whole table. The Kyber `sender` and `recipient` are that chain's diamond. An optional `recipient` on the request is the outer V3 receiver and must be the treasury. The route summary and the build must name the requested tokenIn, tokenOut, and amountIn. The router must be the pinned router. Build amountOut must be within 0.1% of the route amountOut. minOut applies the bought-token class cap.
+
+Checked on 18 October 2026. The router is the Kyber MetaAggregationRouterV2 from [KyberSwap's contract list](https://docs.kyberswap.com/developer-guide/aggregator-api/contracts). Slugs are from the [EVM swaps page](https://docs.kyberswap.com/developer-guide/aggregator-api/aggregator-api-specification/evm-swaps). Diamonds are the `diamondAddress` from `GET https://li.quest/v1/chains` and [Li.Fi's address list](https://docs.li.fi/introduction/lifi-architecture/smart-contract-addresses). Wrapped natives are from `GET https://li.quest/v1/token` plus `symbol()` and `decimals()` on a public RPC. Each address had code. `facets()` on each diamond included `0x4666fc80`.
+
+| Chain | Slug | Diamond | Wrapped native |
+| --- | --- | --- | --- |
+| 1 | ethereum | `0x1231DEB6f5749EF6cE6943a275A1D3E7486F4EaE` | WETH `0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2` |
+| 10 | optimism | `0x1231DEB6f5749EF6cE6943a275A1D3E7486F4EaE` | WETH `0x4200000000000000000000000000000000000006` |
+| 56 | bsc | `0x1231DEB6f5749EF6cE6943a275A1D3E7486F4EaE` | WBNB `0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c` |
+| 137 | polygon | `0x1231DEB6f5749EF6cE6943a275A1D3E7486F4EaE` | WPOL `0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270` |
+| 4663 | robinhood | `0xB477751B76CF82d00a686A1232f5fCD772414Af3` | WETH `0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73` |
+| 8453 | base | `0x1231DEB6f5749EF6cE6943a275A1D3E7486F4EaE` | WETH `0x4200000000000000000000000000000000000006` |
+| 42161 | arbitrum | `0x1231DEB6f5749EF6cE6943a275A1D3E7486F4EaE` | WETH `0x82aF49447D8a07e3bd95BD0d56f35241523fBab1` |
+| 43114 | avalanche | `0x1231DEB6f5749EF6cE6943a275A1D3E7486F4EaE` | WAVAX `0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7` |
+| 59144 | linea | `0xDE1E598b81620773454588B85D6b5D4eEC32573e` | WETH `0xe5D7C2a44FfDDf6b295A15c148167daaAf5Cf34f` |
+| 80094 | berachain | `0xf909c4Ae16622898b885B89d7F839E0244851c66` | WBERA `0x6969696969696969696969696969696969696969` |
+
+The router on every row is `0x6131B5fae19EA4f9D964eAc0408E4408b66337b5`. Native swaps still use the `0xeeee…` sentinel. `wrappedNative` is the ERC-20 above.
+
+The signer still defaults `lifiDiamond` to the canonical diamond and `kyberExecutors` to the Avalanche executor only on 43114. A swap on 4663, 59144, or 80094 needs `chains.<id>.lifiDiamond` set to the diamond in the table. A swap on any chain other than Avalanche needs `kyberExecutors` to include `0x8F10B468b06c6FD214B65F87778827F7D113f996`. The builder does not change those defaults.
 
 ## Polymarket
 
