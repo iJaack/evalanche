@@ -784,10 +784,8 @@ export class EvalancheSignerServer {
     const chain = this.chainFor(Number(request.chainId));
     if (!chain) return false;
     const data = request.data ?? '0x';
-    if (chain.chainId === CLMM_CHAIN_ID && isClmmPositionManager(request.to)) return true;
-    if (chain.clmm?.enabled === true && chain.chainId === CLMM_CHAIN_ID && isClmmNpmApprove(request.to, data)) {
-      return true;
-    }
+    const clmmOn = chain.clmm?.enabled === true && chain.chainId === CLMM_CHAIN_ID;
+    if (clmmOn && (isClmmPositionManager(request.to) || isClmmNpmApprove(request.to, data))) return true;
     if (chain.polymarket?.enabled === true && chain.chainId === PM_CHAIN_ID) {
       if (isHardDeniedContract(request.to) || isPolymarketCollateralApprove(request.to, data)) return true;
     }
@@ -796,21 +794,21 @@ export class EvalancheSignerServer {
 
   /**
    * When the Avalanche CLMM module is on, WAVAX and USDC can be approved to
-   * the position manager and bought by a swap. Disabled leaves the allow map
-   * unchanged.
+   * the position manager. A swap still spends them through the existing
+   * allow map. This does not add the ERC-20 transfer selector, and it leaves
+   * a transfer selector the operator already configured in place. Disabled
+   * leaves the allow map unchanged.
    */
   private augmentClmmAllow(): void {
     const chain = this.chainPolicy.chains.get(CLMM_CHAIN_ID);
     if (chain?.clmm?.enabled !== true) return;
     const { wavax, usdc } = clmmFundingTokens();
     const approve = '0x095ea7b3';
-    const transfer = '0xa9059cbb';
     const entries = this.allow.get(CLMM_CHAIN_ID) ?? [];
     for (const token of [wavax, usdc]) {
       const existing = entries.find((entry) => getAddress(entry.address) === token);
       if (existing) {
         if (!existing.selectors.includes(approve)) existing.selectors.push(approve);
-        if (!existing.selectors.includes(transfer)) existing.selectors.push(transfer);
         const roles = new Set(existing.roles ?? []);
         roles.add('token');
         existing.roles = [...roles];
@@ -818,7 +816,7 @@ export class EvalancheSignerServer {
       } else {
         entries.push({
           address: token,
-          selectors: [approve, transfer],
+          selectors: [approve],
           decimals: token === usdc ? 6 : 18,
           roles: ['token'],
         });
@@ -1128,12 +1126,17 @@ export class EvalancheSignerServer {
   }
 
   private async pricesFor(chain: ResolvedChain | undefined): Promise<Record<string, number>> {
-    const local = addressPrices(this.options.prices);
-    const source = chain?.sanitySource ?? (this.chainPolicy.legacy ? this.options.priceSourceUrl : undefined);
+    const local = this.chainPolicy.legacy
+      ? addressPrices(this.options.prices)
+      : { ...(chain?.localPrices ?? {}) };
+    const source = this.chainPolicy.legacy
+      ? (chain?.sanitySource ?? this.options.priceSourceUrl)
+      : chain?.sanitySource;
     if (!source) return local;
     const ttl = this.options.priceTtlMs ?? DEFAULT_PRICE_TTL_MS;
     const now = Date.now();
-    const cached = this.priceCache.get(source);
+    const cacheKey = this.chainPolicy.legacy ? source : `${chain?.chainId ?? 'none'}|${source}`;
+    const cached = this.priceCache.get(cacheKey);
     if (cached && now - cached.fetchedAt < ttl) return { ...local, ...cached.prices };
     let response: Response;
     try {
@@ -1153,7 +1156,7 @@ export class EvalancheSignerServer {
         // Symbol keys are ignored. Prices are by address only.
       }
     }
-    this.priceCache.set(source, { fetchedAt: now, prices: remote });
+    this.priceCache.set(cacheKey, { fetchedAt: now, prices: remote });
     return { ...local, ...remote };
   }
 
@@ -1442,6 +1445,39 @@ function assertStartup(options: SignerServerOptions): void {
     }
     assertPolymarketConfig(chain.polymarket, `chains.${chain.chainId}.polymarket`);
     assertClmmConfig(chain.clmm, chain.chainId);
+  }
+  if (!policy.legacy) assertEnabledChainsReady(options, policy);
+}
+
+function assertEnabledChainsReady(options: SignerServerOptions, policy: SignerPolicy): void {
+  const allow = indexAllow(options.allow);
+  for (const chain of policy.chains.values()) {
+    if (!chain.enabled) continue;
+    const label = `chains.${chain.chainId}`;
+    if (chain.tokenCaps.native === undefined) {
+      throw new EvalancheError(`${label} is missing a native cap`, EvalancheErrorCode.INVALID_CONFIG);
+    }
+    for (const entry of allow.get(chain.chainId) ?? []) {
+      if (!entry.roles?.includes('token')) continue;
+      if (tokenCap(chain, entry.address) === undefined) {
+        throw new EvalancheError(`${label} is missing a cap for ${entry.address}`, EvalancheErrorCode.INVALID_CONFIG);
+      }
+    }
+    if (chain.clmm?.enabled === true && chain.chainId === CLMM_CHAIN_ID) {
+      const { wavax, usdc } = clmmFundingTokens();
+      for (const token of [wavax, usdc]) {
+        if (tokenCap(chain, token) === undefined) {
+          throw new EvalancheError(`${label} is missing a cap for ${token}`, EvalancheErrorCode.INVALID_CONFIG);
+        }
+      }
+    }
+    if (chain.maxFeeUsd === undefined || !Number.isFinite(chain.maxFeeUsd) || chain.maxFeeUsd <= 0) {
+      throw new EvalancheError(`${label}.gas.maxFeeUsd must be a positive number`, EvalancheErrorCode.INVALID_CONFIG);
+    }
+    const native = chain.localPrices?.[NATIVE_ADDRESS.toLowerCase()];
+    if (!chain.sanitySource && (typeof native !== 'number' || !Number.isFinite(native))) {
+      throw new EvalancheError(`${label} is missing a native price or price.sanitySource`, EvalancheErrorCode.INVALID_CONFIG);
+    }
   }
 }
 

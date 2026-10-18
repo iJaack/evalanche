@@ -5,12 +5,13 @@
  * tokenCaps, one maxGasCostWei, one priceSourceUrl) keeps the same effective
  * policy. The `chains` object is the per-chain form: enabled defaults to
  * false except Avalanche 43114, and a kill switch turns a chain off without
- * a code change.
+ * a code change. Address-keyed caps and the global price map stay on the old
+ * file. They are not copied onto chains.
  */
 
 import { getAddress } from 'ethers';
 import { EvalancheError, EvalancheErrorCode } from '../utils/errors';
-import { LIFI_DIAMOND } from './decode';
+import { LIFI_DIAMOND, NATIVE_ADDRESS } from './decode';
 import {
   SIGNER_DEFAULT_CHAIN_ID,
   assertSignerChainCanBeEnabled,
@@ -34,7 +35,10 @@ export interface ChainGasConfig {
   mode?: GasMode;
   /** Max gas cost in native wei (gasLimit × price). */
   maxFeeWei?: string;
-  /** Optional USD cap on that same gas cost. */
+  /**
+   * USD cap on that same gas cost. Required and positive for every enabled
+   * chain when `chains` is set. An old file without `chains` leaves it unset.
+   */
   maxFeeUsd?: number;
 }
 
@@ -43,6 +47,11 @@ export interface ChainPriceConfig {
   ids?: Record<string, string>;
   /** HTTPS feed of address → USD. Replaces priceSourceUrl for this chain. */
   sanitySource?: string;
+  /**
+   * USD prices for this chain only. Keys are addresses or "native".
+   * They are not shared with another chain.
+   */
+  prices?: Record<string, number>;
 }
 
 export interface SignerChainConfig {
@@ -92,6 +101,8 @@ export interface ResolvedChain {
   /** Undefined keeps the Avalanche executor default. An empty list allows none. */
   kyberExecutors?: string[];
   priceIds?: Record<string, string>;
+  /** Lowercase address → USD. Present only for this chain. */
+  localPrices?: Record<string, number>;
   sanitySource?: string;
   polymarket?: PolymarketModuleConfig;
   clmm?: ClmmModuleConfig;
@@ -151,6 +162,26 @@ function checksum(address: string, label: string): string {
   } catch {
     fail(`${label} is not an address`);
   }
+}
+
+function normalizeLocalPrices(
+  prices: Record<string, number> | undefined,
+  label: string,
+): Record<string, number> | undefined {
+  if (prices === undefined) return undefined;
+  if (!prices || typeof prices !== 'object' || Array.isArray(prices)) fail(`${label} must be an address map`);
+  const out: Record<string, number> = {};
+  for (const [key, value] of Object.entries(prices)) {
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+      fail(`${label} values must be non-negative numbers`);
+    }
+    if (key === 'native') {
+      out[NATIVE_ADDRESS.toLowerCase()] = value;
+      continue;
+    }
+    out[checksum(key, label).toLowerCase()] = value;
+  }
+  return out;
 }
 
 function normalizeCaps(caps: Record<string, string> | undefined, label: string): Record<string, string> {
@@ -251,7 +282,7 @@ function blankChain(
     avalancheSlippageDefaults: legacy || chainId === SIGNER_DEFAULT_CHAIN_ID,
     lifiDiamond: LIFI_DIAMOND,
     kyberExecutors: legacy || chainId === SIGNER_DEFAULT_CHAIN_ID ? config.kyberExecutors : config.kyberExecutors,
-    sanitySource: legacy || chainId === SIGNER_DEFAULT_CHAIN_ID ? config.priceSourceUrl : undefined,
+    sanitySource: legacy ? config.priceSourceUrl : undefined,
   };
 }
 
@@ -280,6 +311,7 @@ function applyChainEntry(
       ? normalizeExecutors(entry.kyberExecutors, `${label}.kyberExecutors`)
       : (id === SIGNER_DEFAULT_CHAIN_ID ? base.kyberExecutors : entry.kyberExecutors),
     priceIds: entry.price?.ids,
+    localPrices: normalizeLocalPrices(entry.price?.prices, `${label}.price.prices`) ?? base.localPrices,
     sanitySource: assertHttps(entry.price?.sanitySource, `${label}.price.sanitySource`) ?? base.sanitySource,
     polymarket: entry.polymarket,
     clmm: entry.clmm,
@@ -322,6 +354,9 @@ export function resolveSignerPolicy(config: SignerConfigInput, bounds: GasCapBou
   }
 
   const legacy = config.chains === undefined;
+  if (!legacy && addressKeyed && Object.keys(rawCaps).length > 0) {
+    fail('address-keyed tokenCaps cannot be shared across chains; set a cap on each chain');
+  }
   const enabled = new Set<number>();
   if (legacy) {
     for (const id of legacyChainIds(config)) enabled.add(id);
@@ -359,7 +394,10 @@ export function resolveSignerPolicy(config: SignerConfigInput, bounds: GasCapBou
   for (const id of known) {
     if (isSignerTestnet(id)) fail(`testnet ${id} cannot be enabled on the signer`);
     const entry = config.chains?.[String(id)];
-    let resolved = blankChain(id, bounds, chainKeyed ? (capsByChain.get(id) ?? {}) : legacyCaps, config, legacy);
+    const sharedCaps = chainKeyed
+      ? (capsByChain.get(id) ?? {})
+      : (legacy ? legacyCaps : {});
+    let resolved = blankChain(id, bounds, sharedCaps, config, legacy);
     if (chainKeyed) resolved.tokenCaps = capsByChain.get(id) ?? {};
     if (entry) resolved = applyChainEntry(resolved, entry, config, bounds, chainKeyed ? capsByChain.get(id) : undefined);
     else if (config.rpcUrls?.[String(id)]) resolved.rpcUrls = normalizeUrls(config.rpcUrls[String(id)], `rpcUrls.${id}`);

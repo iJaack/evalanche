@@ -5,7 +5,7 @@ This file is a short current-state security posture note, not a historical remed
 <!-- GENERATED:vuln-snapshot:start -->
 ## Current Release Snapshot
 
-- Current release: `1.15.0`
+- Current release: `1.16.0`
 - `npm audit --omit=dev` (repository overrides): `0 critical`, `0 high`, `0 moderate`, `0 low`
 
 ## Active Overrides

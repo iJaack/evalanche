@@ -1,12 +1,12 @@
 {
   "name": "evalanche",
-  "version": "1.15.0",
+  "version": "1.16.0",
   "lockfileVersion": 3,
   "requires": true,
   "packages": {
     "": {
       "name": "evalanche",
-      "version": "1.15.0",
+      "version": "1.16.0",
       "license": "MIT",
       "dependencies": {
         "@avalanche-sdk/client": "0.1.3",

@@ -222,7 +222,6 @@ function decodeApprove(token: string, data: string, config: ClmmModuleConfig | u
   const spender = getAddress(String(decoded[0]));
   const amount = asBigInt(decoded[1]);
   if (spender !== NPM_ADDRESS) reject('approve spender is not the position manager');
-  if (amount <= 0n) reject('approve amount must be positive');
   if (amount === MaxUint256) reject('Unlimited ERC-20 approval is denied');
   const cap = capFor(token, config);
   if (amount > cap) reject('approve amount exceeds the CLMM cap');

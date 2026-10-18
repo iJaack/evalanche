@@ -7,10 +7,12 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { Wallet, getAddress } from 'ethers';
+import { Interface, Wallet, getAddress } from 'ethers';
 import { generateEd25519KeyPair, startSignerServer } from '../../src/index';
 import { SIGNER_MAINNET_IDS, signerEnabledByDefault } from '../../src/signer/chain-registry';
 import { resolveSignerPolicy } from '../../src/signer/chain-policy';
+import { KYBER_META_AGGREGATION_ROUTER_V2, LIFI_DIAMOND, NATIVE_ADDRESS } from '../../src/signer/decode';
+import { DEFAULT_AVALANCHE_TOP, DEFAULT_MAX_GAS_COST_WEI } from '../../src/signer/server';
 import { CHAINS } from '../../src/utils/chains';
 import { computeApprovedTxHash, signVerifierApproval } from '../../src/signer/intent';
 import type { ApprovedTransaction, CanonicalSigningRequest, SigningIntent } from '../../src/signer/intent';
@@ -114,6 +116,28 @@ describe('chain policy', () => {
     expect(policy.chains.get(137)?.rpcUrls).toEqual(['https://polygon.example']);
   });
 
+  it('does not copy address-keyed caps or the global price source onto chains', () => {
+    expect(() => resolveSignerPolicy({
+      chains: { 1: { enabled: true } },
+      tokenCaps: { native: '1', [USDC]: '5' },
+      priceSourceUrl: 'https://prices.example/avax',
+    }, BOUNDS)).toThrow(/address-keyed tokenCaps cannot be shared/);
+
+    const policy = resolveSignerPolicy({
+      priceSourceUrl: 'https://prices.example/avax',
+      chains: {
+        1: { enabled: true, tokenCaps: { native: '9' }, price: { prices: { native: 3000 } } },
+        43114: { price: { prices: { native: 20 } } },
+      },
+    }, BOUNDS);
+    expect(policy.chains.get(1)?.tokenCaps).toEqual({ native: '9' });
+    expect(policy.chains.get(43114)?.tokenCaps).toEqual({});
+    expect(policy.chains.get(1)?.localPrices?.[NATIVE_ADDRESS.toLowerCase()]).toBe(3000);
+    expect(policy.chains.get(43114)?.localPrices?.[NATIVE_ADDRESS.toLowerCase()]).toBe(20);
+    expect(policy.chains.get(1)?.sanitySource).toBeUndefined();
+    expect(policy.chains.get(43114)?.sanitySource).toBeUndefined();
+  });
+
   it('registers the nineteen mainnets and enables only Avalanche by default', () => {
     expect(SIGNER_MAINNET_IDS).toHaveLength(19);
     const defaults = SIGNER_MAINNET_IDS.filter((id) => signerEnabledByDefault(id));
@@ -204,8 +228,19 @@ describe('chain policy on the signer', () => {
     };
   }
 
+  function ready(entry: Record<string, unknown> = {}): Record<string, unknown> {
+    const gas = { maxFeeUsd: 1, ...((entry.gas as object | undefined) ?? {}) };
+    const tokenCaps = {
+      native: '0',
+      [getAddress(USDC)]: '1000000',
+      ...((entry.tokenCaps as object | undefined) ?? {}),
+    };
+    const price = { prices: { native: 20, [USDC]: 1 }, ...((entry.price as object | undefined) ?? {}) };
+    return { ...entry, gas, tokenCaps, price };
+  }
+
   it('rejects a chain that the new config leaves disabled', async () => {
-    const h = await boot({ chains: {} });
+    const h = await boot({ chains: { 43114: ready() } });
     const intent = built(h.wallet.address, 1, 0);
     const approval = signVerifierApproval({ intent, verifierPrivateKey: h.verifier.privateKey, verifierPublicKey: h.verifier.publicKey });
     await expect(h.server.handle(request(h.wallet.address, 1, approval, intent))).rejects.toThrow(/chainId 1 is not allowed/);
@@ -219,12 +254,12 @@ describe('chain policy on the signer', () => {
   });
 
   it('rejects a type that the chain gas mode does not allow, including type 113', async () => {
-    const legacy = await boot({ chains: { 43114: { gas: { mode: 'legacy' } } } });
+    const legacy = await boot({ chains: { 43114: ready({ gas: { mode: 'legacy' } }) } });
     const typed = built(legacy.wallet.address, 43114, 2);
     const approval = signVerifierApproval({ intent: typed, verifierPrivateKey: legacy.verifier.privateKey, verifierPublicKey: legacy.verifier.publicKey });
     await expect(legacy.server.handle(request(legacy.wallet.address, 43114, approval, typed))).rejects.toThrow(/transaction type is not allowed/);
 
-    const eip = await boot({ chains: { 43114: { gas: { mode: 'eip1559' } } } });
+    const eip = await boot({ chains: { 43114: ready({ gas: { mode: 'eip1559' } }) } });
     const legacyTx = built(eip.wallet.address, 43114, 0);
     const legacyApproval = signVerifierApproval({ intent: legacyTx, verifierPrivateKey: eip.verifier.privateKey, verifierPublicKey: eip.verifier.publicKey });
     await expect(eip.server.handle(request(eip.wallet.address, 43114, legacyApproval, legacyTx))).rejects.toThrow(/transaction type is not allowed/);
@@ -233,5 +268,191 @@ describe('chain policy on the signer', () => {
     const zk = built(both.wallet.address, 43114, 113);
     const zkApproval = signVerifierApproval({ intent: zk, verifierPrivateKey: both.verifier.privateKey, verifierPublicKey: both.verifier.publicKey });
     await expect(both.server.handle(request(both.wallet.address, 43114, zkApproval, zk))).rejects.toThrow(/type 113/);
+  });
+
+  it('refuses to start an enabled chain that is missing a cap, a USD gas cap, or a native price', async () => {
+    await expect(boot({
+      chains: { 43114: { gas: { maxFeeUsd: 1 }, tokenCaps: { [getAddress(USDC)]: '1' }, price: { prices: { native: 1 } } } },
+    })).rejects.toThrow(/missing a native cap/);
+    await expect(boot({
+      chains: { 43114: { gas: { maxFeeUsd: 1 }, tokenCaps: { native: '0' }, price: { prices: { native: 1 } } } },
+    })).rejects.toThrow(new RegExp(`missing a cap for ${getAddress(USDC)}`));
+    await expect(boot({
+      chains: { 43114: { tokenCaps: { native: '0', [getAddress(USDC)]: '1' }, price: { prices: { native: 1 } } } },
+    })).rejects.toThrow(/maxFeeUsd must be a positive number/);
+    await expect(boot({
+      chains: { 43114: { gas: { maxFeeUsd: 1 }, tokenCaps: { native: '0', [getAddress(USDC)]: '1' } } },
+    })).rejects.toThrow(/native price or price.sanitySource/);
+    const fed = await boot({
+      chains: {
+        43114: ready(),
+        1: { enabled: true, gas: { maxFeeUsd: 2 }, tokenCaps: { native: '0', [getAddress(USDC)]: '1' }, price: { sanitySource: 'https://prices.example/eth' } },
+        10: { enabled: false },
+      },
+    });
+    expect(fed.server.address).toMatch(/^0x/);
+  });
+
+  it('prices chain 1 gas in that chain native price and caps the same token address separately', async () => {
+    const recipient = '0x000000000000000000000000000000000000bEEF';
+    const spender = '0x000000000000000000000000000000000000CAFE';
+    const erc20 = new Interface(['function approve(address spender, uint256 amount)']);
+    const h = await boot({
+      prices: { [NATIVE_ADDRESS]: 20 },
+      allow: {
+        43114: [
+          { address: recipient, selectors: ['0x'], roles: ['recipient' as const] },
+          { address: USDC, selectors: ['0x095ea7b3'], decimals: 6, roles: ['token' as const] },
+          { address: spender, selectors: ['0x'], roles: ['spender' as const] },
+        ],
+        1: [
+          { address: recipient, selectors: ['0x'], roles: ['recipient' as const] },
+          { address: USDC, selectors: ['0x095ea7b3'], decimals: 6, roles: ['token' as const] },
+          { address: spender, selectors: ['0x'], roles: ['spender' as const] },
+        ],
+      },
+      chains: {
+        43114: ready({ tokenCaps: { native: '0', [getAddress(USDC)]: '10' }, price: { prices: { native: 20 } } }),
+        1: ready({
+          enabled: true,
+          tokenCaps: { native: '0', [getAddress(USDC)]: '1000' },
+          price: { prices: { native: 3000 } },
+          gas: { maxFeeUsd: 1 },
+        }),
+      },
+    });
+
+    const expensive = built(h.wallet.address, 1, 0);
+    expensive.tx!.to = getAddress(recipient);
+    expensive.tx!.data = '0x';
+    expensive.tx!.gasLimit = '1000000';
+    expensive.tx!.gasPrice = '10000000000';
+    expensive.routeHash = computeApprovedTxHash(expensive.tx!);
+    const costly = signVerifierApproval({ intent: expensive, verifierPrivateKey: h.verifier.privateKey, verifierPublicKey: h.verifier.publicKey });
+    await expect(h.server.handle(request(h.wallet.address, 1, costly, expensive))).rejects.toThrow(/gas cost exceeds the USD cap/);
+
+    const cheap = built(h.wallet.address, 43114, 0, '2');
+    cheap.tx!.to = getAddress(recipient);
+    cheap.tx!.data = '0x';
+    cheap.tx!.gasLimit = '1000000';
+    cheap.tx!.gasPrice = '10000000000';
+    cheap.routeHash = computeApprovedTxHash(cheap.tx!);
+    const cheapApproval = signVerifierApproval({ intent: cheap, verifierPrivateKey: h.verifier.privateKey, verifierPublicKey: h.verifier.publicKey });
+    const signed = await h.server.handle(request(h.wallet.address, 43114, cheapApproval, cheap));
+    expect(signed.signedTransaction).toMatch(/^0x/);
+
+    const over = built(h.wallet.address, 43114, 0, '3');
+    over.tx!.data = erc20.encodeFunctionData('approve', [spender, 100n]);
+    over.amountIn = '100';
+    over.routeHash = computeApprovedTxHash(over.tx!);
+    const overApproval = signVerifierApproval({ intent: over, verifierPrivateKey: h.verifier.privateKey, verifierPublicKey: h.verifier.publicKey });
+    await expect(h.server.handle(request(h.wallet.address, 43114, overApproval, over))).rejects.toThrow(/per-transaction cap/);
+
+    const room = built(h.wallet.address, 1, 0, '4');
+    room.tx!.data = erc20.encodeFunctionData('approve', [spender, 100n]);
+    room.amountIn = '100';
+    room.routeHash = computeApprovedTxHash(room.tx!);
+    const roomApproval = signVerifierApproval({ intent: room, verifierPrivateKey: h.verifier.privateKey, verifierPublicKey: h.verifier.publicKey });
+    const approved = await h.server.handle(request(h.wallet.address, 1, roomApproval, room));
+    expect(approved.signedTransaction).toMatch(/^0x/);
+  });
+
+  it('rejects an approval signed for one chain when it is presented on another, and a reused nonce', async () => {
+    const recipient = '0x000000000000000000000000000000000000bEEF';
+    const h = await boot({
+      allow: {
+        43114: [{ address: recipient, selectors: ['0x'], roles: ['recipient' as const] }],
+        1: [{ address: recipient, selectors: ['0x'], roles: ['recipient' as const] }],
+      },
+      chains: {
+        43114: ready({ tokenCaps: { native: '0' } }),
+        1: ready({ enabled: true, tokenCaps: { native: '0' }, price: { prices: { native: 3000 } } }),
+      },
+    });
+    const intent = built(h.wallet.address, 43114, 0, '1');
+    intent.tx!.to = getAddress(recipient);
+    intent.tx!.data = '0x';
+    intent.routeHash = computeApprovedTxHash(intent.tx!);
+    const approval = signVerifierApproval({ intent, verifierPrivateKey: h.verifier.privateKey, verifierPublicKey: h.verifier.publicKey });
+    await expect(h.server.handle(request(h.wallet.address, 1, approval, intent))).rejects.toThrow(/chainId does not match/);
+
+    const signed = await h.server.handle(request(h.wallet.address, 43114, approval, intent));
+    expect(signed.signedTransaction).toMatch(/^0x/);
+
+    const other = built(h.wallet.address, 1, 0, '1');
+    other.tx!.to = getAddress(recipient);
+    other.tx!.data = '0x';
+    other.routeHash = computeApprovedTxHash(other.tx!);
+    const otherApproval = signVerifierApproval({ intent: other, verifierPrivateKey: h.verifier.privateKey, verifierPublicKey: h.verifier.publicKey });
+    await expect(h.server.handle(request(h.wallet.address, 1, otherApproval, other))).rejects.toThrow(/Replayed nonce/);
+  });
+});
+
+describe('live Avalanche config snapshot', () => {
+  const usdc = '0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E';
+  const wavax = DEFAULT_AVALANCHE_TOP[0]!;
+  const btcb = DEFAULT_AVALANCHE_TOP[1]!;
+  const weth = DEFAULT_AVALANCHE_TOP[2]!;
+  const savax = DEFAULT_AVALANCHE_TOP[3]!;
+  const treasury = '0x0000000000000000000000000000000000000001';
+
+  it('keeps the legacy file on 43114 without a USD gas cap or a per-chain price', async () => {
+    const input = {
+      chainId: 43114,
+      rpcUrl: 'https://api.avax.network/ext/bc/C/rpc',
+      tokenCaps: {
+        native: '0',
+        [usdc]: '1000',
+        [wavax]: '1000',
+        [btcb]: '1000',
+        [weth]: '1000',
+        [savax]: '1000',
+      },
+    };
+    const policy = resolveSignerPolicy(input, BOUNDS);
+    expect(policy.legacy).toBe(true);
+    expect(policy.enabled).toEqual([43114]);
+    const chain = policy.chains.get(43114)!;
+    expect(chain.gasMode).toBe('both');
+    expect(chain.maxFeeWei).toBe(DEFAULT_MAX_GAS_COST_WEI);
+    expect(chain.maxFeeUsd).toBeUndefined();
+    expect(chain.tokenCaps.native).toBe('0');
+    expect(chain.tokenCaps[getAddress(usdc)]).toBe('1000');
+    expect(chain.tokenCaps[getAddress(wavax)]).toBe('1000');
+    expect(chain.avalancheSlippageDefaults).toBe(true);
+    expect(chain.kyberExecutors).toBeUndefined();
+    expect(chain.polymarket).toBeUndefined();
+    expect(chain.clmm).toBeUndefined();
+    expect(chain.sanitySource).toBeUndefined();
+    expect(chain.rpcUrls).toEqual(['https://api.avax.network/ext/bc/C/rpc']);
+
+    const root = await mkdtemp(join(tmpdir(), 'live-'));
+    const verifier = generateEd25519KeyPair();
+    const server = await startSignerServer({
+      ...input,
+      privateKey: KEY,
+      verifierPublicKey: verifier.publicKey,
+      token: 't',
+      auditLogPath: join(root, 'a.jsonl'),
+      nonceStorePath: join(root, 'n.json'),
+      initNonces: true,
+      allowInsecureFilePermissions: true,
+      port: 0,
+      simulate: async () => ({ success: true }),
+      allow: {
+        43114: [
+          { address: usdc, selectors: ['0x095ea7b3'], decimals: 6, roles: ['token'] },
+          { address: wavax, selectors: ['0x095ea7b3'], decimals: 18, roles: ['token'] },
+          { address: btcb, selectors: ['0x095ea7b3'], decimals: 8, roles: ['token'] },
+          { address: weth, selectors: ['0x095ea7b3'], decimals: 18, roles: ['token'] },
+          { address: savax, selectors: ['0x095ea7b3'], decimals: 18, roles: ['token'] },
+          { address: LIFI_DIAMOND, selectors: ['0x4666fc80', '0x5fd9ae2e'], roles: ['spender'] },
+          { address: KYBER_META_AGGREGATION_ROUTER_V2, selectors: [], roles: ['dex', 'spender'] },
+          { address: treasury, selectors: ['0x'], roles: ['recipient'] },
+        ],
+      },
+    });
+    servers.push(server);
+    expect(server.address).toMatch(/^0x/);
   });
 });

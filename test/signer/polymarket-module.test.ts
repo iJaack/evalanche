@@ -259,7 +259,14 @@ describe('clob-auth and polygon gates', () => {
     const cfg = config();
     const approval = ctf.encodeFunctionData('setApprovalForAll', [PM_CTF_EXCHANGE_V2, true]);
     expect(decodePolymarketTransaction(PM_CTF, approval, cfg).op).toBe('set-approval');
-    expect(() => decodePolymarketTransaction(PM_CTF, ctf.encodeFunctionData('setApprovalForAll', [PM_CTF_EXCHANGE_V2, false]), cfg)).toThrow(/true/);
+    expect(decodePolymarketTransaction(PM_CTF, ctf.encodeFunctionData('setApprovalForAll', [PM_CTF_EXCHANGE_V2, false]), cfg).op).toBe('revoke');
+    expect(decodePolymarketTransaction(PM_CTF, ctf.encodeFunctionData('setApprovalForAll', [PM_NEG_RISK_EXCHANGE_V2, false]), cfg).op).toBe('revoke');
+    const exchange = new Interface(['function pauseUser()', 'function unpauseUser()', 'function pauseTrading()']);
+    expect(decodePolymarketTransaction(PM_CTF_EXCHANGE_V2, exchange.encodeFunctionData('pauseUser', []), cfg).op).toBe('pause-user');
+    expect(decodePolymarketTransaction(PM_NEG_RISK_EXCHANGE_V2, exchange.encodeFunctionData('pauseUser', []), cfg).op).toBe('pause-user');
+    expect(() => decodePolymarketTransaction(PM_CTF_EXCHANGE_V2, exchange.encodeFunctionData('unpauseUser', []), cfg)).toThrow(/denial/);
+    expect(() => decodePolymarketTransaction(PM_CTF_EXCHANGE_V2, exchange.encodeFunctionData('pauseTrading', []), cfg)).toThrow(/denial/);
+    expect(() => decodePolymarketTransaction(PM_EXCHANGE_V3, exchange.encodeFunctionData('pauseUser', []), cfg)).toThrow(/denial/);
     expect(() => decodePolymarketTransaction(PM_CTF, ctf.encodeFunctionData('setApprovalForAll', [PM_EXCHANGE_V3, true]), cfg)).toThrow(/operator/);
     const redeem = ctf.encodeFunctionData('redeemPositions', [PM_USDC_E, PM_ZERO_BYTES32, CONDITION, [1n]]);
     expect(decodePolymarketTransaction(PM_CTF, redeem, cfg).op).toBe('redeem');
@@ -277,7 +284,11 @@ describe('clob-auth and polygon gates', () => {
 });
 
 describe('polymarket signer path', () => {
-  async function boot(polymarket: Record<string, unknown> | undefined, audit: string) {
+  async function boot(
+    polymarket: Record<string, unknown> | undefined,
+    audit: string,
+    extraChains: Record<string, unknown> = {},
+  ) {
     const verifier = generateEd25519KeyPair();
     const server = await startSignerServer({
       privateKey: KEY,
@@ -290,7 +301,17 @@ describe('polymarket signer path', () => {
       port: 0,
       simulate: async () => ({ success: true }),
       allow: { 137: [{ address: '0x000000000000000000000000000000000000bEEF', selectors: ['0x'], roles: ['recipient'] }] },
-      chains: { 137: { enabled: true, polymarket } },
+      chains: {
+        137: {
+          enabled: true,
+          gas: { maxFeeUsd: 5 },
+          tokenCaps: { native: '1000000000000000000' },
+          price: { prices: { native: 0.5 } },
+          ...(polymarket ? { polymarket } : {}),
+        },
+        43114: { enabled: false },
+        ...extraChains,
+      },
     });
     servers.push(server);
     return { server, verifier };
@@ -483,5 +504,235 @@ describe('polymarket signer path', () => {
       structuredIntent: offIntent,
       approval: offApproval,
     })).rejects.toThrow(/built-in Polymarket denial/);
+  });
+
+  it('signs clob-auth once on the server path and refuses it when the flag is off', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pm-auth-'));
+    const on = await boot(config({ clobAuth: true }), join(root, 'on-a.jsonl'));
+    const now = Date.now();
+    const typed: TypedDataPayload = {
+      domain: { name: PM_CLOB_AUTH_DOMAIN, version: PM_CLOB_AUTH_VERSION, chainId: PM_CHAIN_ID },
+      types: { ClobAuth: [...PM_CLOB_AUTH_FIELDS] },
+      value: {
+        address: WALLET,
+        timestamp: String(Math.floor(now / 1000)),
+        nonce: '0',
+        message: PM_CLOB_AUTH_MESSAGE,
+      },
+    };
+    function authIntent(nonce: string, at = Date.now()): SigningIntent {
+      return {
+        version: '1',
+        intentId: `auth-${nonce}`,
+        nonce,
+        createdAt: at,
+        expiresAt: at + 60_000,
+        wallet: WALLET,
+        chainId: 137,
+        venue: 'polymarket',
+        action: 'clob-auth',
+        routeHash: computeTypedDataRouteHash(typed),
+      };
+    }
+    const built = authIntent('1', now);
+    const approval = signVerifierApproval({
+      intent: built,
+      verifierPrivateKey: on.verifier.privateKey,
+      verifierPublicKey: on.verifier.publicKey,
+    });
+    const signed = await on.server.handle({
+      requestId: 'auth',
+      kind: 'clob-auth',
+      chainId: 137,
+      from: WALLET,
+      intent: 'clob-auth',
+      typedData: typed,
+      structuredIntent: built,
+      approval,
+    });
+    expect(signed.signature).toMatch(/^0x/);
+    const again = authIntent('2');
+    await expect(on.server.handle({
+      requestId: 'auth-2',
+      kind: 'clob-auth',
+      chainId: 137,
+      from: WALLET,
+      intent: 'clob-auth',
+      typedData: typed,
+      structuredIntent: again,
+      approval: signVerifierApproval({
+        intent: again,
+        verifierPrivateKey: on.verifier.privateKey,
+        verifierPublicKey: on.verifier.publicKey,
+      }),
+    })).rejects.toThrow(/already used/);
+
+    const off = await boot(undefined, join(root, 'off-a.jsonl'));
+    const offIntent = authIntent('1');
+    await expect(off.server.handle({
+      requestId: 'auth-off',
+      kind: 'clob-auth',
+      chainId: 137,
+      from: WALLET,
+      intent: 'clob-auth',
+      typedData: typed,
+      structuredIntent: offIntent,
+      approval: signVerifierApproval({
+        intent: offIntent,
+        verifierPrivateKey: off.verifier.privateKey,
+        verifierPublicKey: off.verifier.publicKey,
+      }),
+    })).rejects.toThrow(/clob-auth is denied/);
+  });
+
+  it('refuses an order payload sent as clob-auth or typed-data, and a polymarket-order off chain 137', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pm-kind-'));
+    const typed = typedFor(Date.now());
+    const chainOne = {
+      1: {
+        enabled: true,
+        gas: { maxFeeUsd: 1 },
+        tokenCaps: { native: '0' },
+        price: { prices: { native: 3000 } },
+      },
+    };
+    const on = await boot(config({ clobAuth: true }), join(root, 'a.jsonl'), chainOne);
+    const now = Date.now();
+    const asAuth: SigningIntent = {
+      version: '1',
+      intentId: 'kind-auth',
+      nonce: '1',
+      createdAt: now,
+      expiresAt: now + 60_000,
+      wallet: WALLET,
+      chainId: 137,
+      venue: 'polymarket',
+      action: 'clob-auth',
+      routeHash: computeTypedDataRouteHash(typed),
+    };
+    await expect(on.server.handle({
+      requestId: 'kind-auth',
+      kind: 'clob-auth',
+      chainId: 137,
+      from: WALLET,
+      intent: 'kind',
+      typedData: typed,
+      structuredIntent: asAuth,
+      approval: signVerifierApproval({
+        intent: asAuth,
+        verifierPrivateKey: on.verifier.privateKey,
+        verifierPublicKey: on.verifier.publicKey,
+      }),
+    })).rejects.toThrow(/ClobAuth/);
+
+    const asTyped: SigningIntent = {
+      ...asAuth,
+      nonce: '2',
+      intentId: 'kind-typed',
+      chainId: 1,
+      venue: 'eip712',
+      action: 'sign',
+      polymarket: undefined,
+    };
+    await expect(on.server.handle({
+      requestId: 'kind-typed',
+      kind: 'typed-data',
+      chainId: 1,
+      from: WALLET,
+      intent: 'kind',
+      typedData: typed,
+      structuredIntent: asTyped,
+      approval: signVerifierApproval({
+        intent: asTyped,
+        verifierPrivateKey: on.verifier.privateKey,
+        verifierPublicKey: on.verifier.publicKey,
+      }),
+    })).rejects.toThrow(/Polymarket typed data is denied/);
+
+    const asOrder: SigningIntent = {
+      ...asAuth,
+      nonce: '3',
+      intentId: 'kind-order',
+      chainId: 1,
+      action: 'polymarket-order',
+      polymarket: orderIntent(),
+    };
+    await expect(on.server.handle({
+      requestId: 'kind-order',
+      kind: 'polymarket-order',
+      chainId: 1,
+      from: WALLET,
+      intent: 'kind',
+      typedData: typed,
+      structuredIntent: asOrder,
+      approval: signVerifierApproval({
+        intent: asOrder,
+        verifierPrivateKey: on.verifier.privateKey,
+        verifierPublicKey: on.verifier.publicKey,
+      }),
+    })).rejects.toThrow(/Polymarket is denied|not 137|chain/);
+  });
+
+  it('signs setApprovalForAll(false) and pauseUser as kill switches', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pm-kill-'));
+    const on = await boot(config(), join(root, 'a.jsonl'));
+    const ctf = new Interface(['function setApprovalForAll(address operator, bool approved)']);
+    const exchange = new Interface(['function pauseUser()']);
+    const calls: Array<[string, string]> = [
+      [PM_CTF, ctf.encodeFunctionData('setApprovalForAll', [PM_CTF_EXCHANGE_V2, false])],
+      [PM_CTF_EXCHANGE_V2, exchange.encodeFunctionData('pauseUser', [])],
+    ];
+    for (const [index, [to, data]] of calls.entries()) {
+      const nonce = String(index + 1);
+      const now = Date.now();
+      const tx = {
+        to,
+        value: '0',
+        data,
+        chainId: 137,
+        nonce: '0',
+        gasLimit: '200000',
+        maxFeePerGas: '0',
+        maxPriorityFeePerGas: '0',
+        gasPrice: '1',
+        type: 0,
+      };
+      const built: SigningIntent = {
+        version: '1',
+        intentId: `kill-${nonce}`,
+        nonce,
+        createdAt: now,
+        expiresAt: now + 60_000,
+        wallet: WALLET,
+        chainId: 137,
+        venue: 'polymarket',
+        action: 'polymarket-kill',
+        routeHash: computeApprovedTxHash(tx),
+        tx,
+      };
+      const signed = await on.server.handle({
+        requestId: `kill-${nonce}`,
+        kind: 'transaction',
+        chainId: 137,
+        from: WALLET,
+        to,
+        value: '0',
+        data,
+        gasLimit: '200000',
+        gasPrice: '1',
+        maxFeePerGas: '0',
+        maxPriorityFeePerGas: '0',
+        nonce: 0,
+        type: 0,
+        intent: 'kill',
+        structuredIntent: built,
+        approval: signVerifierApproval({
+          intent: built,
+          verifierPrivateKey: on.verifier.privateKey,
+          verifierPublicKey: on.verifier.publicKey,
+        }),
+      });
+      expect(signed.signedTransaction).toMatch(/^0x/);
+    }
   });
 });

@@ -106,6 +106,10 @@ const ERC20 = new Interface([
   'function approve(address spender, uint256 amount)',
 ]);
 
+const EXCHANGE = new Interface([
+  'function pauseUser()',
+]);
+
 const DENIED = new Set(POLYMARKET_DENY_CONTRACTS.map((address) => getAddress(address)));
 const COLLATERAL = new Set([getAddress(PM_USDC_E), getAddress(PM_PUSD)]);
 const V2_STANDARD = getAddress(PM_CTF_EXCHANGE_V2);
@@ -400,7 +404,7 @@ export function assertClobAuth(args: {
 }
 
 export interface DecodedPolymarketTx {
-  op: 'set-approval' | 'redeem' | 'revoke';
+  op: 'set-approval' | 'redeem' | 'revoke' | 'pause-user';
 }
 
 /** Gated Polygon calls. Anything else to a denied contract fails closed. */
@@ -416,8 +420,8 @@ export function decodePolymarketTransaction(to: string, data: string, config: Po
       const decoded = decodeExact(CTF, 'setApprovalForAll', data);
       const operator = getAddress(String(decoded[0]));
       if (operator !== V2_STANDARD && operator !== V2_NEG_RISK) reject('setApprovalForAll operator is not a current exchange');
-      if (decoded[1] !== true) reject('setApprovalForAll must be true');
-      return { op: 'set-approval' };
+      if (decoded[1] !== true && decoded[1] !== false) reject('setApprovalForAll must be true or false');
+      return { op: decoded[1] === true ? 'set-approval' : 'revoke' };
     }
     if (selector === CTF.getFunction('redeemPositions')!.selector) {
       const decoded = decodeExact(CTF, 'redeemPositions', data);
@@ -441,6 +445,10 @@ export function decodePolymarketTransaction(to: string, data: string, config: Po
     if (!DENIED.has(spender)) reject('ERC-20 approvals to Polymarket are denied');
     if (asBigInt(decoded[1]) !== 0n) reject('ERC-20 approvals to Polymarket are denied');
     return { op: 'revoke' };
+  }
+  if ((target === V2_STANDARD || target === V2_NEG_RISK) && selector === EXCHANGE.getFunction('pauseUser')!.selector) {
+    decodeExact(EXCHANGE, 'pauseUser', data);
+    return { op: 'pause-user' };
   }
   reject(`Contract ${target} is a built-in Polymarket denial`);
 }

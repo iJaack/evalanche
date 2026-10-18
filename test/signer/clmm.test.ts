@@ -95,6 +95,7 @@ describe('CLMM calldata gates', () => {
   it('allows an exact approve, mint, collect, decrease, and burn', () => {
     const approve = decode(AVALANCHE_USDC, ERC20.encodeFunctionData('approve', [AVALANCHE_UNISWAP_V3_NPM, 1000n]));
     expect(approve[0]?.op).toBe('approve');
+    expect(decode(AVALANCHE_USDC, ERC20.encodeFunctionData('approve', [AVALANCHE_UNISWAP_V3_NPM, 0n]))[0]?.amount).toBe(0n);
     expect(decode(AVALANCHE_WAVAX, ERC20.encodeFunctionData('approve', [AVALANCHE_UNISWAP_V3_NPM, 1000n]))[0]?.op).toBe('approve');
     expect(decode(AVALANCHE_UNISWAP_V3_NPM, mintData())[0]?.op).toBe('mint');
     const collect = NPM.encodeFunctionData('collect', [{ tokenId: 42n, recipient: WALLET, amount0Max: 1n, amount1Max: 0n }]);
@@ -141,6 +142,12 @@ describe('CLMM calldata gates', () => {
     expect(() => decode(AVALANCHE_UNISWAP_V3_NPM, mintData({ amount0Min: 0n }))).toThrow(/amount0Min/);
     expect(() => decode(AVALANCHE_UNISWAP_V3_NPM, mintData({ amount0Desired: 10n ** 18n + 1n }))).toThrow(/cap/);
     expect(() => decode(AVALANCHE_UNISWAP_V3_NPM, mintData(), poolConfig(), 1n)).toThrow(/value must be 0/);
+    const collectAttacker = NPM.encodeFunctionData('collect', [{ tokenId: 42n, recipient: ATTACKER, amount0Max: 1n, amount1Max: 1n }]);
+    expect(() => decode(AVALANCHE_UNISWAP_V3_NPM, collectAttacker, poolConfig(), 0n, owned())).toThrow(/collect recipient/);
+    const bothZero = NPM.encodeFunctionData('decreaseLiquidity', [{
+      tokenId: 42n, liquidity: 10n, amount0Min: 0n, amount1Min: 0n, deadline: deadline(),
+    }]);
+    expect(() => decode(AVALANCHE_UNISWAP_V3_NPM, bothZero, poolConfig(), 0n, owned())).toThrow(/amountMin/);
     expect(() => decode(AVALANCHE_UNISWAP_V3_NPM, NPM.encodeFunctionData('burn', [99n]), poolConfig(), 0n, owned())).toThrow(/treasury-owned/);
     expect(() => decode(AVALANCHE_USDC, ERC20.encodeFunctionData('approve', [AVALANCHE_UNISWAP_V3_NPM, MaxUint256]))).toThrow(/Unlimited/);
     expect(() => decode(AVALANCHE_UNISWAP_V3_NPM, mintData(), { enabled: false })).toThrow(/disabled/);
@@ -149,7 +156,7 @@ describe('CLMM calldata gates', () => {
 });
 
 describe('CLMM signer path', () => {
-  async function boot(clmm: ClmmModuleConfig | undefined) {
+  async function boot(clmm: ClmmModuleConfig | undefined, allowOverride?: Record<string, unknown>) {
     const root = await mkdtemp(join(tmpdir(), 'clmm-'));
     const verifier = generateEd25519KeyPair();
     const server = await startSignerServer({
@@ -162,10 +169,23 @@ describe('CLMM signer path', () => {
       allowInsecureFilePermissions: true,
       port: 0,
       simulate: async () => ({ success: true }),
-      allow: {
+      allow: allowOverride ?? {
         43114: [{ address: ATTACKER, selectors: ['0x'], roles: ['recipient'] }],
       },
-      chains: clmm ? { 43114: { clmm } } : { 43114: {} },
+      chains: {
+        43114: {
+          gas: { maxFeeUsd: 1 },
+          tokenCaps: {
+            native: '0',
+            ...(clmm ? {
+              [getAddress(AVALANCHE_USDC)]: '1000000000000',
+              [getAddress(AVALANCHE_WAVAX)]: '1000000000000000000000',
+            } : {}),
+          },
+          price: { prices: { native: 20 } },
+          ...(clmm ? { clmm } : {}),
+        },
+      },
     });
     servers.push(server);
     return { server, verifier, root };
@@ -239,25 +259,54 @@ describe('CLMM signer path', () => {
     expect(approved.signedTransaction).toMatch(/^0x/);
 
     const off = await boot(undefined);
-    await expect(send(off, AVALANCHE_UNISWAP_V3_NPM, mintData(), '1')).rejects.toThrow(/CLMM module is disabled/);
+    await expect(send(off, AVALANCHE_UNISWAP_V3_NPM, mintData(), '1')).rejects.toThrow(/not allowlisted/);
     await expect(send(off, AVALANCHE_USDC, ERC20.encodeFunctionData('approve', [AVALANCHE_UNISWAP_V3_NPM, 1000n]), '1')).rejects.toThrow(/not allowlisted/);
+    const zero = await send(on, AVALANCHE_USDC, ERC20.encodeFunctionData('approve', [AVALANCHE_UNISWAP_V3_NPM, 0n]), '3');
+    expect(zero.signedTransaction).toMatch(/^0x/);
   });
 
-  it('adds USDC and WAVAX to the allow map only while CLMM is enabled', async () => {
+  it('does not inject a transfer selector, and still honours one the operator configured', async () => {
     const on = await boot(poolConfig());
     const data = ERC20.encodeFunctionData('transfer', [ATTACKER, 1n]);
-    const moved = await send(on, AVALANCHE_USDC, data, '1', {
+    await expect(send(on, AVALANCHE_USDC, data, '1', {
+      action: 'transfer',
+      amountIn: '1',
+      tokenIn: { address: AVALANCHE_USDC, symbol: 'USDC', decimals: 6 },
+    })).rejects.toThrow(/not allowlisted/);
+    const approved = await send(on, AVALANCHE_USDC, ERC20.encodeFunctionData('approve', [AVALANCHE_UNISWAP_V3_NPM, 1000n]), '2');
+    expect(approved.signedTransaction).toMatch(/^0x/);
+
+    const configured = await boot(poolConfig(), {
+      43114: [
+        { address: ATTACKER, selectors: ['0x'], roles: ['recipient'] },
+        { address: AVALANCHE_USDC, selectors: ['0xa9059cbb'], decimals: 6, roles: ['token'] },
+      ],
+    });
+    const moved = await send(configured, AVALANCHE_USDC, data, '1', {
       action: 'transfer',
       amountIn: '1',
       tokenIn: { address: AVALANCHE_USDC, symbol: 'USDC', decimals: 6 },
     });
     expect(moved.signedTransaction).toMatch(/^0x/);
-    const off = await boot(undefined);
-    await expect(send(off, AVALANCHE_WAVAX, data, '1', {
-      action: 'transfer',
-      amountIn: '1',
-      tokenIn: { address: AVALANCHE_WAVAX, symbol: 'WAVAX', decimals: 18 },
-    })).rejects.toThrow(/not allowlisted/);
+  });
+
+  it('denies the position manager while CLMM is off even when the allow map names it', async () => {
+    const selector = mintData().slice(0, 10);
+    const off = await boot(undefined, {
+      43114: [
+        { address: ATTACKER, selectors: ['0x'], roles: ['recipient'] },
+        { address: AVALANCHE_UNISWAP_V3_NPM, selectors: [selector] },
+      ],
+    });
+    await expect(send(off, AVALANCHE_UNISWAP_V3_NPM, mintData(), '1')).rejects.toThrow(/CLMM module is disabled/);
+  });
+
+  it('rejects a multicall that collects to a non-treasury recipient', async () => {
+    const h = await boot(poolConfig());
+    const bad = NPM.encodeFunctionData('multicall', [[
+      NPM.encodeFunctionData('collect', [{ tokenId: 42n, recipient: ATTACKER, amount0Max: 1n, amount1Max: 1n }]),
+    ]]);
+    await expect(send(h, AVALANCHE_UNISWAP_V3_NPM, bad, '1', { clmm: { ownedTokenIds: ['42'] } })).rejects.toThrow(/collect recipient/);
   });
 
   it('blocks a multicall that hides transferFrom and blocks increaseLiquidity', async () => {

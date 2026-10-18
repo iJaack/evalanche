@@ -11,10 +11,10 @@ A file with no `chains` object is the old shape: `chainId` or `chainIds`, one `r
 Each entry may set:
 
 - `rpcUrls`. Simulation uses this list for the request's chain. The first success wins. A revert does not fall through. An injected test simulator still replaces the list.
-- `gas.mode`: `legacy` (type 0), `eip1559` (type 2), or `both`. Type 113 is denied on every chain. `gas.maxFeeWei` is the native gas-cost cap and cannot exceed 1 native token. `gas.maxFeeUsd` is an optional USD cap on that same cost.
-- `tokenCaps`. Keyed by chain, then by address or `native`. The same address on two chains does not share a cap. A top-level `tokenCaps` whose keys are chain ids is the same map.
+- `gas.mode`: `legacy` (type 0), `eip1559` (type 2), or `both`. Type 113 is denied on every chain. `gas.maxFeeWei` is still the native gas-cost cap and cannot exceed 1 native token. `gas.maxFeeUsd` is required and must be positive for every enabled chain. It prices that chain's own native token. An old file with no `chains` object keeps the wei cap and does not require the USD cap.
+- `tokenCaps`. Keyed by chain, then by address or `native`. The same address on two chains does not share a cap. A top-level `tokenCaps` whose keys are chain ids is the same map. A non-empty address-keyed `tokenCaps` cannot be combined with `chains`. Every enabled chain needs a `native` cap and a cap for each allowlisted token, including WAVAX and USDC when the LP module is on. A disabled chain does not.
 - `slippageCaps`, `lifiDiamond`, `lifiSelectors`, and `kyberExecutors`. Avalanche keeps the built-in stable and top slippage classes. Other chains use only the lists in config. An omitted Kyber list on a non-Avalanche chain allows no executor.
-- `price.ids` and `price.sanitySource`. The feed is HTTPS and keyed by address. When `ids` is set, an address missing from it has no price.
+- `price.ids`, `price.prices`, and `price.sanitySource`. Prices belong to that chain. `price.prices` is an address, or `native`, to a USD number. `price.sanitySource` is an HTTPS feed keyed by address. An enabled chain needs one of those for its native token so the USD gas cap can be checked. The global `prices` map and `priceSourceUrl` stay on the old single-chain file and are not applied to other chains. When `ids` is set, an address missing from it has no price.
 
 Enabling a chain other than Avalanche re-opens TM-008 for that chain. The signer is still not a boundary against root.
 
@@ -40,12 +40,14 @@ The order must have maker and signer equal to the treasury, `signatureType` 0, a
 
 Gated Polygon transactions, and only these:
 
-- CTF `0x4D97DCd97eC945f40cF65F87097ACe5EA0476045` `setApprovalForAll` to a current V2 exchange, with `approved` true.
+- CTF `0x4D97DCd97eC945f40cF65F87097ACe5EA0476045` `setApprovalForAll` to a current V2 exchange. `approved` may be true, or false to revoke that operator.
 - CTF `redeemPositions` with collateral USDC.e `0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174` or pUSD `0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB`, and `parentCollectionId` zero.
 - NegRiskAdapter `0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296` `redeemPositions`.
 - `approve(spender, 0)` of that collateral to a Polymarket contract. A positive amount stays denied.
 
-Split, merge, onramp, offramp, and calls to the exchanges stay denied. A second collateral-adapter pair was not verified, so it is not pinned and stays denied.
+- `pauseUser()` on the standard V2 exchange `0xE111180000d2663C0091e4f400237545B87B996B` or the neg-risk V2 exchange `0xe2222d279d744050d28e00520010520000310F59`. That is the user self-pause. `unpauseUser` and admin `pauseTrading` stay denied. The V3 exchange stays denied.
+
+Split, merge, onramp, offramp, and every other call to the exchanges stay denied. A second collateral-adapter pair was not verified, so it is not pinned and stays denied.
 
 A Polymarket L2 API secret is a new box-wide secret. This signer does not store it.
 
@@ -61,13 +63,13 @@ Pinned contracts, checked against `https://api.avax.network/ext/bc/C/rpc` on 18 
 
 Allowed:
 
-- `approve` of WAVAX or USDC to the position manager for an exact positive amount at or under the pool cap. `MaxUint256` is denied.
+- `approve` of WAVAX or USDC to the position manager for an exact amount at or under the pool cap, including zero so a leftover allowance can be revoked. `MaxUint256` is denied.
 - `mint` of an allowlisted `(token0, token1, fee)`. Ticks must sit on the spacing and inside the configured bounds. `amount0Min` and `amount1Min` must be nonzero when that side is deposited. The deadline must be in the future and at most 600 seconds ahead. The recipient must be the treasury.
-- `collect` to the treasury, `decreaseLiquidity` with at least one nonzero `amountMin`, and `burn`. Each requires the token id in `intent.clmm.ownedTokenIds`. The verifier checks `ownerOf`. The signer binds that list. It does not call the chain.
+- `collect` to the treasury, `decreaseLiquidity` with at least one nonzero `amountMin`, and `burn`. Each requires the token id in `intent.clmm.ownedTokenIds`. The signer binds that list. It does not call `ownerOf`. The verifier side, an `ownerOf` eth_call plus a `positions(tokenId)` pool match, is built separately.
 - `multicall` when every inner call passes the same checks. One bad inner call rejects the whole transaction. Nested multicall is denied.
 
 Blocked: NFT `approve`, `setApprovalForAll`, `transferFrom`, and both `safeTransferFrom` forms. `increaseLiquidity` is blocked unless `clmm.increaseLiquidity` is true.
 
-While the module is enabled, WAVAX and USDC gain the `token` role and the `transfer` and `approve` selectors on the 43114 allow map so a swap can fund the position. With the module off, that injection does not happen and the provision allow map is unchanged.
+While the module is enabled, WAVAX and USDC gain the `token` role and the `approve` selector on the 43114 allow map so a swap can fund the position. The module does not add `transfer`. A transfer selector that is already in the allow map stays. With the module off, that injection does not happen, and a call to the position manager is subject to the generic allow map. The provision allow map is unchanged.
 
 Transaction value must be 0.
