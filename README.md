@@ -5,13 +5,13 @@ Avalanche-first agent wallet and execution SDK for AI agents, with multi-EVM sup
 <!-- GENERATED:release-summary:start -->
 ## Current Release
 
-- Latest release: [v1.16.0](docs/releases/RELEASE_NOTES_1.16.0.md)
-- Published package: `evalanche@1.16.0`
+- Latest release: [v1.17.0-rc.1](docs/releases/RELEASE_NOTES_1.17.0-rc.1.md)
+- Published package: `evalanche@1.17.0-rc.1`
 - Current package surface:
+  - Keep the live box on 1.16.0 at `b788bd5` until it is provisioned. That box has a multichain config on chains 1, 10, 56, 137, 4663, 8453, 42161, 43114, 59144, and 80094. Upgrading means provisioning `evalanche-1.17.0-rc.1.tgz` and, only when static prices are dropped, setting `price.priceFeed` to `coingecko`.
   - Build KyberSwap aggregator routes on every pinned chain where Kyber is available: 1, 10, 56, 137, 4663, 8453, 42161, 43114, 59144, and 80094. Each chain uses its pinned router, Li.Fi diamond, and wrapped native. The builder refuses a disabled chain, an unknown router, a recipient that is not the treasury, and a route that does not match the build.
-  - Name the provision tarball from package.json. `provision` pins `evalanche-<version>.tgz`. As root, `EVALANCHE_BOX_TARBALL` is ignored. `start` does not need package.json.
-  - Price a chain from CoinGecko `simple/price` when `price.priceFeed` is `coingecko`. The feed is HTTPS only, mapped by coin id, and fails closed on a malformed, missing, or stale price. Static prices stay optional.
-  - Add a per-chain signer policy for the nineteen mainnets. Avalanche 43114 stays on unless `enabled` is false or `killSwitch` is true. Every other chain stays off until `enabled` is true. Testnets cannot be enabled. An old file with no `chains` object keeps its chain list, shared token caps, gas cap, price source, and Avalanche slippage defaults.
+  - Name the provision tarball from package.json. This rc pins `evalanche-1.17.0-rc.1.tgz`. The live 1.16.0 install used the previous tarball name. As root, `EVALANCHE_BOX_TARBALL` is ignored. `start` does not need package.json and does not rename an install that is already on disk.
+  - Price a chain from CoinGecko `simple/price` when `price.priceFeed` is `coingecko`. The feed is HTTPS only, mapped by coin id, and fails closed on a malformed, missing, or stale price. Static prices stay valid. Switching the live config to the feed is optional.
 - Docs:
   - [Release notes](docs/releases/README.md)
   - [Roadmap](ROADMAP.md)

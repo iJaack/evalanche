@@ -120,7 +120,7 @@ npm pack
 sha256sum evalanche-$(node -p "require('./package.json').version").tgz
 ```
 
-`npm pack` names the file from `package.json`. At 1.16.0 that file is `evalanche-1.16.0.tgz`. Record that digest with the release or the CI pack artifact. On the box, pass that recorded digest. Do not hash the file you are about to install: a copy under `/home` can be replaced before `provision` reads it. `provision` reads the same version from `package.json` beside the script, one directory above it, or under the install prefix, and copies the tarball into `/var/lib/evalanche-signer/evalanche-<version>.tgz`, which is root-owned, hashes that copy, and installs those same bytes. As root, `EVALANCHE_BOX_TARBALL` is ignored. `start` does not need `package.json`. The sha256 argument is required. A digest that does not match fails before `npm` and before the pinned copy is replaced.
+`npm pack` names the file from `package.json`. At 1.17.0-rc.1 that file is `evalanche-1.17.0-rc.1.tgz`. The live box is still 1.16.0 at `b788bd5` until someone provisions this tarball. Record that digest with the release or the CI pack artifact. On the box, pass that recorded digest. Do not hash the file you are about to install: a copy under `/home` can be replaced before `provision` reads it. `provision` reads the same version from `package.json` beside the script, one directory above it, or under the install prefix, and copies the tarball into `/var/lib/evalanche-signer/evalanche-<version>.tgz`, which is root-owned, hashes that copy, and installs those same bytes. As root, `EVALANCHE_BOX_TARBALL` is ignored. `start` does not need `package.json`. The sha256 argument is required. A digest that does not match fails before `npm` and before the pinned copy is replaced.
 
 ```sh
 id box
@@ -129,7 +129,7 @@ sudo -u box sudo -n true
 
 # EVALANCHE_TARBALL_SHA256 is the digest published with the release, not a hash of the local file.
 sudo /workspace/scripts/grok-bot-signer.sh provision \
-  /workspace/evalanche-1.16.0.tgz \
+  /workspace/evalanche-1.17.0-rc.1.tgz \
   "$EVALANCHE_TARBALL_SHA256"
 ```
 

@@ -601,7 +601,7 @@ chmod 755 "$prefix/node_modules/.bin/evalanche-signer"
 
   it('names the pinned tarball from package.json when the override is unset', async () => {
     const box = await provisionLayout();
-    const derived = join(box.durable, 'evalanche-1.16.0.tgz');
+    const derived = join(box.durable, 'evalanche-1.17.0-rc.1.tgz');
     const digest = createHash('sha256').update(readFileSync(box.tarball)).digest('hex');
     const env = { ...box.env };
     delete env.EVALANCHE_BOX_TARBALL;
@@ -613,7 +613,7 @@ chmod 755 "$prefix/node_modules/.bin/evalanche-signer"
     });
     const missing = run(['provision', '', digest]);
     expect(missing.status).not.toBe(0);
-    expect(`${missing.stderr}`).toMatch(/evalanche-1\.16\.0\.tgz/);
+    expect(`${missing.stderr}`).toMatch(/evalanche-1\.17\.0-rc\.1\.tgz/);
     expect(existsSync(box.npmLog)).toBe(false);
 
     await mkdir(box.durable, { recursive: true });
