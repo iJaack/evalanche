@@ -111,6 +111,12 @@ Transaction value must be 0.
 
 A positive amount is denied unless the spender already has the `spender` role and the selector is allowlisted, which is the existing exact-approve path. `setApprovalForAll(operator, true)`, permit, `increaseAllowance`, a nonzero value, and trailing calldata are denied. Permit stays denied even when `explicitAllows` includes it. Known tokens, checked 19 October 2026, are Polygon USDC.e `0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174`, Polygon native USDC `0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359` ([Circle USDC contracts](https://developers.circle.com/stablecoins/usdc-contract-addresses)), and Avalanche native USDC `0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E`. The no-code address `0x794a61358d6845594f3DCa32f21763fB5b21AbDf` can be the spender of a zero approve. pUSD is not a known revoke token. Calls to it stay on the Polymarket deny list.
 
+## pUSD as a swap token
+
+pUSD `0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB` can be a sending or receiving asset of a Polygon Li.Fi V3 swap. The transaction target is the Li.Fi diamond, not pUSD, and the venue is not `polymarket`. Give the allow entry `roles: ["token"]` and an empty `selectors` list, set a `tokenCaps` entry, and list the address in `slippageCaps.stables`. Without that stable list the bought-token class is the 300 bps other cap. The Kyber router still needs the `dex` and `spender` roles, and chain 137 needs `kyberExecutors`.
+
+An approve selector on the pUSD entry does not permit `approve`. A call whose `to` is pUSD is a Polymarket denial until the Polymarket module is on, and then the only accepted approval is `approve(protocolSpender, 0)`. `revokeOnly` does not clear pUSD. CollateralOnramp `0x93070a847efEf7F70739046A929D47a521F5B8ee` stays denied. The address is the pUSD proxy in the [Polymarket contract list](https://docs.polymarket.com/resources/contracts). Checked 19 October 2026: `symbol()` is `pUSD`, `decimals()` is 6, and the EIP-1967 implementation is `0xce84e053301a82937f90ee2c2c1889cab1db25de`.
+
 ## Direct swap venues
 
 Checked 18 October 2026. The Kyber MetaAggregationRouter plus the Li.Fi diamond is the swap path for the chains in the table above, including Sonic 146 and HyperEVM 999. It does not serve Cronos 25, Gnosis 100, Mantle 5000, Celo 42220, Moonbeam 1284, Blast 81457, or Scroll 534352. Those chains get one pinned router, or no venue. The Li.Fi diamond is upgradeable, so it was not reused where an immutable router can be fully decoded.
