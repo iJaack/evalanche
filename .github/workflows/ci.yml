@@ -122,3 +122,49 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: node scripts/signer-root-layout.mjs
+
+  # Two fresh npm ci trees must pack to the same sha256. A symlinked
+  # node_modules is not used: esbuild would embed that realpath.
+  reproducible-pack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: '20.19.2'
+          cache: npm
+      - name: Pack from two directories and compare
+        run: |
+          set -eu
+          root="$GITHUB_WORKSPACE"
+          left=$(mktemp -d)
+          right=$(mktemp -d)
+          copy() {
+            tar -C "$root" --exclude node_modules --exclude dist --exclude .git -cf - . | tar -C "$1" -xf -
+          }
+          copy "$left"
+          copy "$right"
+          (cd "$left" && npm ci && npm run build && npm pack --json > pack.json)
+          (cd "$right" && npm ci && npm run build && npm pack --json > pack.json)
+          node --input-type=module -e '
+            import { createHash } from "node:crypto";
+            import { readFileSync } from "node:fs";
+            import { spawnSync } from "node:child_process";
+            const hash = (file) => createHash("sha256").update(readFileSync(file)).digest("hex");
+            const packed = (dir) => `${dir}/${JSON.parse(readFileSync(`${dir}/pack.json`, "utf8"))[0].filename}`;
+            const leftFile = packed(process.argv[1]);
+            const rightFile = packed(process.argv[2]);
+            const leftHash = hash(leftFile);
+            const rightHash = hash(rightFile);
+            console.log(`left ${leftHash}`);
+            console.log(`right ${rightHash}`);
+            if (leftHash !== rightHash) process.exit(1);
+            const listed = spawnSync("tar", ["-tzf", leftFile], { encoding: "utf8" });
+            if (listed.status !== 0) process.exit(listed.status ?? 1);
+            for (const entry of listed.stdout.split("\n").filter(Boolean)) {
+              if (entry.endsWith("/")) continue;
+              const bytes = spawnSync("tar", ["-xOzf", leftFile, entry]).stdout;
+              console.log(`${createHash("sha256").update(bytes).digest("hex")}  ${entry}`);
+            }
+          ' "$left" "$right"

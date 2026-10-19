@@ -11,8 +11,10 @@ export default defineConfig([
     target: 'node20',
     shims: true,
     // The published tarball cap is 1_000_000 bytes. Embedded sources in the
-    // maps push a single helper copy over that cap. Mappings stay. The shim
-    // path is rewritten so a symlinked node_modules cannot change the bytes.
+    // maps push a single helper copy over that cap. Mappings stay relative
+    // to the package so two build directories pack to the same bytes. Do not
+    // turn sourcesContent back on. The shim path is rewritten so a symlinked
+    // node_modules cannot change the bytes.
     esbuildOptions(options) {
       options.sourcesContent = false;
     },

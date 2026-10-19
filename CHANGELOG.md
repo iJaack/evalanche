@@ -8,6 +8,7 @@
 - `revokeOnly` accepts a zero approve or `setApprovalForAll(operator, false)` only when the contract has the `token` role or is a pinned known USDC. An allowlisted router is not enough.
 - Polymarket `maxOrderUsd` and `maxDailyUsd` must be strings. A number fails startup. A same-UTC-day order with no stored `usdMicros` counts at `maxOrderUsd`. If that cap is unset, those records block new orders. Yesterday's records and clob-auth do not count. `unpauseUser` defaults off. When true, `unpauseUser()` on either V2 exchange can reverse a pause.
 - Unknown keys on the signer, a chain, gas, price, an allow entry, Polymarket, CLMM, DEX, CCTP, and revoke-only fail startup.
+- A build in two directories produces the same `npm pack` bytes. Sourcemaps keep relative paths and omit embedded sources. Shim paths are rewritten to `tsup/assets/` so a symlinked `node_modules` cannot change the bytes.
 
 ## 1.17.0-rc.3
 
