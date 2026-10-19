@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.17.0-rc.4
+
+- Release candidate. The live box is 1.17.0-rc.2 at `a55e307` (`a55e3075688be09431cec97acb5e7e7365abdd14`). Provision `evalanche-1.17.0-rc.4.tgz` as a new pin. Leave `evalanche-1.17.0-rc.1.tgz`, `evalanche-1.17.0-rc.2.tgz`, and `evalanche-1.17.0-rc.3.tgz` in place. Provisioning again under one of those filenames would overwrite a rollback pin.
+- A CCTP `receiveMessage` is accepted only when the header sender and the header recipient are both TokenMessengerV2 `0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d`. TokenMinterV2 is not the header recipient. `sourceDomains` lists domains this chain may receive and is required when Polygon CCTP is enabled. `destinationDomains` lists burn destinations and is required when Avalanche CCTP is enabled. `maxExpirationBlock`, a decimal string, is the highest nonzero expiration that may be received. Omitted, only 0 is accepted.
+- Revoke and CCTP calldata accept one venue/action pair each: `revoke` / `revoke`, `cctp` / `cctp-approve`, `cctp` / `cctp-burn`, and `cctp` / `cctp-mint`. `tokenIn` is the token. `amountIn` is 0 for a revoke, the exact approve amount for `cctp-approve`, the `depositForBurn` amount for a burn, and the burn-body amount for a mint. A mismatched label or amount is denied. A V1 CTF `setApprovalForAll(false)` uses venue `polymarket` and action `polymarket-kill`.
+- `revokeOnly` accepts a zero approve or `setApprovalForAll(operator, false)` only when the contract has the `token` role or is a pinned known USDC. An allowlisted router is not enough.
+- Polymarket `maxOrderUsd` and `maxDailyUsd` must be strings. A number fails startup. A same-UTC-day order with no stored `usdMicros` counts at `maxOrderUsd`. If that cap is unset, those records block new orders. Yesterday's records and clob-auth do not count. `unpauseUser` defaults off. When true, `unpauseUser()` on either V2 exchange can reverse a pause.
+- Unknown keys on the signer, a chain, gas, price, an allow entry, Polymarket, CLMM, DEX, CCTP, and revoke-only fail startup.
+
 ## 1.17.0-rc.3
 
 - Release candidate. The live box is 1.17.0-rc.2 at `a55e307` (`a55e3075688be09431cec97acb5e7e7365abdd14`). Provision `evalanche-1.17.0-rc.3.tgz` as a new pin. Leave `evalanche-1.17.0-rc.1.tgz` and `evalanche-1.17.0-rc.2.tgz` in place. Provisioning again under either filename would overwrite a rollback pin.

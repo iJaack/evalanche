@@ -46,3 +46,12 @@ export {
   startSignerServer,
 } from './server';
 export type { AllowEntry, ExplicitAllow, SignerServerOptions, TypedDataAllow } from './server';
+export {
+  buildCctpApprove,
+  buildCctpBurn,
+  buildCctpMint,
+  buildPolymarketV1CtfRevoke,
+  buildRevokeApproval,
+  buildRevokeOperator,
+} from './funding-intent';
+export type { FundingIntentFields, PolymarketKillIntentFields } from './funding-intent';

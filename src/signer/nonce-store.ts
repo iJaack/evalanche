@@ -109,7 +109,7 @@ export class NonceStore {
     return this.orders.filter((order) => order.kind !== 'auth' && order.at >= atMs).length;
   }
 
-  /** Sum of stored order notionals since `atMs`. A record with no `usdMicros` adds nothing. */
+  /** Sum of stored order notionals since `atMs`. A record with no `usdMicros` is not included. */
   spentSince(atMs: number): bigint {
     let sum = 0n;
     for (const order of this.orders) {
@@ -117,6 +117,19 @@ export class NonceStore {
       sum += BigInt(order.usdMicros);
     }
     return sum;
+  }
+
+  /**
+   * Orders since `atMs` that were stored before `usdMicros` existed.
+   * The caller prices each one at `maxOrderUsd`. Auth records are not orders.
+   */
+  unpricedOrdersSince(atMs: number): number {
+    let count = 0;
+    for (const order of this.orders) {
+      if (order.kind === 'auth' || order.at < atMs || order.usdMicros !== undefined) continue;
+      count += 1;
+    }
+    return count;
   }
 
   async persist(): Promise<void> {

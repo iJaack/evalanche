@@ -339,6 +339,22 @@ function blankChain(
   };
 }
 
+const CHAIN_KEYS = new Set([
+  'enabled', 'killSwitch', 'rpcUrls', 'gas', 'tokenCaps', 'slippageCaps', 'lifiDiamond',
+  'lifiSelectors', 'kyberExecutors', 'price', 'polymarket', 'clmm', 'dex', 'revokeOnly', 'cctp',
+]);
+const GAS_KEYS = new Set(['mode', 'maxFeeWei', 'maxFeeUsd']);
+const PRICE_KEYS = new Set(['ids', 'sanitySource', 'priceFeed', 'bounds', 'prices']);
+const SLIPPAGE_KEYS = new Set(['stables', 'top', 'stableBps', 'topBps', 'otherBps']);
+const FEED_KEYS = new Set(['provider', 'url', 'maxAgeMs']);
+const BOUND_KEYS = new Set(['min', 'max']);
+
+function assertKnownKeys(value: object, allowed: ReadonlySet<string>, label: string): void {
+  for (const key of Object.keys(value)) {
+    if (!allowed.has(key)) fail(`${label}.${key} is not a recognized setting`);
+  }
+}
+
 function applyChainEntry(
   base: ResolvedChain,
   entry: SignerChainConfig,
@@ -348,6 +364,30 @@ function applyChainEntry(
 ): ResolvedChain {
   const id = base.chainId;
   const label = `chains.${id}`;
+  if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) fail(`${label} must be an object`);
+  assertKnownKeys(entry, CHAIN_KEYS, label);
+  if (entry.gas !== undefined) {
+    if (entry.gas === null || typeof entry.gas !== 'object' || Array.isArray(entry.gas)) fail(`${label}.gas must be an object`);
+    assertKnownKeys(entry.gas, GAS_KEYS, `${label}.gas`);
+  }
+  if (entry.price !== undefined) {
+    if (entry.price === null || typeof entry.price !== 'object' || Array.isArray(entry.price)) fail(`${label}.price must be an object`);
+    assertKnownKeys(entry.price, PRICE_KEYS, `${label}.price`);
+    const feed = entry.price.priceFeed;
+    if (feed !== undefined && typeof feed === 'object' && feed !== null) {
+      assertKnownKeys(feed, FEED_KEYS, `${label}.price.priceFeed`);
+    }
+    for (const [key, bound] of Object.entries(entry.price.bounds ?? {})) {
+      if (bound === null || typeof bound !== 'object' || Array.isArray(bound)) fail(`${label}.price.bounds.${key} must be an object`);
+      assertKnownKeys(bound, BOUND_KEYS, `${label}.price.bounds.${key}`);
+    }
+  }
+  if (entry.slippageCaps !== undefined) {
+    if (entry.slippageCaps === null || typeof entry.slippageCaps !== 'object' || Array.isArray(entry.slippageCaps)) {
+      fail(`${label}.slippageCaps must be an object`);
+    }
+    assertKnownKeys(entry.slippageCaps, SLIPPAGE_KEYS, `${label}.slippageCaps`);
+  }
   const rpcUrls = entry.rpcUrls ?? config.rpcUrls?.[String(id)];
   const next: ResolvedChain = {
     ...base,

@@ -279,7 +279,6 @@ export function decodeCalldata(to: string, data: string, options: DecodeOptions,
     value: options.value,
     enabled: options.revokeOnly?.enabled === true,
     inScope: (options.chainId !== undefined && isKnownRevokeToken(options.chainId, to))
-      || options.allowAddress(to)
       || options.allowRole(to, 'token'),
     spenderAllowed: (() => {
       try {

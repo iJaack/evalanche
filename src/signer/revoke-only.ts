@@ -3,7 +3,8 @@
  *
  * Once enabled, two shapes are accepted on an enabled chain:
  * `approve(anySpender, 0)` and `setApprovalForAll(operator, false)`.
- * The token or contract must be on the allow map or be a pinned known USDC.
+ * The token must have the `token` role or be a pinned known USDC.
+ * A router or any other allowlisted contract is out of scope.
  * A positive amount, `operator = true`, permit, increaseAllowance, a nonzero
  * value, and trailing calldata are denied. pUSD stays on the Polymarket
  * deny list and is not a known revoke token.
@@ -148,13 +149,13 @@ export function takeRevokeOnly(input: {
       if (!input.spenderAllowed) fail('revoke-only allows only a zero amount');
       return null;
     }
-    return { kind: 'erc20-approve', selector, amount: 0n, spender, asset: target };
+    return { kind: 'erc20-approve', selector, amount: 0n, spender, asset: target, moduleOp: 'revoke' };
   }
   if (selector === SET_APPROVAL) {
     const decoded = decodeExact(ERC1155, 'setApprovalForAll', input.data);
     const operator = getAddress(String(decoded[0]));
     if (decoded[1] !== false) fail('setApprovalForAll(operator, true) is denied');
-    return { kind: 'erc20-approve', selector, amount: 0n, spender: operator, asset: target };
+    return { kind: 'erc20-approve', selector, amount: 0n, spender: operator, asset: target, moduleOp: 'revoke' };
   }
   fail(`revoke selector ${selector} is denied`);
 }

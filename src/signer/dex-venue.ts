@@ -197,9 +197,21 @@ export function isDexRouter(chainId: number, address: string): boolean {
   }
 }
 
+const DEX_KEYS = new Set(['enabled', 'router', 'selectors', 'wrappedNative', 'pools', 'poolDepthVerified', 'verifiedAt']);
+const DEX_POOL_KEYS = new Set(['tokenA', 'tokenB', 'fee']);
+
 export function assertDexConfig(config: DexVenueConfig | undefined, chainId: number, label = `chains.${chainId}`): void {
   if (config === undefined) return;
   if (typeof config !== 'object' || config === null || Array.isArray(config)) failConfig(`${label}.dex must be an object`);
+  for (const key of Object.keys(config)) {
+    if (!DEX_KEYS.has(key)) failConfig(`${label}.dex.${key} is not a DEX setting`);
+  }
+  for (const pool of config.pools ?? []) {
+    if (pool === null || typeof pool !== 'object' || Array.isArray(pool)) failConfig(`${label}.dex.pools entries must be objects`);
+    for (const key of Object.keys(pool)) {
+      if (!DEX_POOL_KEYS.has(key)) failConfig(`${label}.dex.pools.${key} is not a pool setting`);
+    }
+  }
   if (config.enabled !== true) return;
   const unsafe = DEX_UNSAFE_REASON[chainId];
   if (unsafe) failConfig(`${label}.dex ${unsafe}`);

@@ -4,9 +4,10 @@
  * Avalanche 43114 may `depositForBurn` on TokenMessengerV2 and may approve
  * the pinned native USDC to that messenger for the exact burn amount.
  * Polygon 137 may `receiveMessage` on MessageTransmitterV2. The mint
- * recipient in the burn body must be the treasury. The header recipient
- * must be TokenMinterV2, which is who handles the message, not who receives
- * the USDC.
+ * recipient in the burn body must be the treasury. The header sender and
+ * the header recipient must both be TokenMessengerV2. MessageTransmitterV2
+ * calls that recipient, and Circle's burn sets it to the remote messenger.
+ * TokenMinterV2 mints the USDC; it is not the header recipient.
  *
  * Checked 19 October 2026 against Circle's contract list and domain table
  * (https://developers.circle.com/cctp/references/contract-addresses,
@@ -55,7 +56,6 @@ const BURN_TOKEN_BY_DOMAIN: Readonly<Record<number, string>> = {
 
 const MESSENGER = getAddress(CCTP_TOKEN_MESSENGER_V2);
 const TRANSMITTER = getAddress(CCTP_MESSAGE_TRANSMITTER_V2);
-const MINTER = getAddress(CCTP_TOKEN_MINTER_V2);
 const AVALANCHE_USDC = getAddress(AVALANCHE_NATIVE_USDC);
 const POLYGON_USDC = getAddress(POLYGON_NATIVE_USDC);
 
@@ -75,19 +75,39 @@ const DEPOSIT = MESSENGER_IFACE.getFunction('depositForBurn')!.selector;
 const RECEIVE = TRANSMITTER_IFACE.getFunction('receiveMessage')!.selector;
 const APPROVE = ERC20.getFunction('approve')!.selector;
 
-const KEYS = new Set(['enabled', 'destinationDomains', 'maxFee', 'minFinalityThreshold', 'destinationCaller']);
+const KEYS = new Set([
+  'enabled',
+  'destinationDomains',
+  'sourceDomains',
+  'maxFee',
+  'minFinalityThreshold',
+  'destinationCaller',
+  'maxExpirationBlock',
+]);
 const DECIMAL = /^(0|[1-9][0-9]*)$/;
 
 export interface CctpConfig {
   /** Default false. */
   enabled?: boolean;
   /**
-   * Circle domain ids. On a burn they are the allowed destination domains.
-   * On a receive they are the allowed source domains.
+   * Circle domain ids `depositForBurn` may name as destinationDomain.
+   * Required when the module is enabled on Avalanche. Not used on receive.
    */
   destinationDomains?: number[];
+  /**
+   * Circle domain ids a `receiveMessage` may name as its source domain.
+   * Required when the module is enabled on Polygon. Omitted on Avalanche
+   * means this chain does not receive.
+   */
+  sourceDomains?: number[];
   /** Max `maxFee` in burn-token units. Omitted means 0, so the transfer is fee-free. */
   maxFee?: string;
+  /**
+   * Highest `expirationBlock` a receive may carry, as a decimal string.
+   * Omitted means only 0 is accepted. 0 is always accepted. A message above
+   * this bound is denied.
+   */
+  maxExpirationBlock?: string;
   /** Must be 2000 when the module is enabled. 1000 (Fast) is rejected. */
   minFinalityThreshold?: number;
   /** Address allowed to call `receiveMessage`. Omitted means bytes32(0), any caller. */
@@ -112,8 +132,12 @@ export function assertCctpConfig(
     throw new EvalancheError(`${label}.enabled must be a boolean`, EvalancheErrorCode.INVALID_CONFIG);
   }
   if (record.destinationDomains !== undefined) parseDomains(record.destinationDomains, localDomain(chainId), `${label}.destinationDomains`);
+  if (record.sourceDomains !== undefined) parseDomains(record.sourceDomains, localDomain(chainId), `${label}.sourceDomains`);
   if (record.maxFee !== undefined && (typeof record.maxFee !== 'string' || !DECIMAL.test(record.maxFee))) {
     throw new EvalancheError(`${label}.maxFee must be a decimal token amount`, EvalancheErrorCode.INVALID_CONFIG);
+  }
+  if (record.maxExpirationBlock !== undefined && (typeof record.maxExpirationBlock !== 'string' || !DECIMAL.test(record.maxExpirationBlock))) {
+    throw new EvalancheError(`${label}.maxExpirationBlock must be a decimal block number`, EvalancheErrorCode.INVALID_CONFIG);
   }
   if (record.minFinalityThreshold !== undefined && record.minFinalityThreshold !== CCTP_STANDARD_FINALITY) {
     throw new EvalancheError(`${label}.minFinalityThreshold must be ${CCTP_STANDARD_FINALITY}`, EvalancheErrorCode.INVALID_CONFIG);
@@ -130,8 +154,11 @@ export function assertCctpConfig(
   if (domain === undefined) {
     throw new EvalancheError(`${label} is only supported on Avalanche 43114 and Polygon 137`, EvalancheErrorCode.INVALID_CONFIG);
   }
-  if (record.destinationDomains === undefined) {
+  if (chainId === 43114 && record.destinationDomains === undefined) {
     throw new EvalancheError(`${label}.destinationDomains is required`, EvalancheErrorCode.INVALID_CONFIG);
+  }
+  if (chainId === 137 && record.sourceDomains === undefined) {
+    throw new EvalancheError(`${label}.sourceDomains is required`, EvalancheErrorCode.INVALID_CONFIG);
   }
   if (record.minFinalityThreshold === undefined) {
     throw new EvalancheError(`${label}.minFinalityThreshold must be ${CCTP_STANDARD_FINALITY}`, EvalancheErrorCode.INVALID_CONFIG);
@@ -205,7 +232,7 @@ function decodeBurn(chainId: number, data: string, value: bigint, config: CctpCo
   const maxFee = BigInt(decoded[5]);
   const minFinality = Number(decoded[6]);
   if (amount <= 0n) fail('CCTP burn amount must be greater than zero');
-  if (!domainAllowed(config, destinationDomain)) fail('CCTP destination domain is not allowlisted');
+  if (!listed(config.destinationDomains, destinationDomain)) fail('CCTP destination domain is not allowlisted');
   if (mintRecipient !== addressToBytes32(wallet)) fail('CCTP mint recipient must be the treasury');
   if (burnToken !== AVALANCHE_USDC) fail('CCTP burn token must be Avalanche native USDC');
   if (destinationCaller !== callerWord(config)) fail('CCTP destinationCaller does not match the pin');
@@ -240,6 +267,7 @@ function decodeApproval(data: string, value: bigint): DecodedCall | null {
     amount,
     spender: MESSENGER,
     asset: AVALANCHE_USDC,
+    moduleOp: 'cctp-approve',
   };
 }
 
@@ -271,14 +299,14 @@ function decodeReceive(chainId: number, data: string, value: bigint, config: Cct
   const maxFee = uint256(bytes, HEADER_BYTES + 132);
   const feeExecuted = uint256(bytes, HEADER_BYTES + 164);
   const expiration = uint256(bytes, HEADER_BYTES + 196);
-  if (expiration !== 0n) fail('CCTP expiration block is denied');
+  if (!expirationAllowed(config, expiration)) fail('CCTP expiration block is above the configured bound');
   if (version !== MESSAGE_VERSION || bodyVersion !== MESSAGE_VERSION) fail('CCTP message version is not 1');
   if (destinationDomain !== local) fail('CCTP message destination domain is not this chain');
-  if (!domainAllowed(config, sourceDomain)) fail('CCTP source domain is not allowlisted');
+  if (!listed(config.sourceDomains, sourceDomain)) fail('CCTP source domain is not allowlisted');
   const pinnedBurn = BURN_TOKEN_BY_DOMAIN[sourceDomain];
   if (!pinnedBurn || burnToken !== getAddress(pinnedBurn)) fail('CCTP burn token is not the pinned USDC for that domain');
   if (sender !== addressToBytes32(MESSENGER)) fail('CCTP message sender is not TokenMessengerV2');
-  if (recipient !== addressToBytes32(MINTER)) fail('CCTP message recipient is not TokenMinterV2');
+  if (recipient !== addressToBytes32(MESSENGER)) fail('CCTP message recipient is not TokenMessengerV2');
   if (mintRecipient !== addressToBytes32(wallet)) fail('CCTP mint recipient must be the treasury');
   if (messageSender !== addressToBytes32(wallet)) fail('CCTP burn caller is not the treasury');
   if (destinationCaller !== callerWord(config)) fail('CCTP destinationCaller does not match the pin');
@@ -292,8 +320,14 @@ function decodeReceive(chainId: number, data: string, value: bigint, config: Cct
   return { kind: 'cctp-mint', selector: RECEIVE, amount, asset, receiver: getAddress(wallet) };
 }
 
-function domainAllowed(config: CctpConfig, domain: number): boolean {
-  return (config.destinationDomains ?? []).some((entry) => entry === domain);
+function listed(domains: number[] | undefined, domain: number): boolean {
+  return (domains ?? []).some((entry) => entry === domain);
+}
+
+function expirationAllowed(config: CctpConfig, expiration: bigint): boolean {
+  if (expiration === 0n) return true;
+  if (typeof config.maxExpirationBlock !== 'string') return false;
+  return expiration <= BigInt(config.maxExpirationBlock);
 }
 
 function feeCap(config: CctpConfig): bigint {

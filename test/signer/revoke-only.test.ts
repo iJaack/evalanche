@@ -1,15 +1,17 @@
 /**
  * Revoke-only is off until chains[id].revokeOnly.enabled is true.
  * A zero approve to any spender, and setApprovalForAll(operator, false),
- * are then accepted for an allowlisted or known token. Everything else
- * on that path is denied.
+ * are then accepted for a token-role contract or a pinned known USDC.
+ * A router that is only allowlisted is out of scope. Everything else
+ * on that path is denied. The venue and action are `revoke` / `revoke`,
+ * tokenIn is the token, and amountIn is 0.
  */
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Interface, Wallet, getAddress } from 'ethers';
-import { generateEd25519KeyPair, startSignerServer } from '../../src/index';
+import { buildRevokeApproval, buildRevokeOperator, generateEd25519KeyPair, startSignerServer } from '../../src/index';
 import { computeApprovedTxHash, signVerifierApproval, type ApprovedTransaction, type SigningIntent } from '../../src/signer/intent';
 import { PM_PUSD } from '../../src/signer/polymarket-addresses';
 import {
@@ -111,6 +113,7 @@ async function submit(
   amountIn: string,
   nonce = '1',
   value = '0',
+  patch: Partial<Pick<SigningIntent, 'venue' | 'action' | 'tokenIn'>> = {},
 ) {
   const approved = tx(to, data, value);
   const now = Date.now();
@@ -122,12 +125,13 @@ async function submit(
     expiresAt: now + 60_000,
     wallet: WALLET,
     chainId: 137,
-    venue: 'spot',
-    action: 'approve',
+    venue: 'revoke',
+    action: 'revoke',
     amountIn,
     tokenIn: { address: getAddress(to), symbol: 'T', decimals: 6 },
     routeHash: computeApprovedTxHash(approved),
     tx: approved,
+    ...patch,
   };
   return h.server.handle({
     requestId: intent.intentId,
@@ -168,7 +172,7 @@ describe('revoke-only', () => {
     expect(nft.signedTransaction).toMatch(/^0x/);
 
     const exact = ERC20.encodeFunctionData('approve', [SPEND, 5n]);
-    const kept = await submit(h, LISTED, exact, '5', '4');
+    const kept = await submit(h, LISTED, exact, '5', '4', '0', { venue: 'spot', action: 'approve' });
     expect(kept.signedTransaction).toMatch(/^0x/);
 
     await expect(submit(h, POLYGON_USDC_E, ERC20.encodeFunctionData('approve', [NO_CODE, 1n]), '1', '5')).rejects.toThrow(/zero amount/);
@@ -182,6 +186,16 @@ describe('revoke-only', () => {
     await expect(submit(h, POLYGON_USDC_E, `${zeroE}00`, '0', '11')).rejects.toThrow(/trailing/);
     await expect(submit(h, STRANGER, zeroE, '0', '12')).rejects.toThrow(/not allowlisted/);
     await expect(submit(h, PM_PUSD, zeroE, '0', '13')).rejects.toThrow(/Polymarket denial/);
+    await expect(submit(h, SPEND, zeroE, '0', '14')).rejects.toThrow(/not allowlisted|selector/);
+    await expect(submit(h, SPEND, clear, '0', '15')).rejects.toThrow(/not allowlisted|selector/);
+    await expect(submit(h, LISTED, zeroE, '0', '16', '0', { venue: 'spot', action: 'approve' })).rejects.toThrow(/venue\/action must be revoke\/revoke/);
+    await expect(submit(h, LISTED, zeroE, '1', '17')).rejects.toThrow(/does not equal amountIn/);
+    const helper = buildRevokeApproval({ token: POLYGON_USDC_E, spender: NO_CODE });
+    expect(helper).toMatchObject({ venue: 'revoke', action: 'revoke', amountIn: '0', tokenIn: { address: getAddress(POLYGON_USDC_E) } });
+    expect((await submit(h, helper.to, helper.data, helper.amountIn, '18')).signedTransaction).toMatch(/^0x/);
+    const operator = buildRevokeOperator({ token: NFT, operator: NO_CODE });
+    expect(operator).toMatchObject({ venue: 'revoke', action: 'revoke', amountIn: '0' });
+    expect((await submit(h, operator.to, operator.data, operator.amountIn, '19', '0', { tokenIn: operator.tokenIn })).signedTransaction).toMatch(/^0x/);
   });
 
   it('stays off when the flag is omitted or false', async () => {
