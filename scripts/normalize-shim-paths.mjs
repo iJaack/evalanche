@@ -18,9 +18,35 @@ function walk(dir) {
     }
     if (!/\.(js|mjs|cjs|map)$/.test(name)) continue;
     const text = readFileSync(path, 'utf8');
-    const next = text.replace(/[^\s"'()]*node_modules\/tsup\/assets\//g, 'tsup/assets/');
+    const next = rewriteShimPaths(text);
     if (next !== text) writeFileSync(path, next);
   }
+}
+
+const NEEDLE = 'node_modules/tsup/assets/';
+
+/** Linear rewrite. A regex over a one-line sourcemap backtracks. */
+function rewriteShimPaths(text) {
+  if (!text.includes(NEEDLE)) return text;
+  let out = '';
+  let cursor = 0;
+  while (cursor < text.length) {
+    const at = text.indexOf(NEEDLE, cursor);
+    if (at === -1) {
+      out += text.slice(cursor);
+      break;
+    }
+    let start = at;
+    while (start > cursor) {
+      const char = text[start - 1];
+      if (char === ' ' || char === '\n' || char === '\t' || char === '"' || char === "'" || char === '(' || char === ')') break;
+      start -= 1;
+    }
+    out += text.slice(cursor, start);
+    out += 'tsup/assets/';
+    cursor = at + NEEDLE.length;
+  }
+  return out;
 }
 
 walk(root);
