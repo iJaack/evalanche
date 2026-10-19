@@ -859,6 +859,7 @@ export class EvalancheSignerServer {
           hasHash: (hash) => this.nonces.hasOrderHash(hash),
           hasSalt: (salt) => this.nonces.hasOrderSalt(salt),
           countSince: (at) => this.nonces.ordersSince(at),
+          spentSince: (at) => this.nonces.spentSince(at),
         },
       });
     } catch (error) {
@@ -888,6 +889,7 @@ export class EvalancheSignerServer {
           hasHash: (hash) => this.nonces.hasOrderHash(hash),
           hasSalt: (salt) => this.nonces.hasOrderSalt(salt),
           countSince: (at) => this.nonces.ordersSince(at),
+          spentSince: (at) => this.nonces.spentSince(at),
         },
       });
     } catch (error) {
@@ -901,7 +903,8 @@ export class EvalancheSignerServer {
     const salt = request.kind === 'polymarket-order'
       ? decimalSalt(request.typedData.value?.salt)
       : String(request.typedData.value?.timestamp ?? '');
-    this.nonces.noteOrder(orderHash, salt, Date.now(), request.kind === 'clob-auth' ? 'auth' : 'order');
+    const usdMicros = request.kind === 'polymarket-order' ? orderNotionalMicros(request.typedData.value) : undefined;
+    this.nonces.noteOrder(orderHash, salt, Date.now(), request.kind === 'clob-auth' ? 'auth' : 'order', usdMicros);
     return { orderHash };
   }
 
@@ -1791,6 +1794,14 @@ function decimalSalt(value: unknown): string {
   if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) return String(value);
   if (typeof value === 'string' && /^(0|[1-9][0-9]*)$/.test(value)) return BigInt(value).toString();
   return String(value ?? '');
+}
+
+/** Collateral units of a Polymarket order. BUY spends makerAmount. SELL spends takerAmount. */
+function orderNotionalMicros(value: Record<string, unknown> | undefined): string {
+  const side = BigInt(decimalSalt(value?.side) || '0');
+  const maker = BigInt(decimalSalt(value?.makerAmount) || '0');
+  const taker = BigInt(decimalSalt(value?.takerAmount) || '0');
+  return (side === 0n ? maker : taker).toString();
 }
 
 function priceIdListed(ids: Record<string, string>, address: string): boolean {

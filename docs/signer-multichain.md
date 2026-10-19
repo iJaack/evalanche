@@ -62,6 +62,10 @@ The order must have maker and signer equal to the treasury, `signatureType` 0, a
 
 `perOrderPctNav`, `perMarketPctNav`, and `totalOpenPctNav` are hard ceilings. A proposer may send a lower percent on the intent. A higher percent is rejected. BUY also checks the market and total open notionals. SELL checks the per-order ceiling only.
 
+`buyOnly` defaults to false. When it is true, every SELL is denied and `setApprovalForAll(operator, true)` is denied. A false approval of a current V2 operator can still be revoked. `revokeV1Ctf` defaults to false. When it is true, `setApprovalForAll` of CTF Exchange V1 `0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E` or Neg Risk CTF Exchange V1 `0xC5d563A36AE78145C45a50134d48A1215220f80a` is accepted only with `approved = false`. `true` stays denied.
+
+`maxOrderUsd` and `maxDailyUsd` are optional USD ceilings. Omitted, only the NAV percents apply. When set, each is a non-negative USD amount with up to 6 decimals, and 0 is a closed ceiling. The order must fit both the NAV cap and the USD cap. The smaller allowance wins. The daily total is the sum of signed order notionals since UTC midnight, stored on the nonce file as `usdMicros`. A record written before that field existed does not add to the total. The total survives a restart. `clob-auth` does not add to it.
+
 `orderType` must be `FOK`. That declaration is bound by the intent hash. The EIP-712 order does not include expiration, nonce, feeRateBps, or taker. The signer cannot enforce them. The allow audit line says so.
 
 `clobAuth: true` is a separate flag. The domain is `ClobAuthDomain` version `1` on chain 137, with no verifying contract. The address is the treasury, the nonce is 0, and the message is `This message attests that I control the given wallet`. Each payload is one-use. It does not count toward the daily order cap.

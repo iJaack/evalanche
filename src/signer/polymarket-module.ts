@@ -17,12 +17,14 @@ import {
   PM_CLOB_AUTH_MESSAGE,
   PM_CLOB_AUTH_VERSION,
   PM_CTF,
+  PM_CTF_EXCHANGE_V1,
   PM_CTF_EXCHANGE_V2,
   PM_DOMAIN_NAME,
   PM_DOMAIN_VERSION_V2,
   PM_DOMAIN_VERSION_V3,
   PM_EXCHANGE_V3,
   PM_NEG_RISK_ADAPTER,
+  PM_NEG_RISK_EXCHANGE_V1,
   PM_NEG_RISK_EXCHANGE_V2,
   PM_ORDER_FIELDS,
   PM_ORDER_TYPE,
@@ -57,6 +59,14 @@ export interface PolymarketModuleConfig {
   builder?: string;
   metadata?: string;
   markets?: PolymarketMarket[];
+  /** Default false. When true, SELL orders and setApprovalForAll(operator, true) are denied. */
+  buyOnly?: boolean;
+  /** Hard per-order USD ceiling. Omitted leaves only the NAV percent caps. */
+  maxOrderUsd?: string;
+  /** Hard UTC-day USD ceiling, persisted with the nonce file. Omitted leaves only the NAV percent caps. */
+  maxDailyUsd?: string;
+  /** Default false. When true, CTF setApprovalForAll(v1Operator, false) can be revoked. */
+  revokeV1Ctf?: boolean;
 }
 
 export interface PolymarketOrderIntent {
@@ -89,6 +99,8 @@ export interface PolymarketReplayState {
   hasHash(hash: string): boolean;
   hasSalt(salt: string): boolean;
   countSince(atMs: number): number;
+  /** Collateral micros already signed for orders since `atMs`. Records without a stored amount count as zero. */
+  spentSince(atMs: number): bigint;
 }
 
 const CTF = new Interface([
@@ -112,6 +124,8 @@ const EXCHANGE = new Interface([
 
 const DENIED = new Set(POLYMARKET_DENY_CONTRACTS.map((address) => getAddress(address)));
 const COLLATERAL = new Set([getAddress(PM_USDC_E), getAddress(PM_PUSD)]);
+const V1_STANDARD = getAddress(PM_CTF_EXCHANGE_V1);
+const V1_NEG_RISK = getAddress(PM_NEG_RISK_EXCHANGE_V1);
 const V2_STANDARD = getAddress(PM_CTF_EXCHANGE_V2);
 const V2_NEG_RISK = getAddress(PM_NEG_RISK_EXCHANGE_V2);
 const V3_EXCHANGE = getAddress(PM_EXCHANGE_V3);
@@ -183,6 +197,18 @@ export function assertPolymarketConfig(config: PolymarketModuleConfig | undefine
     if (!DECIMAL.test(market.tokenId)) rejectConfig(`${label}.markets tokenId must be a decimal string`);
     if (!isBytes32(market.conditionId)) rejectConfig(`${label}.markets conditionId must be bytes32`);
     if (typeof market.negRisk !== 'boolean') rejectConfig(`${label}.markets negRisk must be boolean`);
+  }
+  if (config.buyOnly !== undefined && typeof config.buyOnly !== 'boolean') {
+    rejectConfig(`${label}.buyOnly must be a boolean`);
+  }
+  if (config.revokeV1Ctf !== undefined && typeof config.revokeV1Ctf !== 'boolean') {
+    rejectConfig(`${label}.revokeV1Ctf must be a boolean`);
+  }
+  if (config.maxOrderUsd !== undefined && !USD.test(config.maxOrderUsd)) {
+    rejectConfig(`${label}.maxOrderUsd must be a USD amount`);
+  }
+  if (config.maxDailyUsd !== undefined && !USD.test(config.maxDailyUsd)) {
+    rejectConfig(`${label}.maxDailyUsd must be a USD amount`);
   }
 }
 
@@ -296,6 +322,7 @@ export function assertPolymarketOrder(args: {
   if (side !== 0n && side !== 1n) reject('side must be 0 or 1');
   const sideName = side === 0n ? 'BUY' : 'SELL';
   if (order.side !== sideName) reject('intent side does not match the order');
+  if (config.buyOnly === true && sideName === 'SELL') reject('buyOnly denies SELL');
   const metadata = wordField(value.metadata, 'metadata');
   const builder = wordField(value.builder, 'builder');
   const pinnedMeta = (config.metadata ?? PM_ZERO_BYTES32).toLowerCase();
@@ -336,6 +363,13 @@ export function assertPolymarketOrder(args: {
   if (args.state.hasHash(args.orderHash)) reject('order hash was already signed');
   const dayStart = Date.UTC(new Date(args.now).getUTCFullYear(), new Date(args.now).getUTCMonth(), new Date(args.now).getUTCDate());
   if (args.state.countSince(dayStart) >= (config.maxOrdersPerDay ?? 0)) reject('per-day order count limit is reached');
+  if (config.maxOrderUsd !== undefined && notional > priceMicros(config.maxOrderUsd, 'maxOrderUsd')) {
+    reject('order exceeds maxOrderUsd');
+  }
+  if (config.maxDailyUsd !== undefined) {
+    const cap = priceMicros(config.maxDailyUsd, 'maxDailyUsd');
+    if (args.state.spentSince(dayStart) + notional > cap) reject('order exceeds the daily USD ceiling');
+  }
 
   if (sideName === 'SELL') {
     if (order.balance === undefined) reject('SELL requires the verifier balance');
@@ -419,9 +453,14 @@ export function decodePolymarketTransaction(to: string, data: string, config: Po
     if (selector === CTF.getFunction('setApprovalForAll')!.selector) {
       const decoded = decodeExact(CTF, 'setApprovalForAll', data);
       const operator = getAddress(String(decoded[0]));
-      if (operator !== V2_STANDARD && operator !== V2_NEG_RISK) reject('setApprovalForAll operator is not a current exchange');
       if (decoded[1] !== true && decoded[1] !== false) reject('setApprovalForAll must be true or false');
-      return { op: decoded[1] === true ? 'set-approval' : 'revoke' };
+      if (config?.buyOnly === true && decoded[1] === true) reject('buyOnly denies setApprovalForAll(operator, true)');
+      const v2 = operator === V2_STANDARD || operator === V2_NEG_RISK;
+      const v1 = operator === V1_STANDARD || operator === V1_NEG_RISK;
+      if (v2) return { op: decoded[1] === true ? 'set-approval' : 'revoke' };
+      if (config?.revokeV1Ctf === true && v1 && decoded[1] === false) return { op: 'revoke' };
+      if (v1 && decoded[1] === true) reject('setApprovalForAll(operator, true) is denied');
+      reject('setApprovalForAll operator is not a current exchange');
     }
     if (selector === CTF.getFunction('redeemPositions')!.selector) {
       const decoded = decodeExact(CTF, 'redeemPositions', data);
