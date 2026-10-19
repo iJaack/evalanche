@@ -11,6 +11,7 @@ import { decodeClmmCalldata, isClmmNpmApprove, isClmmPositionManager, type ClmmM
 import { decodeDexCalldata, isDexRouter, type DexVenueConfig } from './dex-venue';
 import type { SigningIntent } from './intent';
 import { decodePolymarketTransaction, isPolymarketCollateral, isPolymarketCollateralApprove, isPolymarketDeniedAddress, polymarketSpenderDenied, type PolymarketModuleConfig } from './polymarket-module';
+import { isKnownRevokeToken, takeRevokeOnly, type RevokeOnlyConfig } from './revoke-only';
 import { POLYMARKET_DENY_CONTRACTS as POLYMARKET_DENY_LIST } from './polymarket-addresses';
 
 export const SAVAX_CONTRACT = '0x2b2C81e08f1Af8835a78Bb2A90AE924ACE0eA4bE';
@@ -169,6 +170,8 @@ export interface DecodeOptions {
   /** Li.Fi diamond used for Kyber destination checks. Defaults to the canonical diamond. */
   lifiDiamond?: string;
   polymarket?: PolymarketModuleConfig;
+  /** Zero approvals. Off unless `enabled` is true. */
+  revokeOnly?: RevokeOnlyConfig;
   clmm?: ClmmModuleConfig;
   /** Chain of this call. Set by the signer so a pinned DEX router is decoded. */
   chainId?: number;
@@ -256,6 +259,24 @@ export function decodeCalldata(to: string, data: string, options: DecodeOptions,
   if (isSavaxInstantUnstake(to, data)) {
     fail('Benqi sAVAX instant unstake (redeemInstant) is denied and cannot be enabled by config');
   }
+  const revoke = takeRevokeOnly({
+    to,
+    data,
+    value: options.value,
+    enabled: options.revokeOnly?.enabled === true,
+    inScope: (options.chainId !== undefined && isKnownRevokeToken(options.chainId, to))
+      || options.allowAddress(to)
+      || options.allowRole(to, 'token'),
+    spenderAllowed: (() => {
+      try {
+        const decoded = ERC20.decodeFunctionData('approve', data);
+        return options.allowRole(getAddress(String(decoded[0])), 'spender');
+      } catch {
+        return false;
+      }
+    })(),
+  });
+  if (revoke) return [revoke];
   if (selector === SELECTOR.increaseAllowance && !options.explicitAllows.has('increaseAllowance')) {
     fail('increaseAllowance is denied unless explicitly allowed');
   }

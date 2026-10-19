@@ -21,6 +21,7 @@ import {
 import type { ClmmModuleConfig } from './clmm';
 import type { DexVenueConfig } from './dex-venue';
 import type { PolymarketModuleConfig } from './polymarket-module';
+import type { RevokeOnlyConfig } from './revoke-only';
 
 export interface SlippageInput {
   stables?: string[];
@@ -86,6 +87,8 @@ export interface SignerChainConfig {
   clmm?: ClmmModuleConfig;
   /** Direct router venue. Off unless enabled. See docs/signer-multichain.md. */
   dex?: DexVenueConfig;
+  /** Zero-approval and setApprovalForAll(false) only. Off unless enabled. */
+  revokeOnly?: RevokeOnlyConfig;
 }
 
 export interface SignerConfigInput {
@@ -128,6 +131,7 @@ export interface ResolvedChain {
   polymarket?: PolymarketModuleConfig;
   clmm?: ClmmModuleConfig;
   dex?: DexVenueConfig;
+  revokeOnly?: RevokeOnlyConfig;
 }
 
 export interface SignerPolicy {
@@ -365,6 +369,7 @@ function applyChainEntry(
     polymarket: entry.polymarket,
     clmm: entry.clmm,
     dex: entry.dex,
+    revokeOnly: entry.revokeOnly,
   };
   if (next.maxFeeUsd !== undefined && (!Number.isFinite(next.maxFeeUsd) || next.maxFeeUsd < 0)) {
     fail(`${label}.gas.maxFeeUsd must be a non-negative number`);

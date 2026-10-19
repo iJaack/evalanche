@@ -120,7 +120,7 @@ npm pack
 sha256sum evalanche-$(node -p "require('./package.json').version").tgz
 ```
 
-`npm pack` names the file from `package.json`. At 1.17.0-rc.2 that file is `evalanche-1.17.0-rc.2.tgz`. The live box is 1.17.0-rc.1 at `6ad45d8`. Leave `evalanche-1.17.0-rc.1.tgz` in place. Provisioning again under the rc.1 filename would overwrite the pin a rollback reinstalls. Record that digest with the release or the CI pack artifact. On the box, pass that recorded digest. Do not hash the file you are about to install: a copy under `/home` can be replaced before `provision` reads it. `provision` copies the bytes to `/var/lib/evalanche-signer/evalanche-staged.tgz`, which is root-owned, hashes that copy, and only then reads `package/package.json` from it. The pin is `/home/box/agent-data/evalanche-persist/evalanche-<version>.tgz`. The installed tree, the script directory, and the working directory are not consulted, so the copy under `.../bin` still works after `/opt` is wiped. A version that is not a release version is refused. A source named `evalanche-<other>.tgz` that does not match the inner version is refused. Those failures happen before `npm` and before the pin is replaced. As root, `EVALANCHE_BOX_TARBALL` is ignored. When the tarball path is omitted, the single `evalanche-*.tgz` already under the durable directory is the source. `start` does not need `package.json`. The sha256 argument is required. A digest that does not match fails before `npm` and before the pinned copy is replaced.
+`npm pack` names the file from `package.json`. At 1.17.0-rc.3 that file is `evalanche-1.17.0-rc.3.tgz`. The live box is 1.17.0-rc.2 at `a55e307`. Leave `evalanche-1.17.0-rc.1.tgz` and `evalanche-1.17.0-rc.2.tgz` in place. Provisioning again under either filename would overwrite a rollback pin. Record that digest with the release or the CI pack artifact. On the box, pass that recorded digest. Do not hash the file you are about to install: a copy under `/home` can be replaced before `provision` reads it. `provision` copies the bytes to `/var/lib/evalanche-signer/evalanche-staged.tgz`, which is root-owned, hashes that copy, and only then reads `package/package.json` from it. The pin is `/home/box/agent-data/evalanche-persist/evalanche-<version>.tgz`. The installed tree, the script directory, and the working directory are not consulted, so the copy under `.../bin` still works after `/opt` is wiped. A version that is not a release version is refused. A source named `evalanche-<other>.tgz` that does not match the inner version is refused. Those failures happen before `npm` and before the pin is replaced. As root, `EVALANCHE_BOX_TARBALL` is ignored. When the tarball path is omitted, the single `evalanche-*.tgz` already under the durable directory is the source. `start` does not need `package.json`. The sha256 argument is required. A digest that does not match fails before `npm` and before the pinned copy is replaced.
 
 ```sh
 id box
@@ -129,7 +129,7 @@ sudo -u box sudo -n true
 
 # EVALANCHE_TARBALL_SHA256 is the digest published with the release, not a hash of the local file.
 sudo /workspace/scripts/grok-bot-signer.sh provision \
-  /workspace/evalanche-1.17.0-rc.2.tgz \
+  /workspace/evalanche-1.17.0-rc.3.tgz \
   "$EVALANCHE_TARBALL_SHA256"
 ```
 

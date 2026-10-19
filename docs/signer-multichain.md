@@ -102,6 +102,15 @@ While the module is enabled, WAVAX and USDC gain the `token` role and the `appro
 
 Transaction value must be 0.
 
+## Revoke-only
+
+`chains[id].revokeOnly` is off unless `enabled` is true. The only accepted key is `enabled`. Any other key, or a non-boolean `enabled`, fails startup. On an enabled chain the signer then accepts two calls and nothing else on that path:
+
+- `approve(spender, 0)` for any spender, when the token is on the allow map or is a pinned known USDC.
+- `setApprovalForAll(operator, false)` on an allowlisted or known contract.
+
+A positive amount is denied unless the spender already has the `spender` role and the selector is allowlisted, which is the existing exact-approve path. `setApprovalForAll(operator, true)`, permit, `increaseAllowance`, a nonzero value, and trailing calldata are denied. Permit stays denied even when `explicitAllows` includes it. Known tokens, checked 19 October 2026, are Polygon USDC.e `0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174`, Polygon native USDC `0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359` ([Circle USDC contracts](https://developers.circle.com/stablecoins/usdc-contract-addresses)), and Avalanche native USDC `0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E`. The no-code address `0x794a61358d6845594f3DCa32f21763fB5b21AbDf` can be the spender of a zero approve. pUSD is not a known revoke token. Calls to it stay on the Polymarket deny list.
+
 ## Direct swap venues
 
 Checked 18 October 2026. The Kyber MetaAggregationRouter plus the Li.Fi diamond is the swap path for the chains in the table above, including Sonic 146 and HyperEVM 999. It does not serve Cronos 25, Gnosis 100, Mantle 5000, Celo 42220, Moonbeam 1284, Blast 81457, or Scroll 534352. Those chains get one pinned router, or no venue. The Li.Fi diamond is upgradeable, so it was not reused where an immutable router can be fully decoded.

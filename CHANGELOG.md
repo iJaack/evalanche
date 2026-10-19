@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.17.0-rc.3
+
+- Release candidate. The live box is 1.17.0-rc.2 at `a55e307` (`a55e3075688be09431cec97acb5e7e7365abdd14`). Provision `evalanche-1.17.0-rc.3.tgz` as a new pin. Leave `evalanche-1.17.0-rc.1.tgz` and `evalanche-1.17.0-rc.2.tgz` in place. Provisioning again under either filename would overwrite a rollback pin.
+- Add `chains[id].revokeOnly`. It is off unless `enabled` is true. On an enabled chain it accepts `approve(anySpender, 0)` and `setApprovalForAll(operator, false)` for an allowlisted contract or a pinned known USDC. Polygon USDC.e `0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174` and native USDC `0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359` can be revoked from `0x794a61358d6845594f3DCa32f21763fB5b21AbDf`, which has no code. A positive amount, `operator = true`, permit, increaseAllowance, a nonzero value, and trailing calldata are denied. A bad `revokeOnly` object fails startup. pUSD stays on the Polymarket deny list.
+
 ## 1.17.0-rc.2
 
 - Release candidate. The live box is 1.17.0-rc.1 at `6ad45d8` (`6ad45d810622db13ef1561d9b1f01864d8d78af4`). Provision `evalanche-1.17.0-rc.2.tgz` as a new pin and leave `evalanche-1.17.0-rc.1.tgz` in place. Provisioning again under the rc.1 filename would overwrite the pin a rollback reinstalls.

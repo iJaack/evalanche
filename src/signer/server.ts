@@ -68,6 +68,7 @@ import {
   isPolymarketCollateralApprove,
 } from './polymarket-module';
 import { PM_CHAIN_ID, PM_CLOB_AUTH_DOMAIN } from './polymarket-addresses';
+import { assertRevokeOnlyConfig, isKnownRevokeToken, isRevokeOnlySelector, revokeOnlyEnabled } from './revoke-only';
 import type { SpendRecord } from '../economy/types';
 import { bearerEquals } from './remote-client';
 
@@ -794,6 +795,9 @@ export class EvalancheSignerServer {
     if (chain.polymarket?.enabled === true && chain.chainId === PM_CHAIN_ID) {
       if (isHardDeniedContract(request.to) || isPolymarketCollateralApprove(request.to, data)) return true;
     }
+    if (revokeOnlyEnabled(chain.revokeOnly) && isRevokeOnlySelector(data) && this.revokeTokenInScope(chain.chainId, request.to)) {
+      return true;
+    }
     return false;
   }
 
@@ -906,6 +910,12 @@ export class EvalancheSignerServer {
     return 'signed';
   }
 
+  private revokeTokenInScope(chainId: number, address: string): boolean {
+    if (isHardDeniedContract(address)) return false;
+    if (isKnownRevokeToken(chainId, address)) return true;
+    return this.addressAllowed(chainId, address) || this.hasRole(chainId, address, 'token');
+  }
+
   private addressAllowed(chainId: number, address: string): boolean {
     let checksum: string;
     try {
@@ -937,6 +947,7 @@ export class EvalancheSignerServer {
         kyberExecutors: chain?.kyberExecutors ?? this.options.kyberExecutors,
         lifiDiamond: chain?.lifiDiamond,
         polymarket: chain?.polymarket,
+        revokeOnly: chain?.revokeOnly,
         clmm: chain?.clmm,
         chainId,
         dex: chain?.dex,
@@ -1504,6 +1515,7 @@ function assertStartup(options: SignerServerOptions): void {
       throw new EvalancheError('Polymarket module is only supported on chain 137', EvalancheErrorCode.INVALID_CONFIG);
     }
     assertPolymarketConfig(chain.polymarket, `chains.${chain.chainId}.polymarket`);
+    assertRevokeOnlyConfig(chain.revokeOnly, `chains.${chain.chainId}.revokeOnly`);
     assertClmmConfig(chain.clmm, chain.chainId);
     assertDexConfig(chain.dex, chain.chainId);
   }
