@@ -24,6 +24,12 @@ export {
   isSigningProvider,
   AUDIT_ROOT,
   HARD_MAX_GAS_COST_WEI,
+  buildCctpApprove,
+  buildCctpBurn,
+  buildCctpMint,
+  buildPolymarketV1CtfRevoke,
+  buildRevokeApproval,
+  buildRevokeOperator,
 } from './signer';
 export type {
   CanonicalSigningRequest,

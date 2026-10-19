@@ -138,8 +138,25 @@ export function clmmEnabled(config: ClmmModuleConfig | undefined): boolean {
   return config?.enabled === true;
 }
 
+const CLMM_KEYS = new Set(['enabled', 'increaseLiquidity', 'pools']);
+const CLMM_POOL_KEYS = new Set([
+  'pool', 'token0', 'token1', 'fee', 'tickSpacing', 'tickLowerMin', 'tickLowerMax',
+  'tickUpperMin', 'tickUpperMax', 'amount0Cap', 'amount1Cap',
+]);
+
 export function assertClmmConfig(config: ClmmModuleConfig | undefined, chainId: number): void {
-  if (!config?.enabled) return;
+  if (config === undefined) return;
+  if (config === null || typeof config !== 'object' || Array.isArray(config)) rejectConfig('clmm must be an object');
+  for (const key of Object.keys(config)) {
+    if (!CLMM_KEYS.has(key)) rejectConfig(`clmm.${key} is not a CLMM setting`);
+  }
+  for (const pool of config.pools ?? []) {
+    if (pool === null || typeof pool !== 'object' || Array.isArray(pool)) rejectConfig('clmm.pools entries must be objects');
+    for (const key of Object.keys(pool)) {
+      if (!CLMM_POOL_KEYS.has(key)) rejectConfig(`clmm.pools.${key} is not a pool setting`);
+    }
+  }
+  if (config.enabled !== true) return;
   if (chainId !== CLMM_CHAIN_ID) rejectConfig('CLMM module is only supported on chain 43114');
   if (!config.pools || config.pools.length === 0) rejectConfig('clmm.pools must list at least one pool');
   for (const pool of config.pools) {

@@ -62,12 +62,17 @@ import { assertCoinGeckoPricePlausible, coinGeckoBindings, fetchCoinGeckoSimpleP
 import { CLMM_CHAIN_ID, assertClmmConfig, clmmFundingTokens, isClmmNpmApprove, isClmmPositionManager } from './clmm';
 import { assertDexConfig, dexVenue, isDexRouter } from './dex-venue';
 import {
+  POLYMARKET_KILL_ACTION,
+  POLYMARKET_KILL_VENUE,
   assertClobAuth,
   assertPolymarketConfig,
   assertPolymarketOrder,
   isPolymarketCollateralApprove,
+  isPolymarketV1CtfRevoke,
 } from './polymarket-module';
 import { PM_CHAIN_ID, PM_CLOB_AUTH_DOMAIN } from './polymarket-addresses';
+import { assertCctpConfig, cctpModuleHandles } from './cctp';
+import { assertRevokeOnlyConfig, isKnownRevokeToken, isRevokeOnlySelector, revokeOnlyEnabled } from './revoke-only';
 import type { SpendRecord } from '../economy/types';
 import { bearerEquals } from './remote-client';
 
@@ -794,6 +799,10 @@ export class EvalancheSignerServer {
     if (chain.polymarket?.enabled === true && chain.chainId === PM_CHAIN_ID) {
       if (isHardDeniedContract(request.to) || isPolymarketCollateralApprove(request.to, data)) return true;
     }
+    if (cctpModuleHandles(chain.chainId, request.to, data, chain.cctp)) return true;
+    if (revokeOnlyEnabled(chain.revokeOnly) && isRevokeOnlySelector(data) && this.revokeTokenInScope(chain.chainId, request.to)) {
+      return true;
+    }
     return false;
   }
 
@@ -853,6 +862,8 @@ export class EvalancheSignerServer {
           hasHash: (hash) => this.nonces.hasOrderHash(hash),
           hasSalt: (salt) => this.nonces.hasOrderSalt(salt),
           countSince: (at) => this.nonces.ordersSince(at),
+          spentSince: (at) => this.nonces.spentSince(at),
+          unpricedSince: (at) => this.nonces.unpricedOrdersSince(at),
         },
       });
     } catch (error) {
@@ -882,6 +893,8 @@ export class EvalancheSignerServer {
           hasHash: (hash) => this.nonces.hasOrderHash(hash),
           hasSalt: (salt) => this.nonces.hasOrderSalt(salt),
           countSince: (at) => this.nonces.ordersSince(at),
+          spentSince: (at) => this.nonces.spentSince(at),
+          unpricedSince: (at) => this.nonces.unpricedOrdersSince(at),
         },
       });
     } catch (error) {
@@ -895,7 +908,8 @@ export class EvalancheSignerServer {
     const salt = request.kind === 'polymarket-order'
       ? decimalSalt(request.typedData.value?.salt)
       : String(request.typedData.value?.timestamp ?? '');
-    this.nonces.noteOrder(orderHash, salt, Date.now(), request.kind === 'clob-auth' ? 'auth' : 'order');
+    const usdMicros = request.kind === 'polymarket-order' ? orderNotionalMicros(request.typedData.value) : undefined;
+    this.nonces.noteOrder(orderHash, salt, Date.now(), request.kind === 'clob-auth' ? 'auth' : 'order', usdMicros);
     return { orderHash };
   }
 
@@ -904,6 +918,12 @@ export class EvalancheSignerServer {
       return 'signed; expiration, nonce, feeRateBps, and taker are not signed and not enforced';
     }
     return 'signed';
+  }
+
+  private revokeTokenInScope(chainId: number, address: string): boolean {
+    if (isHardDeniedContract(address)) return false;
+    if (isKnownRevokeToken(chainId, address)) return true;
+    return this.hasRole(chainId, address, 'token');
   }
 
   private addressAllowed(chainId: number, address: string): boolean {
@@ -937,6 +957,8 @@ export class EvalancheSignerServer {
         kyberExecutors: chain?.kyberExecutors ?? this.options.kyberExecutors,
         lifiDiamond: chain?.lifiDiamond,
         polymarket: chain?.polymarket,
+        revokeOnly: chain?.revokeOnly,
+        cctp: chain?.cctp,
         clmm: chain?.clmm,
         chainId,
         dex: chain?.dex,
@@ -970,6 +992,7 @@ export class EvalancheSignerServer {
     if (actionRequiresMinAmountOut(intent.action) && !decoded.some((call) => call.minOut !== undefined)) {
       deny('minAmountOut bound is required for this action', EvalancheErrorCode.APPROVAL_INVALID);
     }
+    this.assertFundingLabels(intent, decoded, request);
     const movesToken = decoded.some((call) => call.kind === 'erc20-transfer' || call.kind === 'erc20-approve' || call.kind === 'erc20-increase-allowance');
     if (movesToken) {
       if (!intent.tokenIn) deny('token intent is missing tokenIn', EvalancheErrorCode.APPROVAL_INVALID);
@@ -1022,6 +1045,38 @@ export class EvalancheSignerServer {
     if (call.minOut < floor) {
       deny('decoded minOut is below the quoted slippage floor', EvalancheErrorCode.SIGNER_REJECTED);
     }
+  }
+
+  /**
+   * Revoke and CCTP calldata accept one venue/action pair each.
+   * A V1 CTF `setApprovalForAll(false)` uses the existing kill-switch pair.
+   */
+  private assertFundingLabels(intent: SigningIntent, decoded: DecodedCall[], request: CanonicalSigningRequest): void {
+    for (const call of decoded) {
+      if (call.kind === 'cctp-burn') this.requireFundingLabel(intent, call, 'cctp', 'cctp-burn');
+      else if (call.kind === 'cctp-mint') this.requireFundingLabel(intent, call, 'cctp', 'cctp-mint');
+      else if (call.moduleOp === 'cctp-approve') this.requireFundingLabel(intent, call, 'cctp', 'cctp-approve');
+      else if (call.kind === 'erc20-approve' && call.moduleOp === 'revoke') this.requireFundingLabel(intent, call, 'revoke', 'revoke');
+    }
+    if (request.to && request.data && isPolymarketV1CtfRevoke(request.to, request.data)) {
+      if (intent.venue !== POLYMARKET_KILL_VENUE || intent.action !== POLYMARKET_KILL_ACTION) {
+        deny(
+          `intent venue/action must be ${POLYMARKET_KILL_VENUE}/${POLYMARKET_KILL_ACTION}`,
+          EvalancheErrorCode.SIGNER_REJECTED,
+        );
+      }
+    }
+  }
+
+  private requireFundingLabel(intent: SigningIntent, call: DecodedCall, venue: string, action: string): void {
+    if (intent.venue !== venue || intent.action !== action) {
+      deny(`intent venue/action must be ${venue}/${action}`, EvalancheErrorCode.SIGNER_REJECTED);
+    }
+    if (!intent.tokenIn) deny('token intent is missing tokenIn', EvalancheErrorCode.APPROVAL_INVALID);
+    if (!call.asset || getAddress(intent.tokenIn.address) !== getAddress(call.asset)) {
+      deny('transaction token does not match intent tokenIn', EvalancheErrorCode.SIGNER_REJECTED);
+    }
+    this.assertAmount(call.amount, intent.amountIn, 'decoded amount');
   }
 
   private assertAmount(amount: bigint | undefined, reported: string | undefined, label: string): void {
@@ -1446,34 +1501,64 @@ function resolveGasCap(configured: string | undefined): bigint {
 }
 
 const ALLOW_ROLES = new Set<AllowRole>(['dex', 'spender', 'recipient', 'token', 'vault']);
+const ALLOW_ENTRY_KEYS = new Set(['address', 'selectors', 'decimals', 'underlying', 'roles']);
+const SIGNER_OPTION_KEYS = new Set([
+  'privateKey', 'keystorePath', 'keystorePasswordEnv', 'verifierPublicKey', 'verifierPublicKeyPath',
+  'configPath', 'trustAnchor', 'allowInsecureFilePermissions', 'token', 'auditLogPath', 'nonceStorePath',
+  'initNonces', 'chainId', 'chainIds', 'allow', 'host', 'port', 'socketPath', 'dryRun', 'allowNonLoopback',
+  'rpcUrl', 'simulate', 'policy', 'maxPerTxUsd', 'prices', 'tokenCaps', 'priceSourceUrl', 'priceFeed',
+  'priceTtlMs', 'maxGasCostWei', 'slippageCaps', 'kyberExecutors', 'rpcUrls', 'chains', 'messageAllowlist',
+  'typedDataAllow', 'explicitAllows', 'keyId',
+]);
 
 function indexAllow(allow: Record<string, AllowEntry[]>): Map<number, AllowEntry[]> {
   const map = new Map<number, AllowEntry[]>();
   for (const [chain, entries] of Object.entries(allow ?? {})) {
     const chainId = Number(chain);
     if (!Number.isSafeInteger(chainId) || !Array.isArray(entries) || entries.length === 0) continue;
-    const normalized = entries.map((entry) => ({
+    const normalized = entries.map((entry) => {
+      if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
+        throw new EvalancheError(`allow.${chain} entries must be objects`, EvalancheErrorCode.INVALID_CONFIG);
+      }
+      for (const key of Object.keys(entry)) {
+        if (!ALLOW_ENTRY_KEYS.has(key)) {
+          throw new EvalancheError(`allow.${chain}.${key} is not a recognized setting`, EvalancheErrorCode.INVALID_CONFIG);
+        }
+      }
+      return {
       address: getAddress(entry.address),
       selectors: (entry.selectors ?? []).map((selector) => selector.toLowerCase()),
       decimals: entry.decimals,
       underlying: entry.underlying ? getAddress(entry.underlying) : undefined,
-      roles: normalizeRoles(entry.roles),
-    })).filter((entry) => entry.selectors.length > 0 || entry.roles.length > 0);
+      roles: normalizeRoles(entry.roles, `allow.${chain}`),
+    };
+    }).filter((entry) => entry.selectors.length > 0 || entry.roles.length > 0);
     if (normalized.length > 0) map.set(chainId, normalized);
   }
   return map;
 }
 
-function normalizeRoles(roles: AllowRole[] | undefined): AllowRole[] {
-  if (!Array.isArray(roles)) return [];
+function normalizeRoles(roles: AllowRole[] | undefined, label: string): AllowRole[] {
+  if (roles === undefined) return [];
+  if (!Array.isArray(roles)) {
+    throw new EvalancheError(`${label}.roles must be a list`, EvalancheErrorCode.INVALID_CONFIG);
+  }
   const out: AllowRole[] = [];
   for (const role of roles) {
-    if (ALLOW_ROLES.has(role) && !out.includes(role)) out.push(role);
+    if (!ALLOW_ROLES.has(role)) {
+      throw new EvalancheError(`${label}.roles.${String(role)} is not a recognized role`, EvalancheErrorCode.INVALID_CONFIG);
+    }
+    if (!out.includes(role)) out.push(role);
   }
   return out;
 }
 
 function assertStartup(options: SignerServerOptions): void {
+  for (const key of Object.keys(options)) {
+    if (!SIGNER_OPTION_KEYS.has(key)) {
+      throw new EvalancheError(`${key} is not a recognized signer setting`, EvalancheErrorCode.INVALID_CONFIG);
+    }
+  }
   if (!options.token) throw new EvalancheError('Signer auth token is required', EvalancheErrorCode.INVALID_CONFIG);
   if (!options.verifierPublicKey) throw new EvalancheError('Pinned verifier public key is required', EvalancheErrorCode.INVALID_CONFIG);
   try {
@@ -1504,6 +1589,8 @@ function assertStartup(options: SignerServerOptions): void {
       throw new EvalancheError('Polymarket module is only supported on chain 137', EvalancheErrorCode.INVALID_CONFIG);
     }
     assertPolymarketConfig(chain.polymarket, `chains.${chain.chainId}.polymarket`);
+    assertRevokeOnlyConfig(chain.revokeOnly, `chains.${chain.chainId}.revokeOnly`);
+    assertCctpConfig(chain.cctp, chain.chainId, chain.tokenCaps, `chains.${chain.chainId}.cctp`);
     assertClmmConfig(chain.clmm, chain.chainId);
     assertDexConfig(chain.dex, chain.chainId);
   }
@@ -1775,6 +1862,14 @@ function decimalSalt(value: unknown): string {
   if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) return String(value);
   if (typeof value === 'string' && /^(0|[1-9][0-9]*)$/.test(value)) return BigInt(value).toString();
   return String(value ?? '');
+}
+
+/** Collateral units of a Polymarket order. BUY spends makerAmount. SELL spends takerAmount. */
+function orderNotionalMicros(value: Record<string, unknown> | undefined): string {
+  const side = BigInt(decimalSalt(value?.side) || '0');
+  const maker = BigInt(decimalSalt(value?.makerAmount) || '0');
+  const taker = BigInt(decimalSalt(value?.takerAmount) || '0');
+  return (side === 0n ? maker : taker).toString();
 }
 
 function priceIdListed(ids: Record<string, string>, address: string): boolean {

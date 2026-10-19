@@ -634,7 +634,7 @@ chmod 755 "$prefix/node_modules/.bin/evalanche-signer"
     const missing = run(['provision', '', digest]);
     expect(missing.status).not.toBe(0);
     expect(`${missing.stderr}`).toMatch(/installed tree is not used/);
-    expect(`${missing.stderr}`).not.toMatch(/1\.17\.0-rc\.2/);
+    expect(`${missing.stderr}`).not.toMatch(/1\.17\.0-rc\.4/);
     expect(existsSync(box.npmLog)).toBe(false);
 
     await mkdir(box.durable, { recursive: true });
@@ -644,7 +644,7 @@ chmod 755 "$prefix/node_modules/.bin/evalanche-signer"
     const ready = run(['provision', '', digest]);
     expect(ready.status, ready.stderr).toBe(0);
     expect(existsSync(pinned)).toBe(true);
-    expect(existsSync(join(box.durable, 'evalanche-1.17.0-rc.2.tgz'))).toBe(false);
+    expect(existsSync(join(box.durable, 'evalanche-1.17.0-rc.4.tgz'))).toBe(false);
     expect(existsSync(join(box.prefix, 'dist/signer/cli.mjs'))).toBe(true);
   });
 

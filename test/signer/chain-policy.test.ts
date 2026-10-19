@@ -200,6 +200,9 @@ describe('chain policy', () => {
   it('rejects Fantom and zkSync Era as unknown chains', () => {
     expect(() => resolveSignerPolicy({ chains: { 250: { enabled: true } } }, BOUNDS)).toThrow(/not one of the signer mainnets/);
     expect(() => resolveSignerPolicy({ chains: { 324: { enabled: true } } }, BOUNDS)).toThrow(/not one of the signer mainnets/);
+    expect(() => resolveSignerPolicy({ chains: { 43114: { nope: true } } }, BOUNDS)).toThrow(/chains\.43114\.nope is not a recognized setting/);
+    expect(() => resolveSignerPolicy({ chains: { 43114: { gas: { nope: '1' } } } }, BOUNDS)).toThrow(/gas\.nope is not a recognized setting/);
+    expect(() => resolveSignerPolicy({ chains: { 43114: { price: { nope: 1 } } } }, BOUNDS)).toThrow(/price\.nope is not a recognized setting/);
     expect(CHAINS[250]).toBeUndefined();
     expect(CHAINS[324]).toBeUndefined();
   });
@@ -537,6 +540,16 @@ describe('chain policy on the signer', () => {
     other.routeHash = computeApprovedTxHash(other.tx!);
     const otherApproval = signVerifierApproval({ intent: other, verifierPrivateKey: h.verifier.privateKey, verifierPublicKey: h.verifier.publicKey });
     await expect(h.server.handle(request(h.wallet.address, 1, otherApproval, other))).rejects.toThrow(/Replayed nonce/);
+  });
+
+  it('rejects an unknown signer setting, allow field, and allow role', async () => {
+    await expect(boot({ notASignerSetting: true })).rejects.toThrow(/notASignerSetting is not a recognized signer setting/);
+    await expect(boot({
+      allow: { 43114: [{ address: USDC, selectors: ['0x'], decimals: 6, roles: ['token'], note: true }] },
+    })).rejects.toThrow(/note is not a recognized setting/);
+    await expect(boot({
+      allow: { 43114: [{ address: USDC, selectors: ['0x'], roles: ['router'] }] },
+    })).rejects.toThrow(/router is not a recognized role/);
   });
 });
 

@@ -17,12 +17,14 @@ import {
   PM_CLOB_AUTH_MESSAGE,
   PM_CLOB_AUTH_VERSION,
   PM_CTF,
+  PM_CTF_EXCHANGE_V1,
   PM_CTF_EXCHANGE_V2,
   PM_DOMAIN_NAME,
   PM_DOMAIN_VERSION_V2,
   PM_DOMAIN_VERSION_V3,
   PM_EXCHANGE_V3,
   PM_NEG_RISK_ADAPTER,
+  PM_NEG_RISK_EXCHANGE_V1,
   PM_NEG_RISK_EXCHANGE_V2,
   PM_ORDER_FIELDS,
   PM_ORDER_TYPE,
@@ -57,7 +59,24 @@ export interface PolymarketModuleConfig {
   builder?: string;
   metadata?: string;
   markets?: PolymarketMarket[];
+  /** Default false. When true, SELL orders and setApprovalForAll(operator, true) are denied. */
+  buyOnly?: boolean;
+  /** Hard per-order USD ceiling. Omitted leaves only the NAV percent caps. */
+  maxOrderUsd?: string;
+  /** Hard UTC-day USD ceiling, persisted with the nonce file. Omitted leaves only the NAV percent caps. */
+  maxDailyUsd?: string;
+  /** Default false. When true, CTF setApprovalForAll(v1Operator, false) can be revoked. */
+  revokeV1Ctf?: boolean;
+  /**
+   * Default false. When true, `unpauseUser()` on a V2 exchange can reverse
+   * `pauseUser()`. There is no maker cancel on V2.
+   */
+  unpauseUser?: boolean;
 }
+
+/** Kill-switch intent. The venue and the action are separate fields. */
+export const POLYMARKET_KILL_VENUE = 'polymarket';
+export const POLYMARKET_KILL_ACTION = 'polymarket-kill';
 
 export interface PolymarketOrderIntent {
   conditionId: string;
@@ -89,6 +108,10 @@ export interface PolymarketReplayState {
   hasHash(hash: string): boolean;
   hasSalt(salt: string): boolean;
   countSince(atMs: number): number;
+  /** Collateral micros already signed for orders since `atMs`. Records without a stored amount are not included. */
+  spentSince(atMs: number): bigint;
+  /** Same-day orders with no stored `usdMicros`. Each one is priced at `maxOrderUsd`. */
+  unpricedSince(atMs: number): number;
 }
 
 const CTF = new Interface([
@@ -108,10 +131,32 @@ const ERC20 = new Interface([
 
 const EXCHANGE = new Interface([
   'function pauseUser()',
+  'function unpauseUser()',
+]);
+
+const PM_KEYS = new Set([
+  'enabled',
+  'v3Exchange',
+  'clobAuth',
+  'perOrderPctNav',
+  'perMarketPctNav',
+  'totalOpenPctNav',
+  'priceBand',
+  'maxOrdersPerDay',
+  'builder',
+  'metadata',
+  'markets',
+  'buyOnly',
+  'maxOrderUsd',
+  'maxDailyUsd',
+  'revokeV1Ctf',
+  'unpauseUser',
 ]);
 
 const DENIED = new Set(POLYMARKET_DENY_CONTRACTS.map((address) => getAddress(address)));
 const COLLATERAL = new Set([getAddress(PM_USDC_E), getAddress(PM_PUSD)]);
+const V1_STANDARD = getAddress(PM_CTF_EXCHANGE_V1);
+const V1_NEG_RISK = getAddress(PM_NEG_RISK_EXCHANGE_V1);
 const V2_STANDARD = getAddress(PM_CTF_EXCHANGE_V2);
 const V2_NEG_RISK = getAddress(PM_NEG_RISK_EXCHANGE_V2);
 const V3_EXCHANGE = getAddress(PM_EXCHANGE_V3);
@@ -163,7 +208,43 @@ export function isPolymarketCollateralApprove(to: string, data: string): boolean
 }
 
 export function assertPolymarketConfig(config: PolymarketModuleConfig | undefined, label: string): void {
-  if (!config?.enabled) return;
+  if (config === undefined) return;
+  if (config === null || typeof config !== 'object' || Array.isArray(config)) {
+    rejectConfig(`${label} must be an object`);
+  }
+  const record = config as unknown as Record<string, unknown>;
+  for (const key of Object.keys(record)) {
+    if (!PM_KEYS.has(key)) rejectConfig(`${label}.${key} is not a Polymarket setting`);
+  }
+  if (record.enabled !== undefined && typeof record.enabled !== 'boolean') {
+    rejectConfig(`${label}.enabled must be a boolean`);
+  }
+  if (record.buyOnly !== undefined && typeof record.buyOnly !== 'boolean') {
+    rejectConfig(`${label}.buyOnly must be a boolean`);
+  }
+  if (record.revokeV1Ctf !== undefined && typeof record.revokeV1Ctf !== 'boolean') {
+    rejectConfig(`${label}.revokeV1Ctf must be a boolean`);
+  }
+  if (record.unpauseUser !== undefined && typeof record.unpauseUser !== 'boolean') {
+    rejectConfig(`${label}.unpauseUser must be a boolean`);
+  }
+  if (record.maxOrderUsd !== undefined && (typeof record.maxOrderUsd !== 'string' || !USD.test(record.maxOrderUsd))) {
+    rejectConfig(`${label}.maxOrderUsd must be a USD amount`);
+  }
+  if (record.maxDailyUsd !== undefined && (typeof record.maxDailyUsd !== 'string' || !USD.test(record.maxDailyUsd))) {
+    rejectConfig(`${label}.maxDailyUsd must be a USD amount`);
+  }
+  for (const market of config.markets ?? []) {
+    if (market === null || typeof market !== 'object' || Array.isArray(market)) {
+      rejectConfig(`${label}.markets entries must be objects`);
+    }
+    for (const key of Object.keys(market)) {
+      if (key !== 'tokenId' && key !== 'conditionId' && key !== 'negRisk') {
+        rejectConfig(`${label}.markets.${key} is not a market setting`);
+      }
+    }
+  }
+  if (config.enabled !== true) return;
   for (const name of ['perOrderPctNav', 'perMarketPctNav', 'totalOpenPctNav'] as const) {
     const value = config[name];
     if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 100) {
@@ -296,6 +377,7 @@ export function assertPolymarketOrder(args: {
   if (side !== 0n && side !== 1n) reject('side must be 0 or 1');
   const sideName = side === 0n ? 'BUY' : 'SELL';
   if (order.side !== sideName) reject('intent side does not match the order');
+  if (config.buyOnly === true && sideName === 'SELL') reject('buyOnly denies SELL');
   const metadata = wordField(value.metadata, 'metadata');
   const builder = wordField(value.builder, 'builder');
   const pinnedMeta = (config.metadata ?? PM_ZERO_BYTES32).toLowerCase();
@@ -336,6 +418,21 @@ export function assertPolymarketOrder(args: {
   if (args.state.hasHash(args.orderHash)) reject('order hash was already signed');
   const dayStart = Date.UTC(new Date(args.now).getUTCFullYear(), new Date(args.now).getUTCMonth(), new Date(args.now).getUTCDate());
   if (args.state.countSince(dayStart) >= (config.maxOrdersPerDay ?? 0)) reject('per-day order count limit is reached');
+  const missing = args.state.unpricedSince(dayStart);
+  let legacy = 0n;
+  if (missing > 0) {
+    if (config.maxOrderUsd === undefined) {
+      reject('unpriced orders from this UTC day block new orders until maxOrderUsd is set');
+    }
+    legacy = priceMicros(config.maxOrderUsd, 'maxOrderUsd') * BigInt(missing);
+  }
+  if (config.maxOrderUsd !== undefined && notional > priceMicros(config.maxOrderUsd, 'maxOrderUsd')) {
+    reject('order exceeds maxOrderUsd');
+  }
+  if (config.maxDailyUsd !== undefined) {
+    const cap = priceMicros(config.maxDailyUsd, 'maxDailyUsd');
+    if (args.state.spentSince(dayStart) + legacy + notional > cap) reject('order exceeds the daily USD ceiling');
+  }
 
   if (sideName === 'SELL') {
     if (order.balance === undefined) reject('SELL requires the verifier balance');
@@ -404,7 +501,24 @@ export function assertClobAuth(args: {
 }
 
 export interface DecodedPolymarketTx {
-  op: 'set-approval' | 'redeem' | 'revoke' | 'pause-user';
+  op: 'set-approval' | 'redeem' | 'revoke' | 'pause-user' | 'unpause-user';
+}
+
+/** True when this is CTF setApprovalForAll(v1Operator, false). */
+export function isPolymarketV1CtfRevoke(to: string, data: string): boolean {
+  try {
+    if (getAddress(to) !== CTF_ADDRESS) return false;
+  } catch {
+    return false;
+  }
+  if (selectorOf(data) !== CTF.getFunction('setApprovalForAll')!.selector) return false;
+  try {
+    const decoded = CTF.decodeFunctionData('setApprovalForAll', data);
+    const operator = getAddress(String(decoded[0]));
+    return decoded[1] === false && (operator === V1_STANDARD || operator === V1_NEG_RISK);
+  } catch {
+    return false;
+  }
 }
 
 /** Gated Polygon calls. Anything else to a denied contract fails closed. */
@@ -419,9 +533,14 @@ export function decodePolymarketTransaction(to: string, data: string, config: Po
     if (selector === CTF.getFunction('setApprovalForAll')!.selector) {
       const decoded = decodeExact(CTF, 'setApprovalForAll', data);
       const operator = getAddress(String(decoded[0]));
-      if (operator !== V2_STANDARD && operator !== V2_NEG_RISK) reject('setApprovalForAll operator is not a current exchange');
       if (decoded[1] !== true && decoded[1] !== false) reject('setApprovalForAll must be true or false');
-      return { op: decoded[1] === true ? 'set-approval' : 'revoke' };
+      if (config?.buyOnly === true && decoded[1] === true) reject('buyOnly denies setApprovalForAll(operator, true)');
+      const v2 = operator === V2_STANDARD || operator === V2_NEG_RISK;
+      const v1 = operator === V1_STANDARD || operator === V1_NEG_RISK;
+      if (v2) return { op: decoded[1] === true ? 'set-approval' : 'revoke' };
+      if (config?.revokeV1Ctf === true && v1 && decoded[1] === false) return { op: 'revoke' };
+      if (v1 && decoded[1] === true) reject('setApprovalForAll(operator, true) is denied');
+      reject('setApprovalForAll operator is not a current exchange');
     }
     if (selector === CTF.getFunction('redeemPositions')!.selector) {
       const decoded = decodeExact(CTF, 'redeemPositions', data);
@@ -449,6 +568,11 @@ export function decodePolymarketTransaction(to: string, data: string, config: Po
   if ((target === V2_STANDARD || target === V2_NEG_RISK) && selector === EXCHANGE.getFunction('pauseUser')!.selector) {
     decodeExact(EXCHANGE, 'pauseUser', data);
     return { op: 'pause-user' };
+  }
+  if ((target === V2_STANDARD || target === V2_NEG_RISK) && selector === EXCHANGE.getFunction('unpauseUser')!.selector) {
+    if (config?.unpauseUser !== true) reject('unpauseUser is denied unless polymarket.unpauseUser is true');
+    decodeExact(EXCHANGE, 'unpauseUser', data);
+    return { op: 'unpause-user' };
   }
   reject(`Contract ${target} is a built-in Polymarket denial`);
 }

@@ -3,12 +3,13 @@
  * chains[137].polymarket.enabled is set. Generic typed data still cannot
  * sign these domains.
  */
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Interface, Wallet, id } from 'ethers';
-import { generateEd25519KeyPair, startSignerServer } from '../../src/index';
+import { buildPolymarketV1CtfRevoke, generateEd25519KeyPair, startSignerServer } from '../../src/index';
+import { NonceStore } from '../../src/signer/nonce-store';
 import { computeApprovedTxHash, computeTypedDataRouteHash, signVerifierApproval, type SigningIntent, type TypedDataPayload } from '../../src/signer/intent';
 import { assertClobAuth, assertPolymarketOrder, decodePolymarketTransaction, polymarketOrderTypehash } from '../../src/signer/polymarket-module';
 import {
@@ -18,12 +19,14 @@ import {
   PM_CLOB_AUTH_MESSAGE,
   PM_CLOB_AUTH_VERSION,
   PM_CTF,
+  PM_CTF_EXCHANGE_V1,
   PM_CTF_EXCHANGE_V2,
   PM_DOMAIN_NAME,
   PM_DOMAIN_VERSION_V2,
   PM_DOMAIN_VERSION_V3,
   PM_EXCHANGE_V3,
   PM_NEG_RISK_ADAPTER,
+  PM_NEG_RISK_EXCHANGE_V1,
   PM_NEG_RISK_EXCHANGE_V2,
   PM_ORDER_FIELDS,
   PM_ORDER_TYPE,
@@ -102,7 +105,7 @@ function orderIntent(patch: Record<string, unknown> = {}): NonNullable<SigningIn
   };
 }
 
-function state() {
+function state(spent = 0n) {
   const hashes = new Set<string>();
   const salts = new Set<string>();
   const times: number[] = [];
@@ -110,6 +113,8 @@ function state() {
     hasHash: (hash: string) => hashes.has(hash),
     hasSalt: (salt: string) => salts.has(salt),
     countSince: (at: number) => times.filter((time) => time >= at).length,
+    spentSince: () => spent,
+    unpricedSince: () => 0,
     note(hash: string, salt: string, at: number) {
       hashes.add(hash);
       salts.add(salt);
@@ -195,6 +200,24 @@ describe('polymarket order checks', () => {
     replay.note('d', '4', now);
     expect(() => check(typedFor(now, { salt: '8' }), orderIntent(), config(), replay, now)).toThrow(/per-day/);
   });
+
+  it('buyOnly denies SELL and still allows a buy', () => {
+    const now = Date.now();
+    const sellTyped = typedFor(now, { side: 1, makerAmount: '2000000', takerAmount: '1000000' });
+    const sell = orderIntent({ side: 'SELL', balance: '2000000' });
+    expect(() => check(sellTyped, sell, config({ buyOnly: true }), state(), now)).toThrow(/buyOnly denies SELL/);
+    expect(() => check(sellTyped, sell, config(), state(), now)).not.toThrow();
+    expect(() => check(typedFor(now), orderIntent(), config({ buyOnly: true }), state(), now)).not.toThrow();
+  });
+
+  it('applies the USD ceilings on top of the NAV caps, and the stricter one wins', () => {
+    const now = Date.now();
+    expect(() => check(typedFor(now), orderIntent(), config({ maxOrderUsd: '0.5' }), state(), now)).toThrow(/maxOrderUsd/);
+    expect(() => check(typedFor(now), orderIntent(), config({ maxOrderUsd: '10', perOrderPctNav: 0.5 }), state(), now)).toThrow(/per-order NAV cap/);
+    expect(() => check(typedFor(now), orderIntent(), config({ maxOrderUsd: '1', maxDailyUsd: '1' }), state(1_000_000n), now)).toThrow(/daily USD ceiling/);
+    expect(() => check(typedFor(now), orderIntent(), config({ maxDailyUsd: '1' }), state(0n), now)).not.toThrow();
+    expect(() => check(typedFor(now), orderIntent(), config({ maxOrderUsd: '0', maxDailyUsd: '10' }), state(), now)).toThrow(/maxOrderUsd/);
+  });
 });
 
 describe('clob-auth and polygon gates', () => {
@@ -264,10 +287,19 @@ describe('clob-auth and polygon gates', () => {
     const exchange = new Interface(['function pauseUser()', 'function unpauseUser()', 'function pauseTrading()']);
     expect(decodePolymarketTransaction(PM_CTF_EXCHANGE_V2, exchange.encodeFunctionData('pauseUser', []), cfg).op).toBe('pause-user');
     expect(decodePolymarketTransaction(PM_NEG_RISK_EXCHANGE_V2, exchange.encodeFunctionData('pauseUser', []), cfg).op).toBe('pause-user');
-    expect(() => decodePolymarketTransaction(PM_CTF_EXCHANGE_V2, exchange.encodeFunctionData('unpauseUser', []), cfg)).toThrow(/denial/);
+    expect(() => decodePolymarketTransaction(PM_CTF_EXCHANGE_V2, exchange.encodeFunctionData('unpauseUser', []), cfg)).toThrow(/unpauseUser is denied/);
+    expect(decodePolymarketTransaction(PM_CTF_EXCHANGE_V2, exchange.encodeFunctionData('unpauseUser', []), config({ unpauseUser: true })).op).toBe('unpause-user');
+    expect(decodePolymarketTransaction(PM_NEG_RISK_EXCHANGE_V2, exchange.encodeFunctionData('unpauseUser', []), config({ unpauseUser: true })).op).toBe('unpause-user');
     expect(() => decodePolymarketTransaction(PM_CTF_EXCHANGE_V2, exchange.encodeFunctionData('pauseTrading', []), cfg)).toThrow(/denial/);
     expect(() => decodePolymarketTransaction(PM_EXCHANGE_V3, exchange.encodeFunctionData('pauseUser', []), cfg)).toThrow(/denial/);
     expect(() => decodePolymarketTransaction(PM_CTF, ctf.encodeFunctionData('setApprovalForAll', [PM_EXCHANGE_V3, true]), cfg)).toThrow(/operator/);
+    expect(() => decodePolymarketTransaction(PM_CTF, ctf.encodeFunctionData('setApprovalForAll', [PM_CTF_EXCHANGE_V1, false]), cfg)).toThrow(/not a current exchange/);
+    expect(decodePolymarketTransaction(PM_CTF, ctf.encodeFunctionData('setApprovalForAll', [PM_CTF_EXCHANGE_V1, false]), config({ revokeV1Ctf: true })).op).toBe('revoke');
+    expect(decodePolymarketTransaction(PM_CTF, ctf.encodeFunctionData('setApprovalForAll', [PM_NEG_RISK_EXCHANGE_V1, false]), config({ revokeV1Ctf: true })).op).toBe('revoke');
+    expect(() => decodePolymarketTransaction(PM_CTF, ctf.encodeFunctionData('setApprovalForAll', [PM_CTF_EXCHANGE_V1, true]), config({ revokeV1Ctf: true }))).toThrow(/operator, true/);
+    expect(() => decodePolymarketTransaction(PM_CTF, ctf.encodeFunctionData('setApprovalForAll', [PM_CTF_EXCHANGE_V2, true]), config({ buyOnly: true }))).toThrow(/buyOnly denies setApprovalForAll/);
+    expect(decodePolymarketTransaction(PM_CTF, ctf.encodeFunctionData('setApprovalForAll', [PM_CTF_EXCHANGE_V2, false]), config({ buyOnly: true })).op).toBe('revoke');
+    expect(() => decodePolymarketTransaction(PM_CTF, ctf.encodeFunctionData('setApprovalForAll', [PM_CTF_EXCHANGE_V1, true]), config({ buyOnly: true, revokeV1Ctf: true }))).toThrow(/buyOnly/);
     const redeem = ctf.encodeFunctionData('redeemPositions', [PM_USDC_E, PM_ZERO_BYTES32, CONDITION, [1n]]);
     expect(decodePolymarketTransaction(PM_CTF, redeem, cfg).op).toBe('redeem');
     expect(decodePolymarketTransaction(PM_CTF, ctf.encodeFunctionData('redeemPositions', [PM_PUSD, PM_ZERO_BYTES32, CONDITION, [1n]]), cfg).op).toBe('redeem');
@@ -418,6 +450,83 @@ describe('polymarket signer path', () => {
         verifierPublicKey: on.verifier.publicKey,
       }),
     })).rejects.toThrow(/Polymarket typed data is denied/);
+  });
+
+  it('persists the daily USD ceiling and prices a same-day order that has no usdMicros at maxOrderUsd', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pm-usd-'));
+    const audit = join(root, 'a.jsonl');
+    const noncePath = join(root, 'n.json');
+    const first = await boot(config({ maxDailyUsd: '1', maxOrderUsd: '1' }), audit);
+    const signOrder = async (h: Awaited<ReturnType<typeof boot>>, salt: string, nonce: string) => {
+      const now = Date.now();
+      const typed = typedFor(now, { salt });
+      const built = intent(orderIntent(), typed, nonce);
+      return h.server.handle({
+        requestId: `usd-${nonce}`,
+        kind: 'polymarket-order',
+        chainId: 137,
+        from: WALLET,
+        intent: 'order',
+        typedData: typed,
+        structuredIntent: built,
+        approval: signVerifierApproval({
+          intent: built,
+          verifierPrivateKey: h.verifier.privateKey,
+          verifierPublicKey: h.verifier.publicKey,
+        }),
+      });
+    };
+    expect((await signOrder(first, '71', '1')).signature).toMatch(/^0x/);
+    await first.server.close();
+    servers.pop();
+    const stored = JSON.parse(await readFile(noncePath, 'utf8')) as { polymarketOrders: Array<{ usdMicros?: string }> };
+    expect(stored.polymarketOrders[0]?.usdMicros).toBe('1000000');
+    delete stored.polymarketOrders[0].usdMicros;
+    await writeFile(noncePath, `${JSON.stringify(stored)}\n`);
+    const blocked = await boot(config({ maxDailyUsd: '1', maxOrderUsd: '1' }), audit);
+    await expect(signOrder(blocked, '72', '2')).rejects.toThrow(/daily USD ceiling/);
+    await blocked.server.close();
+    servers.pop();
+    const room = await boot(config({ maxDailyUsd: '2', maxOrderUsd: '1' }), audit);
+    expect((await signOrder(room, '73', '3')).signature).toMatch(/^0x/);
+    await expect(signOrder(room, '74', '4')).rejects.toThrow(/daily USD ceiling/);
+    await room.server.close();
+    servers.pop();
+    const open = await boot(config({ maxDailyUsd: '2' }), audit);
+    await expect(signOrder(open, '75', '5')).rejects.toThrow(/unpriced orders/);
+  });
+
+  it('counts the daily USD total from UTC midnight and skips clob-auth', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pm-utc-'));
+    const store = await NonceStore.open(join(root, 'n.json'), true, { allowInsecureFilePermissions: true });
+    try {
+      const now = Date.now();
+      const dayStart = Date.UTC(new Date(now).getUTCFullYear(), new Date(now).getUTCMonth(), new Date(now).getUTCDate());
+      store.noteOrder('yesterday', '1', dayStart - 1, 'order', '5000000');
+      store.noteOrder('today', '2', dayStart, 'order', '1000000');
+      store.noteOrder('auth', '3', dayStart + 1, 'auth', '9000000');
+      store.noteOrder('legacy', '4', dayStart + 2, 'order');
+      store.noteOrder('old-legacy', '5', dayStart - 2, 'order');
+      store.noteOrder('auth-legacy', '6', dayStart + 3, 'auth');
+      expect(store.spentSince(dayStart)).toBe(1_000_000n);
+      expect(store.ordersSince(dayStart)).toBe(2);
+      expect(store.unpricedOrdersSince(dayStart)).toBe(1);
+    } finally {
+      await store.close();
+    }
+  });
+
+  it('fails startup when a Polymarket ceiling flag is the wrong shape', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pm-bad-'));
+    await expect(boot(config({ buyOnly: 'yes' }), join(root, 'buy-a.jsonl'))).rejects.toThrow(/buyOnly must be a boolean/);
+    await expect(boot(config({ revokeV1Ctf: 1 }), join(root, 'v1-a.jsonl'))).rejects.toThrow(/revokeV1Ctf must be a boolean/);
+    await expect(boot(config({ maxOrderUsd: '-1' }), join(root, 'order-a.jsonl'))).rejects.toThrow(/maxOrderUsd/);
+    await expect(boot(config({ maxDailyUsd: '1.1234567' }), join(root, 'daily-a.jsonl'))).rejects.toThrow(/maxDailyUsd/);
+    await expect(boot(config({ maxOrderUsd: 8 }), join(root, 'num-order-a.jsonl'))).rejects.toThrow(/maxOrderUsd must be a USD amount/);
+    await expect(boot(config({ maxDailyUsd: 8 }), join(root, 'num-daily-a.jsonl'))).rejects.toThrow(/maxDailyUsd must be a USD amount/);
+    await expect(boot(config({ unpauseUser: 'yes' }), join(root, 'unpause-a.jsonl'))).rejects.toThrow(/unpauseUser must be a boolean/);
+    await expect(boot(config({ surprise: true }), join(root, 'unknown-a.jsonl'))).rejects.toThrow(/surprise is not a Polymarket setting/);
+    await expect(boot({ enabled: false, maxOrderUsd: 8 }, join(root, 'off-num-a.jsonl'))).rejects.toThrow(/maxOrderUsd must be a USD amount/);
   });
 
   it('signs a gated redeem and denies a CTF call while the module is off', async () => {
@@ -734,5 +843,121 @@ describe('polymarket signer path', () => {
       });
       expect(signed.signedTransaction).toMatch(/^0x/);
     }
+  });
+
+  it('labels a V1 CTF revoke as the kill switch and gates unpauseUser', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pm-v1-kill-'));
+    const on = await boot(config({ revokeV1Ctf: true, unpauseUser: true }), join(root, 'a.jsonl'));
+    const built = buildPolymarketV1CtfRevoke(PM_CTF_EXCHANGE_V1);
+    expect(built).toMatchObject({ venue: 'polymarket', action: 'polymarket-kill' });
+    const sign = async (nonce: string, to: string, data: string, action = 'polymarket-kill') => {
+      const now = Date.now();
+      const tx = {
+        to,
+        value: '0',
+        data,
+        chainId: 137,
+        nonce: '0',
+        gasLimit: '200000',
+        maxFeePerGas: '0',
+        maxPriorityFeePerGas: '0',
+        gasPrice: '1',
+        type: 0,
+      };
+      const intent: SigningIntent = {
+        version: '1',
+        intentId: `v1-${nonce}`,
+        nonce,
+        createdAt: now,
+        expiresAt: now + 60_000,
+        wallet: WALLET,
+        chainId: 137,
+        venue: 'polymarket',
+        action,
+        routeHash: computeApprovedTxHash(tx),
+        tx,
+      };
+      return on.server.handle({
+        requestId: intent.intentId,
+        kind: 'transaction',
+        chainId: 137,
+        from: WALLET,
+        to,
+        value: '0',
+        data,
+        gasLimit: '200000',
+        gasPrice: '1',
+        maxFeePerGas: '0',
+        maxPriorityFeePerGas: '0',
+        nonce: 0,
+        type: 0,
+        intent: 'kill',
+        structuredIntent: intent,
+        approval: signVerifierApproval({
+          intent,
+          verifierPrivateKey: on.verifier.privateKey,
+          verifierPublicKey: on.verifier.publicKey,
+        }),
+      });
+    };
+    expect((await sign('1', built.to, built.data)).signedTransaction).toMatch(/^0x/);
+    const neg = buildPolymarketV1CtfRevoke(PM_NEG_RISK_EXCHANGE_V1);
+    await expect(sign('2', neg.to, neg.data, 'killswitch')).rejects.toThrow(/venue\/action must be polymarket\/polymarket-kill/);
+    expect((await sign('3', neg.to, neg.data)).signedTransaction).toMatch(/^0x/);
+    const exchange = new Interface(['function unpauseUser()']);
+    const unpause = exchange.encodeFunctionData('unpauseUser', []);
+    expect((await sign('4', PM_CTF_EXCHANGE_V2, unpause)).signedTransaction).toMatch(/^0x/);
+    expect((await sign('5', PM_NEG_RISK_EXCHANGE_V2, unpause)).signedTransaction).toMatch(/^0x/);
+    await on.server.close();
+    servers.pop();
+    const held = await boot(config(), join(root, 'held-a.jsonl'));
+    const now = Date.now();
+    const tx = {
+      to: PM_CTF_EXCHANGE_V2,
+      value: '0',
+      data: unpause,
+      chainId: 137,
+      nonce: '0',
+      gasLimit: '200000',
+      maxFeePerGas: '0',
+      maxPriorityFeePerGas: '0',
+      gasPrice: '1',
+      type: 0,
+    };
+    const denied: SigningIntent = {
+      version: '1',
+      intentId: 'unpause-off',
+      nonce: '6',
+      createdAt: now,
+      expiresAt: now + 60_000,
+      wallet: WALLET,
+      chainId: 137,
+      venue: 'polymarket',
+      action: 'polymarket-kill',
+      routeHash: computeApprovedTxHash(tx),
+      tx,
+    };
+    await expect(held.server.handle({
+      requestId: denied.intentId,
+      kind: 'transaction',
+      chainId: 137,
+      from: WALLET,
+      to: PM_CTF_EXCHANGE_V2,
+      value: '0',
+      data: unpause,
+      gasLimit: '200000',
+      gasPrice: '1',
+      maxFeePerGas: '0',
+      maxPriorityFeePerGas: '0',
+      nonce: 0,
+      type: 0,
+      intent: 'kill',
+      structuredIntent: denied,
+      approval: signVerifierApproval({
+        intent: denied,
+        verifierPrivateKey: held.verifier.privateKey,
+        verifierPublicKey: held.verifier.publicKey,
+      }),
+    })).rejects.toThrow(/unpauseUser is denied/);
   });
 });

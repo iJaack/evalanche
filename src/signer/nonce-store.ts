@@ -26,6 +26,8 @@ export interface PolymarketOrderRecord {
   at: number;
   /** `auth` is a one-use clob-auth and does not count toward the daily order cap. */
   kind?: 'order' | 'auth';
+  /** Collateral micros of an order. Absent on older records, which do not count toward the USD ceiling. */
+  usdMicros?: string;
 }
 
 interface NonceFile {
@@ -89,8 +91,10 @@ export class NonceStore {
     return this.txNonces[wallet]?.[String(chainId)];
   }
 
-  noteOrder(hash: string, salt: string, at: number, kind: 'order' | 'auth' = 'order'): void {
-    this.orders.push({ hash, salt, at, kind });
+  noteOrder(hash: string, salt: string, at: number, kind: 'order' | 'auth' = 'order', usdMicros?: string): void {
+    const record: PolymarketOrderRecord = { hash, salt, at, kind };
+    if (usdMicros !== undefined) record.usdMicros = usdMicros;
+    this.orders.push(record);
   }
 
   hasOrderHash(hash: string): boolean {
@@ -103,6 +107,29 @@ export class NonceStore {
 
   ordersSince(atMs: number): number {
     return this.orders.filter((order) => order.kind !== 'auth' && order.at >= atMs).length;
+  }
+
+  /** Sum of stored order notionals since `atMs`. A record with no `usdMicros` is not included. */
+  spentSince(atMs: number): bigint {
+    let sum = 0n;
+    for (const order of this.orders) {
+      if (order.kind === 'auth' || order.at < atMs || order.usdMicros === undefined) continue;
+      sum += BigInt(order.usdMicros);
+    }
+    return sum;
+  }
+
+  /**
+   * Orders since `atMs` that were stored before `usdMicros` existed.
+   * The caller prices each one at `maxOrderUsd`. Auth records are not orders.
+   */
+  unpricedOrdersSince(atMs: number): number {
+    let count = 0;
+    for (const order of this.orders) {
+      if (order.kind === 'auth' || order.at < atMs || order.usdMicros !== undefined) continue;
+      count += 1;
+    }
+    return count;
   }
 
   async persist(): Promise<void> {
