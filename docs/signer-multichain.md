@@ -117,6 +117,18 @@ pUSD `0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB` can be a sending or receiving 
 
 An approve selector on the pUSD entry does not permit `approve`. A call whose `to` is pUSD is a Polymarket denial until the Polymarket module is on, and then the only accepted approval is `approve(protocolSpender, 0)`. `revokeOnly` does not clear pUSD. CollateralOnramp `0x93070a847efEf7F70739046A929D47a521F5B8ee` stays denied. The address is the pUSD proxy in the [Polymarket contract list](https://docs.polymarket.com/resources/contracts). Checked 19 October 2026: `symbol()` is `pUSD`, `decimals()` is 6, and the EIP-1967 implementation is `0xce84e053301a82937f90ee2c2c1889cab1db25de`.
 
+## CCTP V2
+
+`chains[id].cctp` is off unless `enabled` is true. The only chains that can turn it on are Avalanche 43114 and Polygon 137. Any other key, a non-boolean `enabled`, a domain that is not on Circle's list, this chain's own domain, a repeated domain, or a `minFinalityThreshold` other than 2000 fails startup. Fast Transfer finality 1000 is rejected. Enabling the module also requires a token cap for that chain's native USDC.
+
+On Avalanche the signer accepts `depositForBurn` on TokenMessengerV2 `0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d`. The burn token must be native USDC `0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E`. `mintRecipient` must be `bytes32` of the treasury. `destinationDomain` must be in `destinationDomains` (Polygon is 7). `destinationCaller` must be `bytes32(0)` unless `destinationCaller` pins an address. `maxFee` must be within `maxFee`, which defaults to 0. `minFinalityThreshold` must be 2000. `depositForBurnWithHook` is denied. Value must be 0.
+
+The same Avalanche config accepts `approve(TokenMessengerV2, amount)` of that USDC when `amount` is the exact positive burn amount. `MaxUint256` is denied. This is not a general spender. A zero approve stays on `revokeOnly` when that module is on.
+
+On Polygon, and on Avalanche for a message whose destination domain is 1, the signer accepts `receiveMessage` on MessageTransmitterV2 `0x81D40F21F12A8F0E3252Bccb954D722d4c464B64`. The message must be CCTP version 1 with an empty hook and a zero expiration. The header recipient must be TokenMinterV2 `0xfd78ee919681417d192449715b2594ab58f5d002`, which handles the message. The burn-body `mintRecipient` must be the treasury, and that is who receives the USDC. The source domain must be in `destinationDomains`, the burn token must be the pinned USDC for that domain, and both finality fields must be 2000. A fee above the cap is denied. The attestation must be present. The signer does not check Circle's signature. The transmitter does.
+
+Addresses and domains were checked on 19 October 2026 against the [Circle contract list](https://developers.circle.com/cctp/references/contract-addresses), the [domain table](https://developers.circle.com/cctp/concepts/supported-chains-and-domains), and the [V2 message layout](https://developers.circle.com/cctp/references/technical-guide). `localDomain()` is 1 on Avalanche and 7 on Polygon. `depositForBurn` `0x8e0250ee` is on the messenger implementation. `receiveMessage` `0x57ecfd28` is on the transmitter implementation. `localMinter()` on both messengers returns the minter above.
+
 ## Direct swap venues
 
 Checked 18 October 2026. The Kyber MetaAggregationRouter plus the Li.Fi diamond is the swap path for the chains in the table above, including Sonic 146 and HyperEVM 999. It does not serve Cronos 25, Gnosis 100, Mantle 5000, Celo 42220, Moonbeam 1284, Blast 81457, or Scroll 534352. Those chains get one pinned router, or no venue. The Li.Fi diamond is upgradeable, so it was not reused where an immutable router can be fully decoded.

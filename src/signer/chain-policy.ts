@@ -21,6 +21,7 @@ import {
 import type { ClmmModuleConfig } from './clmm';
 import type { DexVenueConfig } from './dex-venue';
 import type { PolymarketModuleConfig } from './polymarket-module';
+import type { CctpConfig } from './cctp';
 import type { RevokeOnlyConfig } from './revoke-only';
 
 export interface SlippageInput {
@@ -89,6 +90,8 @@ export interface SignerChainConfig {
   dex?: DexVenueConfig;
   /** Zero-approval and setApprovalForAll(false) only. Off unless enabled. */
   revokeOnly?: RevokeOnlyConfig;
+  /** CCTP V2 burn on Avalanche and receive on Polygon. Off unless enabled. */
+  cctp?: CctpConfig;
 }
 
 export interface SignerConfigInput {
@@ -132,6 +135,7 @@ export interface ResolvedChain {
   clmm?: ClmmModuleConfig;
   dex?: DexVenueConfig;
   revokeOnly?: RevokeOnlyConfig;
+  cctp?: CctpConfig;
 }
 
 export interface SignerPolicy {
@@ -370,6 +374,7 @@ function applyChainEntry(
     clmm: entry.clmm,
     dex: entry.dex,
     revokeOnly: entry.revokeOnly,
+    cctp: entry.cctp,
   };
   if (next.maxFeeUsd !== undefined && (!Number.isFinite(next.maxFeeUsd) || next.maxFeeUsd < 0)) {
     fail(`${label}.gas.maxFeeUsd must be a non-negative number`);

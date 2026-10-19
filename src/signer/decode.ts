@@ -11,6 +11,7 @@ import { decodeClmmCalldata, isClmmNpmApprove, isClmmPositionManager, type ClmmM
 import { decodeDexCalldata, isDexRouter, type DexVenueConfig } from './dex-venue';
 import type { SigningIntent } from './intent';
 import { decodePolymarketTransaction, isPolymarketCollateral, isPolymarketCollateralApprove, isPolymarketDeniedAddress, polymarketSpenderDenied, type PolymarketModuleConfig } from './polymarket-module';
+import { takeCctp, type CctpConfig } from './cctp';
 import { isKnownRevokeToken, takeRevokeOnly, type RevokeOnlyConfig } from './revoke-only';
 import { POLYMARKET_DENY_CONTRACTS as POLYMARKET_DENY_LIST } from './polymarket-addresses';
 
@@ -124,7 +125,9 @@ export type DecodedKind =
   | 'lifi-swap'
   | 'polymarket-call'
   | 'clmm-call'
-  | 'dex-swap';
+  | 'dex-swap'
+  | 'cctp-burn'
+  | 'cctp-mint';
 
 export interface DecodedCall {
   kind: DecodedKind;
@@ -172,6 +175,8 @@ export interface DecodeOptions {
   polymarket?: PolymarketModuleConfig;
   /** Zero approvals. Off unless `enabled` is true. */
   revokeOnly?: RevokeOnlyConfig;
+  /** CCTP V2 burn and receive. Off unless `enabled` is true. */
+  cctp?: CctpConfig;
   clmm?: ClmmModuleConfig;
   /** Chain of this call. Set by the signer so a pinned DEX router is decoded. */
   chainId?: number;
@@ -259,6 +264,15 @@ export function decodeCalldata(to: string, data: string, options: DecodeOptions,
   if (isSavaxInstantUnstake(to, data)) {
     fail('Benqi sAVAX instant unstake (redeemInstant) is denied and cannot be enabled by config');
   }
+  const cctp = takeCctp({
+    chainId: options.chainId,
+    to,
+    data,
+    value: options.value,
+    config: options.cctp,
+    wallet: options.wallet,
+  });
+  if (cctp) return [cctp];
   const revoke = takeRevokeOnly({
     to,
     data,

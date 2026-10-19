@@ -68,6 +68,7 @@ import {
   isPolymarketCollateralApprove,
 } from './polymarket-module';
 import { PM_CHAIN_ID, PM_CLOB_AUTH_DOMAIN } from './polymarket-addresses';
+import { assertCctpConfig, cctpModuleHandles } from './cctp';
 import { assertRevokeOnlyConfig, isKnownRevokeToken, isRevokeOnlySelector, revokeOnlyEnabled } from './revoke-only';
 import type { SpendRecord } from '../economy/types';
 import { bearerEquals } from './remote-client';
@@ -795,6 +796,7 @@ export class EvalancheSignerServer {
     if (chain.polymarket?.enabled === true && chain.chainId === PM_CHAIN_ID) {
       if (isHardDeniedContract(request.to) || isPolymarketCollateralApprove(request.to, data)) return true;
     }
+    if (cctpModuleHandles(chain.chainId, request.to, data, chain.cctp)) return true;
     if (revokeOnlyEnabled(chain.revokeOnly) && isRevokeOnlySelector(data) && this.revokeTokenInScope(chain.chainId, request.to)) {
       return true;
     }
@@ -948,6 +950,7 @@ export class EvalancheSignerServer {
         lifiDiamond: chain?.lifiDiamond,
         polymarket: chain?.polymarket,
         revokeOnly: chain?.revokeOnly,
+        cctp: chain?.cctp,
         clmm: chain?.clmm,
         chainId,
         dex: chain?.dex,
@@ -1516,6 +1519,7 @@ function assertStartup(options: SignerServerOptions): void {
     }
     assertPolymarketConfig(chain.polymarket, `chains.${chain.chainId}.polymarket`);
     assertRevokeOnlyConfig(chain.revokeOnly, `chains.${chain.chainId}.revokeOnly`);
+    assertCctpConfig(chain.cctp, chain.chainId, chain.tokenCaps, `chains.${chain.chainId}.cctp`);
     assertClmmConfig(chain.clmm, chain.chainId);
     assertDexConfig(chain.dex, chain.chainId);
   }
