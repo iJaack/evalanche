@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.17.0-rc.6
+
+- Release candidate. Provision `evalanche-1.17.0-rc.6.tgz` as a new pin. Leave `evalanche-1.17.0-rc.1.tgz`, `evalanche-1.17.0-rc.2.tgz`, `evalanche-1.17.0-rc.3.tgz`, `evalanche-1.17.0-rc.4.tgz`, and `evalanche-1.17.0-rc.5.tgz` in place. Provisioning again under one of those filenames would overwrite a rollback pin.
+- `restore` creates the `evalanche-signer` user when that account is missing, so a restore after a reset can run before `provision`. The order is escrow, then restore, then provision, then start.
+- A restore with no current nonce file requires `--min-nonce N` and/or `--floor PATH`. The floor file is a nonce snapshot stored outside the escrow directory. The restore is refused when neither the current file nor a floor is available. When the current file exists, it is a floor, and an explicit `--min-nonce` or `--floor` is also enforced. The compare covers `startedAt`, each wallet `lastNonce`, `used[]`, transaction nonces, and Polymarket order history.
+- The sha256 manifest detects accidental corruption. It lives in the same box-writable directory as the copies, so it is not a tamper seal.
+- `restore` refuses a live signer pid and a held start lock. Copies are atomic: a temp file in the destination directory, fsync, rename, then fsync the directory. The live state directory is not changed to root mode `0755`. `audit.jsonl` is escrowed when it is present. Paths containing `..`, a symlinked parent, or a resolved path under the signer install, including `/var/lib/evalanche-signer`, are refused. Manifest and file bytes are opened with `O_NOFOLLOW`.
+
 ## 1.17.0-rc.5
 
 - Release candidate. The live box is 1.17.0-rc.2 at `a55e307` (`a55e3075688be09431cec97acb5e7e7365abdd14`). Provision `evalanche-1.17.0-rc.5.tgz` as a new pin. Leave `evalanche-1.17.0-rc.1.tgz`, `evalanche-1.17.0-rc.2.tgz`, `evalanche-1.17.0-rc.3.tgz`, and `evalanche-1.17.0-rc.4.tgz` in place. Provisioning again under one of those filenames would overwrite a rollback pin.
