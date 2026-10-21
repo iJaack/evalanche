@@ -5,12 +5,12 @@ Avalanche-first agent wallet and execution SDK for AI agents, with multi-EVM sup
 <!-- GENERATED:release-summary:start -->
 ## Current Release
 
-- Latest release: [v1.17.0-rc.6](docs/releases/RELEASE_NOTES_1.17.0-rc.6.md)
-- Published package: `evalanche@1.17.0-rc.6`
+- Latest release: [v1.17.0-rc.7](docs/releases/RELEASE_NOTES_1.17.0-rc.7.md)
+- Published package: `evalanche@1.17.0-rc.7`
 - Current package surface:
-  - Provision `evalanche-1.17.0-rc.6.tgz` as a new pin. Leave `evalanche-1.17.0-rc.1.tgz`, `evalanche-1.17.0-rc.2.tgz`, `evalanche-1.17.0-rc.3.tgz`, `evalanche-1.17.0-rc.4.tgz`, and `evalanche-1.17.0-rc.5.tgz` in place. Provisioning again under one of those filenames would overwrite a rollback pin.
+  - Provision `evalanche-1.17.0-rc.7.tgz` as a new pin. Leave `evalanche-1.17.0-rc.1.tgz`, `evalanche-1.17.0-rc.2.tgz`, `evalanche-1.17.0-rc.3.tgz`, `evalanche-1.17.0-rc.4.tgz`, `evalanche-1.17.0-rc.5.tgz`, and `evalanche-1.17.0-rc.6.tgz` in place. Provisioning again under one of those filenames would overwrite a rollback pin.
   - Build KyberSwap aggregator routes on every pinned chain where Kyber is available: 1, 10, 56, 137, 146, 999, 4663, 8453, 42161, 43114, 59144, and 80094. Each chain uses its pinned router, Li.Fi diamond, and wrapped native. The builder refuses a disabled chain, an unknown router, a recipient that is not the treasury, and a route that does not match the build.
-  - Name the provision tarball from `package/package.json` inside the staged tarball, after the checksum. The installed tree and the working directory are not used. A bad version, or a filename `evalanche-<other>.tgz` that disagrees with that version, is refused before npm. As root, `EVALANCHE_BOX_TARBALL` is ignored. This rc pins `evalanche-1.17.0-rc.6.tgz`. `start` does not need package.json.
+  - Name the provision tarball from `package/package.json` inside the staged tarball, after the checksum. The installed tree and the working directory are not used. A bad version, or a filename `evalanche-<other>.tgz` that disagrees with that version, is refused before npm. As root, `EVALANCHE_BOX_TARBALL` is ignored. This rc pins `evalanche-1.17.0-rc.7.tgz`. `start` does not need package.json.
   - Price a chain from CoinGecko `simple/price` when `price.priceFeed` is `coingecko`. The only URL is `https://api.coingecko.com/api/v3/simple/price`. A feed price must sit inside `price.bounds` or within 50% of a positive static price, and it fails closed otherwise. Redirects are refused. Static prices stay valid when the feed is off.
 - Docs:
   - [Release notes](docs/releases/README.md)
