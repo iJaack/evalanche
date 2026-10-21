@@ -9,6 +9,11 @@
 # State and log are bind-mounted onto /var/lib/evalanche-signer/{state,log}.
 # provision recreates the user, /opt, and /etc from the persistent directory.
 # It does not regenerate keys or reset nonces. There is no boot hook.
+# escrow and restore are opt-in. provision and start do not call them.
+# Order is escrow, then restore, then provision, then start. restore creates
+# the signer user when it is missing. It does not chmod the live state dir.
+# A symlink above a configured signer directory is allowed. A symlink inside
+# that resolved directory, or anywhere in the escrow directory, is refused.
 # As root, EVALANCHE_BOX_* overrides are ignored.
 set -eu
 
@@ -41,6 +46,9 @@ if [ "$(id -u)" -eq 0 ]; then
   VERIFIER_PUB=$DURABLE/verifier.pub
   LOCK=$STATE/start.lock
   SKIP_ROOT=0
+  BOX_USER=box
+  BOX_GROUP=box
+  OWNERSHIP_STUB=
 else
   PREFIX=${EVALANCHE_BOX_PREFIX:-/opt/evalanche-signer}
   DURABLE=${EVALANCHE_BOX_DURABLE:-/home/box/agent-data/evalanche-persist}
@@ -67,6 +75,10 @@ else
   VERIFIER_PUB=${EVALANCHE_BOX_VERIFIER_PUB:-$DURABLE/verifier.pub}
   LOCK=${EVALANCHE_BOX_LOCK:-$STATE/start.lock}
   SKIP_ROOT=${EVALANCHE_BOX_SKIP_ROOT:-0}
+  BOX_USER=${EVALANCHE_BOX_BOX_USER:-box}
+  BOX_GROUP=${EVALANCHE_BOX_BOX_GROUP:-box}
+  OWNERSHIP_STUB=${EVALANCHE_BOX_OWNERSHIP_STUB:-}
+  SIGNER_GROUP=${EVALANCHE_BOX_GROUP:-$SIGNER_GROUP}
 fi
 # TARBALL and STAGED_TARBALL are set in provision. start does not need them.
 # The pinned name is evalanche-<version>.tgz. The version is read from the
@@ -74,10 +86,15 @@ fi
 # EVALANCHE_BOX_TARBALL is ignored.
 
 usage() {
-  echo "usage: grok-bot-signer.sh start [--live] | init [--live] | stop | health | provision [tarball] <sha256>" >&2
+  echo "usage: grok-bot-signer.sh start [--live] | init [--live] | stop | health | provision [tarball] <sha256> | escrow <dir> | restore <dir> [--min-approval-nonce N] [--min-tx-nonce CHAIN=N]... [--floor PATH]" >&2
   echo "start and init are dry-run unless --live is passed. init also passes --init-nonces." >&2
   echo "provision recreates the user, /opt, and /etc from the persistent directory." >&2
   echo "It bind-mounts state and log, chowns the persistent files, and does not regenerate a key or reset a nonce store." >&2
+  echo "escrow and restore are off unless those commands are passed. Run escrow before a reset, then restore, then provision, then start." >&2
+  echo "restore creates the signer user when it is missing. It refuses a running signer and a nonce state below the floor." >&2
+  echo "When the current nonce file is missing, pass --min-approval-nonce N, --min-tx-nonce CHAIN=N for every chain in the file, and/or --floor PATH." >&2
+  echo "The floor file must be a nonce state file and must sit outside the escrow directory. --min-nonce was removed." >&2
+  echo "The escrow manifest detects accidental corruption. It is not a tamper seal." >&2
   exit 2
 }
 
@@ -525,10 +542,23 @@ health_signer() {
 }
 
 make_dir() {
-  path=$1
-  owner=$2
-  group=$3
-  mode=$4
+  local path="$1"
+  local owner="$2"
+  local group="$3"
+  local mode="$4"
+  local uid_n gid_n
+  if [ -n "$OWNERSHIP_STUB" ]; then
+    mkdir -p "$path"
+    chmod "$mode" "$path"
+    uid_n=$(resolve_id "$owner")
+    gid_n=$(resolve_gid "$group")
+    if [ -z "$uid_n" ] || [ -z "$gid_n" ]; then
+      echo "cannot resolve owner $owner:$group for $path" >&2
+      exit 1
+    fi
+    stub_record "$path" "$uid_n" "$gid_n" "$mode"
+    return 0
+  fi
   if [ "$SKIP_ROOT" = 1 ]; then
     mkdir -p "$path"
     chmod "$mode" "$path"
@@ -634,6 +664,7 @@ resolve_gid() {
 }
 
 normalize_mode() {
+  local stripped
   stripped=$(printf '%s' "$1" | sed 's/^0*//')
   if [ -z "$stripped" ]; then
     printf '0\n'
@@ -642,15 +673,35 @@ normalize_mode() {
   fi
 }
 
+# Test hook. Unset when this script runs as root. Records the owner and mode
+# claim_one would have applied, so a reinstall can be checked without sudo.
+stub_record() {
+  local path="$1"
+  local uid="$2"
+  local gid="$3"
+  local mode="$4"
+  local norm
+  norm=$(normalize_mode "$mode")
+  mkdir -p "$OWNERSHIP_STUB"
+  printf '%s\t%s\t%s\t%s\n' "$path" "$uid" "$gid" "$norm" >> "$OWNERSHIP_STUB/owners.tsv"
+}
+
+stub_lookup() {
+  local path="$1"
+  [ -f "$OWNERSHIP_STUB/owners.tsv" ] || return 0
+  awk -F '\t' -v p="$path" '($1 == p) { uid = $2; gid = $3; mode = $4 } END { if (uid != "") printf "%s %s %s\n", uid, gid, mode }' "$OWNERSHIP_STUB/owners.tsv"
+}
+
 # Chown and chmod one existing path through a descriptor opened with
 # O_NOFOLLOW, then read the result back. A symlink is refused. fchown does
 # not follow a name swapped in after the check. A chown that does not stick
 # is a failure: do not trust the file.
 claim_one() {
-  path=$1
-  uid=$2
-  group=$3
-  mode=$4
+  local path="$1"
+  local uid="$2"
+  local group="$3"
+  local mode="$4"
+  local uid_n gid_n
   if [ -L "$path" ]; then
     echo "refusing symlink $path" >&2
     exit 1
@@ -663,6 +714,12 @@ claim_one() {
   if [ -z "$uid_n" ] || [ -z "$gid_n" ]; then
     echo "cannot resolve owner $uid:$group for $path" >&2
     exit 1
+  fi
+  if [ -n "$OWNERSHIP_STUB" ]; then
+    chmod "$mode" "$path" || exit 1
+    stub_record "$path" "$uid_n" "$gid_n" "$mode"
+    assert_one "$path" "$uid" "$group" "$mode" 0
+    return 0
   fi
   node -e '
     const fs = require("node:fs");
@@ -702,11 +759,12 @@ claim_one() {
 # Stat only. Does not chown. Start uses this so a box-owned file is never
 # promoted to root just by launching the signer.
 assert_one() {
-  path=$1
-  uid=$2
-  group=$3
-  mode=$4
-  optional=$5
+  local path="$1"
+  local uid="$2"
+  local group="$3"
+  local mode="$4"
+  local optional="$5"
+  local actual_uid actual_gid actual_mode want_uid want_gid want_mode recorded
   if [ ! -e "$path" ]; then
     if [ "$optional" = 1 ]; then
       return 0
@@ -718,15 +776,23 @@ assert_one() {
     echo "refusing symlink $path" >&2
     exit 1
   fi
-  actual_uid=$(stat -c %u "$path")
-  actual_gid=$(stat -c %g "$path")
-  actual_mode=$(normalize_mode "$(stat -c %a "$path")")
   want_uid=$(resolve_id "$uid")
   want_gid=$(resolve_gid "$group")
   want_mode=$(normalize_mode "$mode")
   if [ -z "$want_uid" ] || [ -z "$want_gid" ]; then
     echo "cannot resolve owner $uid:$group for $path" >&2
     exit 1
+  fi
+  if [ -n "$OWNERSHIP_STUB" ]; then
+    recorded=$(stub_lookup "$path")
+    actual_uid=${recorded%% *}
+    recorded=${recorded#* }
+    actual_gid=${recorded%% *}
+    actual_mode=${recorded#* }
+  else
+    actual_uid=$(stat -c %u "$path")
+    actual_gid=$(stat -c %g "$path")
+    actual_mode=$(normalize_mode "$(stat -c %a "$path")")
   fi
   if [ "$actual_uid" != "$want_uid" ] || [ "$actual_gid" != "$want_gid" ] || [ "$actual_mode" != "$want_mode" ]; then
     echo "refusing untrusted $path (owner $actual_uid:$actual_gid mode $actual_mode, expected $want_uid:$want_gid mode $want_mode)" >&2
@@ -735,16 +801,26 @@ assert_one() {
 }
 
 claim_tree() {
-  root=$1
-  uid=$2
-  group=$3
-  dir_mode=$4
-  file_mode=$5
+  # uid, group, and both modes stay local to this call. claim_one used to
+  # assign those same names in the global shell, so the root owner of
+  # start.lock leaked into every later file, including audit.jsonl.
+  local root="$1"
+  local uid="$2"
+  local group="$3"
+  local dir_mode="$4"
+  local file_mode="$5"
+  local list entry base
   if [ -L "$root" ] || [ ! -d "$root" ]; then
     echo "missing directory $root" >&2
     exit 1
   fi
   claim_one "$root" "$uid" "$group" "$dir_mode"
+  if [ -f "$root/start.lock" ] && [ ! -L "$root/start.lock" ]; then
+    claim_one "$root/start.lock" root root 600
+  fi
+  if [ -f "$root/signer.pid" ] && [ ! -L "$root/signer.pid" ]; then
+    claim_one "$root/signer.pid" root root 600
+  fi
   list=$(mktemp)
   find "$root" -mindepth 1 -xdev -print > "$list"
   while IFS= read -r entry; do
@@ -773,7 +849,7 @@ claim_tree() {
 }
 
 claim_durable_ownership() {
-  if [ "$SKIP_ROOT" = 1 ]; then
+  if [ "$SKIP_ROOT" = 1 ] && [ -z "$OWNERSHIP_STUB" ]; then
     return 0
   fi
   claim_one "$DURABLE" root root 755
@@ -788,7 +864,7 @@ claim_durable_ownership() {
 }
 
 assert_trusted_files() {
-  if [ "$SKIP_ROOT" = 1 ]; then
+  if [ "$SKIP_ROOT" = 1 ] && [ -z "$OWNERSHIP_STUB" ]; then
     return 0
   fi
   assert_one "$CONFIG_SRC" root root 644 0
@@ -1096,10 +1172,10 @@ install_pinned_tarball() {
 # Copy one persistent file onto the recreated /etc tree. Never creates a key,
 # and never writes back into the persistent directory.
 restore_etc_file() {
-  src=$1
-  dest=$2
-  mode=$3
-  group=$4
+  local src="$1"
+  local dest="$2"
+  local mode="$3"
+  local group="$4"
   if [ ! -f "$src" ] || [ -L "$src" ]; then
     return 0
   fi
@@ -1113,6 +1189,9 @@ restore_etc_file() {
     chown "root:$group" "$dest.tmp"
   fi
   mv "$dest.tmp" "$dest"
+  if [ -n "$OWNERSHIP_STUB" ]; then
+    claim_one "$dest" root "$group" "$mode"
+  fi
 }
 
 restore_etc() {
@@ -1333,10 +1412,1207 @@ provision_signer() {
     mount_bind "$STATE_SRC" "$STATE"
     mount_bind "$LOG_SRC" "$LOG_DIR"
     require_persistent_mounts
+  fi
+  # Claim again so files written above (config, token, tarball, script) are
+  # included. Owner and mode are per call, so the lock cannot leak onto them.
+  claim_durable_ownership
+  if [ "$SKIP_ROOT" != 1 ] || [ -n "$OWNERSHIP_STUB" ]; then
     assert_trusted_files
   fi
   echo "signer provisioned"
 }
+
+# escrow and restore are not used by provision or start.
+# The escrow directory and the floor file are resolved and printed. A '..'
+# segment, any symlink on that path, or a path that lands under the signer
+# install is refused before any copy. Signer files may cross a symlink that
+# is a strict ancestor of a configured signer directory.
+path_under_install() {
+  local resolved="$1"
+  local root canon
+  for root in "$DURABLE" "$STATE" "$STATE_SRC" "$LOG_DIR" "$LOG_SRC" "$ETC" "$PREFIX" "$EPHEMERAL" /var/lib/evalanche-signer; do
+    [ -n "$root" ] || continue
+    canon=$(realpath -m -- "$root") || return 0
+    case "$resolved" in
+      "$canon"|"$canon"/*) return 0 ;;
+    esac
+  done
+  return 1
+}
+
+assert_safe_path() {
+  local label="$1"
+  local raw="$2"
+  local want_home="$3"
+  local part rest prefix resolved
+  if ! command -v realpath >/dev/null 2>&1; then
+    echo "realpath is required" >&2
+    exit 1
+  fi
+  case "$raw" in
+    /*) ;;
+    *)
+      echo "$label must be an absolute path" >&2
+      exit 1
+      ;;
+  esac
+  rest=${raw#/}
+  while [ -n "$rest" ]; do
+    part=${rest%%/*}
+    if [ "$part" = ".." ]; then
+      echo "$label must not contain .." >&2
+      exit 1
+    fi
+    if [ "$rest" = "$part" ]; then
+      rest=""
+    else
+      rest=${rest#*/}
+    fi
+  done
+  prefix=""
+  rest=${raw#/}
+  while [ -n "$rest" ]; do
+    part=${rest%%/*}
+    if [ -n "$part" ]; then
+      if [ -z "$prefix" ]; then
+        prefix="/$part"
+      else
+        prefix="$prefix/$part"
+      fi
+      if [ -L "$prefix" ]; then
+        echo "refusing symlink" >&2
+        exit 1
+      fi
+    fi
+    if [ "$rest" = "$part" ]; then
+      rest=""
+    else
+      rest=${rest#*/}
+    fi
+  done
+  resolved=$(realpath -m -- "$raw") || exit 1
+  if path_under_install "$resolved"; then
+    echo "$label must be outside the signer install" >&2
+    exit 1
+  fi
+  if [ "$want_home" = 1 ] && [ "$SKIP_ROOT" != 1 ]; then
+    case "$resolved" in
+      /home/*) ;;
+      *)
+        echo "$label must live under /home" >&2
+        exit 1
+        ;;
+    esac
+  fi
+  printf '%s\n' "$resolved"
+}
+
+assert_escrow_dir() {
+  assert_safe_path "escrow directory" "$1" 1 >/dev/null
+}
+
+# Open, hash, and copy from one descriptor. A symlink at the final component,
+# inside a resolved signer root, or on a path that is not under that root is
+# refused. The bytes land in a temp file in the destination directory, then
+# an fsync, a rename, and a directory fsync.
+signer_trusted_roots_file() {
+  local file="$1"
+  local root canon
+  : > "$file"
+  for root in "$DURABLE" "$STATE_SRC" "$LOG_SRC" "$STATE" "$LOG_DIR" "$EPHEMERAL" "$ETC" "$PREFIX" "$SOCKET_DIR"; do
+    [ -n "$root" ] || continue
+    canon=$(realpath -m -- "$root") || return 1
+    printf '%s\n' "$canon" >> "$file"
+  done
+  for root in "$TOKEN_FILE" "$NONCE_FILE" "$AUDIT_FILE"; do
+    [ -n "$root" ] || continue
+    canon=$(realpath -m -- "$(dirname -- "$root")") || return 1
+    printf '%s\n' "$canon" >> "$file"
+  done
+}
+
+signer_fs_tool() {
+  local roots_file roots
+  if ! command -v realpath >/dev/null 2>&1; then
+    echo "realpath is required" >&2
+    exit 1
+  fi
+  roots_file=$(mktemp)
+  if ! signer_trusted_roots_file "$roots_file"; then
+    rm -f "$roots_file"
+    exit 1
+  fi
+  roots=$(sort -u "$roots_file") || { rm -f "$roots_file"; exit 1; }
+  rm -f "$roots_file"
+  # Computed here. A caller-supplied value is not trusted.
+  EVALANCHE_SIGNER_TRUSTED_ROOTS=$roots node - "$@" <<'END'
+const fs = require('node:fs');
+const path = require('node:path');
+const crypto = require('node:crypto');
+if (typeof fs.constants.O_NOFOLLOW !== 'number') {
+  console.error('O_NOFOLLOW is required');
+  process.exit(1);
+}
+const NOFOLLOW = fs.constants.O_NOFOLLOW;
+const command = process.argv[2];
+
+function refuse(message, code) {
+  console.error(message);
+  process.exit(code || 1);
+}
+
+function rejectDots(file) {
+  for (const part of String(file).split('/')) {
+    if (part === '..') refuse('refusing path');
+  }
+}
+
+function trustedRoots() {
+  return String(process.env.EVALANCHE_SIGNER_TRUSTED_ROOTS || '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function symlinkAllowed(acc) {
+  let target;
+  let parentReal;
+  try {
+    target = fs.realpathSync(acc);
+    parentReal = fs.realpathSync(path.dirname(acc));
+  } catch {
+    return false;
+  }
+  const roots = trustedRoots();
+  for (const root of roots) {
+    if (parentReal === root || parentReal.startsWith(`${root}/`)) return false;
+  }
+  for (const root of roots) {
+    if (root.startsWith(`${target}/`)) return true;
+  }
+  return false;
+}
+
+function assertNoSymlinkComponents(file) {
+  rejectDots(file);
+  const abs = path.resolve(file);
+  const parts = abs.split('/').filter(Boolean);
+  let acc = '';
+  for (const part of parts) {
+    acc += `/${part}`;
+    let info;
+    try {
+      info = fs.lstatSync(acc);
+    } catch (error) {
+      if (error && error.code === 'ENOENT') return;
+      refuse('refusing symlink');
+    }
+    if (info.isSymbolicLink() && !symlinkAllowed(acc)) refuse('refusing symlink');
+  }
+}
+
+function readRegular(file, missingMessage) {
+  assertNoSymlinkComponents(file);
+  let info;
+  try {
+    info = fs.lstatSync(file);
+  } catch (error) {
+    if (error && error.code === 'ENOENT') refuse(missingMessage || 'refusing to copy');
+    refuse('refusing to copy');
+  }
+  if (info.isSymbolicLink()) refuse('refusing symlink');
+  if (!info.isFile()) refuse('refusing non-regular file');
+  const flags = fs.constants.O_RDONLY | fs.constants.O_NONBLOCK | NOFOLLOW;
+  let fd;
+  try {
+    fd = fs.openSync(file, flags);
+  } catch (error) {
+    const code = error && error.code;
+    if (code === 'ENOENT') refuse(missingMessage || 'refusing to copy');
+    if (code === 'ELOOP') refuse('refusing symlink');
+    refuse('refusing non-regular file');
+  }
+  try {
+    const opened = fs.fstatSync(fd);
+    if (!opened.isFile()) refuse('refusing non-regular file');
+    return fs.readFileSync(fd);
+  } catch {
+    refuse('refusing to copy');
+  } finally {
+    try { fs.closeSync(fd); } catch { /* closed */ }
+  }
+}
+
+function sha256(data) {
+  return crypto.createHash('sha256').update(data).digest('hex');
+}
+
+function fsyncDir(dir) {
+  assertNoSymlinkComponents(dir);
+  let fd;
+  try {
+    fd = fs.openSync(dir, fs.constants.O_RDONLY | fs.constants.O_DIRECTORY | NOFOLLOW);
+  } catch {
+    refuse('refusing symlink');
+  }
+  try {
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+function atomicWrite(dest, data) {
+  assertNoSymlinkComponents(path.dirname(dest));
+  let destInfo = null;
+  try {
+    destInfo = fs.lstatSync(dest);
+  } catch (error) {
+    if (!error || error.code !== 'ENOENT') refuse('refusing to copy');
+  }
+  if (destInfo) {
+    if (destInfo.isSymbolicLink()) refuse('refusing symlink');
+    if (!destInfo.isFile()) refuse('refusing non-regular file');
+  }
+  const temp = `${dest}.restore-tmp`;
+  let tempInfo = null;
+  try {
+    tempInfo = fs.lstatSync(temp);
+  } catch (error) {
+    if (!error || error.code !== 'ENOENT') refuse('refusing to copy');
+  }
+  if (tempInfo) {
+    if (tempInfo.isSymbolicLink()) refuse('refusing symlink');
+    if (!tempInfo.isFile()) refuse('refusing non-regular file');
+    try {
+      fs.unlinkSync(temp);
+    } catch {
+      refuse('refusing to copy');
+    }
+  }
+  const flags = fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | NOFOLLOW;
+  let fd;
+  try {
+    fd = fs.openSync(temp, flags, 0o600);
+  } catch {
+    refuse('refusing symlink');
+  }
+  let ok = true;
+  try {
+    let off = 0;
+    while (off < data.length) {
+      const wrote = fs.writeSync(fd, data, off);
+      if (wrote <= 0) {
+        ok = false;
+        break;
+      }
+      off += wrote;
+    }
+    if (ok) fs.fsyncSync(fd);
+  } catch {
+    ok = false;
+  } finally {
+    try { fs.closeSync(fd); } catch { /* closed */ }
+  }
+  if (!ok) {
+    try { fs.unlinkSync(temp); } catch { /* already gone */ }
+    refuse('refusing to copy');
+  }
+  try {
+    fs.renameSync(temp, dest);
+  } catch {
+    refuse('refusing to copy');
+  }
+  fsyncDir(path.dirname(dest));
+}
+
+function allowedName(name) {
+  return name === 'token'
+    || name === 'nonces.json'
+    || name === 'nonces.json.bak'
+    || name === 'audit.jsonl'
+    || /^nonces\.json\.bak\.[0-9]{1,4}$/.test(name);
+}
+
+function loadManifest(dir) {
+  let parsed;
+  try {
+    parsed = JSON.parse(readRegular(`${dir}/manifest.json`, 'escrow manifest is unreadable').toString('utf8'));
+  } catch {
+    refuse('escrow manifest is unreadable');
+  }
+  if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.files)) {
+    refuse('escrow manifest is invalid');
+  }
+  return parsed;
+}
+
+function copyCommand() {
+  const src = process.argv[3];
+  const dest = process.argv[4];
+  const expected = process.argv[5];
+  if (!src || !dest) refuse('refusing to copy');
+  const data = readRegular(src);
+  if (expected && expected !== '-' && sha256(data) !== expected) {
+    refuse('escrow manifest hash mismatch');
+  }
+  atomicWrite(dest, data);
+}
+
+function manifestWrite() {
+  const dir = process.argv[3];
+  if (!dir) refuse('refusing to copy');
+  assertNoSymlinkComponents(dir);
+  const files = [];
+  for (let i = 4; i < process.argv.length; i += 2) {
+    const name = process.argv[i];
+    const filePath = process.argv[i + 1];
+    if (!name || !filePath || !/^[A-Za-z0-9._-]+$/.test(name) || !allowedName(name)) {
+      refuse('refusing escrow name');
+    }
+    const data = readRegular(filePath);
+    files.push({ name, sha256: sha256(data), mode: '600' });
+  }
+  files.sort((left, right) => (left.name < right.name ? -1 : left.name > right.name ? 1 : 0));
+  const body = Buffer.from(`${JSON.stringify({ version: 1, files })}\n`);
+  const neu = `${dir}/manifest.json.new`;
+  let neuInfo = null;
+  try {
+    neuInfo = fs.lstatSync(neu);
+  } catch (error) {
+    if (!error || error.code !== 'ENOENT') refuse('refusing to copy');
+  }
+  if (neuInfo) {
+    if (neuInfo.isSymbolicLink()) refuse('refusing symlink');
+    if (!neuInfo.isFile()) refuse('refusing non-regular file');
+    try {
+      fs.unlinkSync(neu);
+    } catch {
+      refuse('refusing to copy');
+    }
+  }
+  const flags = fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | NOFOLLOW;
+  let fd;
+  try {
+    fd = fs.openSync(neu, flags, 0o600);
+  } catch {
+    refuse('refusing symlink');
+  }
+  let ok = true;
+  try {
+    let off = 0;
+    while (off < body.length) {
+      const wrote = fs.writeSync(fd, body, off);
+      if (wrote <= 0) {
+        ok = false;
+        break;
+      }
+      off += wrote;
+    }
+    if (ok) fs.fsyncSync(fd);
+  } catch {
+    ok = false;
+  } finally {
+    try { fs.closeSync(fd); } catch { /* closed */ }
+  }
+  if (!ok) {
+    try { fs.unlinkSync(neu); } catch { /* already gone */ }
+    refuse('refusing to copy');
+  }
+  try {
+    fs.renameSync(neu, `${dir}/manifest.json`);
+  } catch {
+    refuse('refusing to copy');
+  }
+  fsyncDir(dir);
+}
+
+function manifestCheck() {
+  const dir = process.argv[3];
+  const manifest = loadManifest(dir);
+  const seen = new Set();
+  for (const entry of manifest.files) {
+    if (!entry || typeof entry.name !== 'string' || typeof entry.sha256 !== 'string' || entry.mode !== '600') {
+      refuse('escrow manifest entry is invalid');
+    }
+    if (!allowedName(entry.name) || seen.has(entry.name) || !/^[0-9a-f]{64}$/.test(entry.sha256)) {
+      refuse('escrow manifest entry is invalid');
+    }
+    const data = readRegular(`${dir}/${entry.name}`);
+    if (sha256(data) !== entry.sha256) refuse('escrow manifest hash mismatch');
+    seen.add(entry.name);
+  }
+  if (!seen.has('token') || !seen.has('nonces.json')) {
+    refuse('escrow manifest is missing required files');
+  }
+  for (const name of fs.readdirSync(dir)) {
+    if (name === 'manifest.json') continue;
+    if (!seen.has(name)) refuse('escrow directory has an unexpected file');
+  }
+}
+
+function decimal(value) {
+  return typeof value === 'string' && /^-?(0|[1-9][0-9]*)$/.test(value);
+}
+
+function order(left, right) {
+  if (!decimal(left) || !decimal(right)) return null;
+  const a = BigInt(left);
+  const b = BigInt(right);
+  if (a < b) return -1;
+  if (a > b) return 1;
+  return 0;
+}
+
+function walletMap(file) {
+  if (!Object.prototype.hasOwnProperty.call(file, 'wallets') || file.wallets == null) return {};
+  if (typeof file.wallets !== 'object' || Array.isArray(file.wallets)) return null;
+  return file.wallets;
+}
+
+function txMap(file) {
+  if (!Object.prototype.hasOwnProperty.call(file, 'txNonces') || file.txNonces == null) return {};
+  if (typeof file.txNonces !== 'object' || Array.isArray(file.txNonces)) return null;
+  return file.txNonces;
+}
+
+function startedAtValue(file) {
+  if (!Object.prototype.hasOwnProperty.call(file, 'startedAt')) return undefined;
+  const value = file.startedAt;
+  if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) return BigInt(value);
+  if (typeof value === 'string' && /^(0|[1-9][0-9]*)$/.test(value)) return BigInt(value);
+  return null;
+}
+
+function usedList(entry) {
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return null;
+  if (!Object.prototype.hasOwnProperty.call(entry, 'used') || entry.used == null) return [];
+  if (!Array.isArray(entry.used)) return null;
+  const out = [];
+  for (const item of entry.used) {
+    if (typeof item !== 'string') return null;
+    out.push(item);
+  }
+  return out;
+}
+
+function orderKey(record) {
+  if (!record || typeof record !== 'object' || Array.isArray(record)) return null;
+  const at = record.at;
+  const atKey = typeof at === 'number' || typeof at === 'string' ? String(at) : null;
+  return JSON.stringify([
+    typeof record.hash === 'string' ? record.hash : null,
+    typeof record.salt === 'string' ? record.salt : null,
+    atKey,
+    typeof record.kind === 'string' ? record.kind : null,
+    typeof record.usdMicros === 'string' ? record.usdMicros : null,
+  ]);
+}
+
+function orderCounts(file) {
+  if (!Object.prototype.hasOwnProperty.call(file, 'polymarketOrders') || file.polymarketOrders == null) {
+    return new Map();
+  }
+  if (!Array.isArray(file.polymarketOrders)) return null;
+  const counts = new Map();
+  for (const record of file.polymarketOrders) {
+    const key = orderKey(record);
+    if (key == null) return null;
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  return counts;
+}
+
+function belowMark() {
+  refuse('refusing to restore a nonce high-water mark below the current one', 2);
+}
+
+function belowState() {
+  refuse('refusing to restore nonce state', 2);
+}
+
+function compareState(baseline, incoming) {
+  const baseStarted = startedAtValue(baseline);
+  const nextStarted = startedAtValue(incoming);
+  if (baseStarted === null || nextStarted === null) belowState();
+  if (baseStarted !== undefined && (nextStarted === undefined || nextStarted < baseStarted)) belowState();
+  const baseWallets = walletMap(baseline);
+  const nextWallets = walletMap(incoming);
+  if (!baseWallets || !nextWallets) belowState();
+  for (const [wallet, entry] of Object.entries(baseWallets)) {
+    const next = nextWallets[wallet];
+    if (!next || typeof next !== 'object') belowMark();
+    const have = entry && typeof entry.lastNonce === 'string' ? entry.lastNonce : '';
+    const want = typeof next.lastNonce === 'string' ? next.lastNonce : '';
+    if (have) {
+      const compared = order(want, have);
+      if (compared === null) refuse('nonce high-water mark is not a decimal string', 3);
+      if (compared < 0) belowMark();
+    }
+    const haveUsed = usedList(entry);
+    const wantUsed = usedList(next);
+    if (!haveUsed || !wantUsed) belowState();
+    const counts = new Map();
+    for (const item of wantUsed) counts.set(item, (counts.get(item) || 0) + 1);
+    for (const item of haveUsed) {
+      const left = counts.get(item) || 0;
+      if (left < 1) belowState();
+      counts.set(item, left - 1);
+    }
+  }
+  const baseTx = txMap(baseline);
+  const nextTx = txMap(incoming);
+  if (!baseTx || !nextTx) belowState();
+  for (const [wallet, chains] of Object.entries(baseTx)) {
+    if (!chains || typeof chains !== 'object' || Array.isArray(chains)) belowState();
+    const nextChains = nextTx[wallet];
+    if (!nextChains || typeof nextChains !== 'object' || Array.isArray(nextChains)) belowMark();
+    for (const [chain, nonce] of Object.entries(chains)) {
+      if (typeof nonce !== 'string') belowState();
+      const want = nextChains[chain];
+      if (typeof want !== 'string') belowMark();
+      const compared = order(want, nonce);
+      if (compared === null) refuse('nonce high-water mark is not a decimal string', 3);
+      if (compared < 0) belowMark();
+    }
+  }
+  const baseOrders = orderCounts(baseline);
+  const nextOrders = orderCounts(incoming);
+  if (!baseOrders || !nextOrders) belowState();
+  for (const [key, count] of baseOrders) {
+    if ((nextOrders.get(key) || 0) < count) belowState();
+  }
+}
+
+function stateMessage(role) {
+  return role === 'floor' ? 'nonce floor is not a nonce state file' : 'nonce file is not a nonce state file';
+}
+
+function decimalNonce(value) {
+  return typeof value === 'string' && /^-?(0|[1-9][0-9]*)$/.test(value);
+}
+
+function unsignedDecimal(value) {
+  return typeof value === 'string' && /^(0|[1-9][0-9]*)$/.test(value);
+}
+
+function validateNonceState(parsed, role) {
+  const bad = stateMessage(role);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) refuse(bad, 3);
+  if (parsed.version !== 1) refuse(bad, 3);
+  if (typeof parsed.startedAt !== 'number' || !Number.isSafeInteger(parsed.startedAt) || parsed.startedAt < 0) {
+    refuse(bad, 3);
+  }
+  if (!parsed.wallets || typeof parsed.wallets !== 'object' || Array.isArray(parsed.wallets)) refuse(bad, 3);
+  let saw = false;
+  for (const entry of Object.values(parsed.wallets)) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) refuse(bad, 3);
+    if (!decimalNonce(entry.lastNonce)) refuse(bad, 3);
+    if (!Array.isArray(entry.used)) refuse(bad, 3);
+    for (const item of entry.used) {
+      if (!decimalNonce(item)) refuse(bad, 3);
+    }
+    saw = true;
+  }
+  if (Object.prototype.hasOwnProperty.call(parsed, 'txNonces') && parsed.txNonces != null) {
+    if (typeof parsed.txNonces !== 'object' || Array.isArray(parsed.txNonces)) refuse(bad, 3);
+    for (const chains of Object.values(parsed.txNonces)) {
+      if (!chains || typeof chains !== 'object' || Array.isArray(chains)) refuse(bad, 3);
+      for (const [chain, nonce] of Object.entries(chains)) {
+        if (!unsignedDecimal(chain) || !decimalNonce(nonce)) refuse(bad, 3);
+        saw = true;
+      }
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(parsed, 'polymarketOrders') && parsed.polymarketOrders != null) {
+    if (!Array.isArray(parsed.polymarketOrders)) refuse(bad, 3);
+    for (const record of parsed.polymarketOrders) {
+      if (!record || typeof record !== 'object' || Array.isArray(record)) refuse(bad, 3);
+      if (typeof record.hash !== 'string' || typeof record.salt !== 'string') refuse(bad, 3);
+      const atOk = (typeof record.at === 'number' && Number.isFinite(record.at)) || typeof record.at === 'string';
+      if (!atOk) refuse(bad, 3);
+      if (record.kind != null && typeof record.kind !== 'string') refuse(bad, 3);
+      if (record.usdMicros != null && typeof record.usdMicros !== 'string') refuse(bad, 3);
+    }
+  }
+  return saw;
+}
+
+function parseNonceBuffer(data, role) {
+  let parsed;
+  try {
+    parsed = JSON.parse(data.toString('utf8'));
+  } catch {
+    refuse(role === 'floor' ? 'nonce floor is not a nonce state file' : 'nonce file is not json', 3);
+  }
+  return parsed;
+}
+
+function parseTxSpec(spec) {
+  const out = new Map();
+  if (!spec || spec === '-') return out;
+  for (const part of spec.split(',')) {
+    const eq = part.indexOf('=');
+    if (eq <= 0) refuse('min-tx-nonce must be chainId=decimal', 3);
+    const chain = part.slice(0, eq);
+    const nonce = part.slice(eq + 1);
+    if (!unsignedDecimal(chain) || !unsignedDecimal(nonce) || out.has(chain)) {
+      refuse('min-tx-nonce must be chainId=decimal', 3);
+    }
+    out.set(chain, nonce);
+  }
+  return out;
+}
+
+function enforceCoverage(file, approval, txFloors, hasBaseline) {
+  let sawApproval = false;
+  const chains = new Set();
+  for (const entry of Object.values(file.wallets)) {
+    sawApproval = true;
+    if (approval) {
+      const compared = order(entry.lastNonce, approval);
+      if (compared === null) refuse('nonce high-water mark is not a decimal string', 3);
+      if (compared < 0) belowMark();
+    }
+  }
+  const tx = file.txNonces && typeof file.txNonces === 'object' && !Array.isArray(file.txNonces) ? file.txNonces : {};
+  for (const chainsOfWallet of Object.values(tx)) {
+    for (const [chain, nonce] of Object.entries(chainsOfWallet)) {
+      chains.add(chain);
+      if (!txFloors.has(chain)) continue;
+      const compared = order(nonce, txFloors.get(chain));
+      if (compared === null) refuse('nonce high-water mark is not a decimal string', 3);
+      if (compared < 0) belowMark();
+    }
+  }
+  if (chains.size === 0 && txFloors.size > 0) belowMark();
+  if (!sawApproval && chains.size === 0) {
+    if (approval || txFloors.size > 0) belowMark();
+    if (!hasBaseline) refuse('nonce floor is required', 4);
+    return;
+  }
+  if (!hasBaseline) {
+    if (sawApproval && !approval) refuse('nonce floor is required', 4);
+    for (const chain of chains) {
+      if (!txFloors.has(chain)) refuse('nonce floor is required', 4);
+    }
+  }
+}
+
+function readManifestFiles(dir) {
+  const manifest = loadManifest(dir);
+  const seen = new Set();
+  const buffers = new Map();
+  for (const entry of manifest.files) {
+    if (!entry || typeof entry.name !== 'string' || typeof entry.sha256 !== 'string' || entry.mode !== '600') {
+      refuse('escrow manifest entry is invalid');
+    }
+    if (!allowedName(entry.name) || seen.has(entry.name) || !/^[0-9a-f]{64}$/.test(entry.sha256)) {
+      refuse('escrow manifest entry is invalid');
+    }
+    const data = readRegular(`${dir}/${entry.name}`);
+    if (sha256(data) !== entry.sha256) refuse('escrow manifest hash mismatch');
+    buffers.set(entry.name, data);
+    seen.add(entry.name);
+  }
+  if (!seen.has('token') || !seen.has('nonces.json')) {
+    refuse('escrow manifest is missing required files');
+  }
+  for (const name of fs.readdirSync(dir)) {
+    if (name === 'manifest.json') continue;
+    if (!seen.has(name)) refuse('escrow directory has an unexpected file');
+  }
+  return buffers;
+}
+
+function lastAuditTimestamp(data) {
+  const lines = data.toString('utf8').split('\n').filter((line) => line.length > 0);
+  if (lines.length === 0) return undefined;
+  try {
+    const parsed = JSON.parse(lines[lines.length - 1]);
+    if (parsed && typeof parsed.timestamp === 'string') return parsed.timestamp;
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
+
+function auditOk(escrowAudit, currentPath) {
+  if (!currentPath || currentPath === '-') return;
+  const current = readRegular(currentPath);
+  if (!escrowAudit || escrowAudit.length < current.length) {
+    refuse('refusing to restore an audit log shorter than the current one');
+  }
+  const nextTs = lastAuditTimestamp(escrowAudit);
+  const currentTs = lastAuditTimestamp(current);
+  if (nextTs !== undefined && currentTs !== undefined && nextTs < currentTs) {
+    refuse('refusing to restore an audit log older than the current one');
+  }
+}
+
+function loadBaseline(filePath, role) {
+  const parsed = parseNonceBuffer(readRegular(filePath), role);
+  if (!validateNonceState(parsed, role)) refuse(stateMessage(role), 3);
+  return parsed;
+}
+
+function restoreAll() {
+  const dir = process.argv[3];
+  const currentPath = process.argv[4];
+  const floorPath = process.argv[5];
+  const approvalRaw = process.argv[6];
+  const txSpec = process.argv[7];
+  const currentAudit = process.argv[8];
+  if (!dir || process.argv.length < 9) refuse('refusing to copy');
+  const approval = approvalRaw && approvalRaw !== '-' ? approvalRaw : '';
+  if (approval && !unsignedDecimal(approval)) refuse('min-approval-nonce must be a decimal', 3);
+  const txFloors = parseTxSpec(txSpec);
+  const pairs = [];
+  for (let i = 9; i < process.argv.length; i += 2) {
+    const name = process.argv[i];
+    const dest = process.argv[i + 1];
+    if (!name || !dest || !allowedName(name)) refuse('refusing escrow name');
+    pairs.push({ name, dest });
+  }
+  const buffers = readManifestFiles(dir);
+  const nonceBuf = buffers.get('nonces.json');
+  if (!nonceBuf) refuse('escrow manifest is missing required files');
+  const escrowed = parseNonceBuffer(nonceBuf, 'file');
+  validateNonceState(escrowed, 'file');
+  let hasBaseline = false;
+  if (currentPath && currentPath !== '-') {
+    compareState(loadBaseline(currentPath, 'file'), escrowed);
+    hasBaseline = true;
+  }
+  if (floorPath && floorPath !== '-') {
+    compareState(loadBaseline(floorPath, 'floor'), escrowed);
+    hasBaseline = true;
+  }
+  enforceCoverage(escrowed, approval, txFloors, hasBaseline);
+  auditOk(buffers.get('audit.jsonl'), currentAudit);
+  for (const pair of pairs) {
+    const data = buffers.get(pair.name);
+    if (!data) refuse('escrow manifest entry is invalid');
+    atomicWrite(pair.dest, data);
+  }
+}
+
+if (command === 'copy') copyCommand();
+else if (command === 'manifest-write') manifestWrite();
+else if (command === 'manifest-check') manifestCheck();
+else if (command === 'restore-all') restoreAll();
+else refuse('refusing to copy');
+END
+}
+
+copy_owned() {
+  local src="$1"
+  local dest="$2"
+  local uid="$3"
+  local group="$4"
+  local mode="$5"
+  signer_fs_tool copy "$src" "$dest" || exit 1
+  claim_one "$dest" "$uid" "$group" "$mode"
+}
+
+check_escrow_manifest() {
+  signer_fs_tool manifest-check "$1" || exit 1
+}
+
+backup_name_ok() {
+  local name="$1"
+  case "$name" in
+    nonces.json.bak) return 0 ;;
+    nonces.json.bak.[0-9]|nonces.json.bak.[0-9][0-9]|nonces.json.bak.[0-9][0-9][0-9]|nonces.json.bak.[0-9][0-9][0-9][0-9]) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+refuse_special_file() {
+  local file="$1"
+  if [ -L "$file" ]; then
+    echo "refusing symlink" >&2
+    exit 1
+  fi
+  if [ -e "$file" ] && [ ! -f "$file" ]; then
+    echo "refusing non-regular file" >&2
+    exit 1
+  fi
+}
+
+require_regular_file() {
+  local file="$1"
+  local missing="$2"
+  refuse_special_file "$file"
+  if [ ! -f "$file" ]; then
+    echo "$missing" >&2
+    exit 1
+  fi
+}
+
+escrow_audit_source() {
+  if [ -e "$STATE_SRC/audit.jsonl" ] || [ -L "$STATE_SRC/audit.jsonl" ]; then
+    require_regular_file "$STATE_SRC/audit.jsonl" "refusing to copy"
+    printf '%s\n' "$STATE_SRC/audit.jsonl"
+    return 0
+  fi
+  if [ "$AUDIT_FILE" != "$STATE_SRC/audit.jsonl" ] && { [ -e "$AUDIT_FILE" ] || [ -L "$AUDIT_FILE" ]; }; then
+    require_regular_file "$AUDIT_FILE" "refusing to copy"
+    printf '%s\n' "$AUDIT_FILE"
+    return 0
+  fi
+  return 0
+}
+
+escrow_signer() {
+  local dir="${1:-}"
+  local nonce_dir name list args bak count audit_src entry unexpected
+  if [ -z "$dir" ] || [ -n "${2:-}" ]; then
+    usage
+  fi
+  require_root
+  refuse_verifier_private_key
+  assert_escrow_dir "$dir"
+  if [ "$(basename "$NONCE_FILE")" != nonces.json ]; then
+    echo "nonce file must be named nonces.json" >&2
+    exit 1
+  fi
+  require_regular_file "$TOKEN_FILE" "missing bearer token file"
+  require_regular_file "$NONCE_FILE" "missing nonce file"
+  audit_src=$(escrow_audit_source)
+  if [ -e "$dir" ] && [ ! -d "$dir" ]; then
+    echo "escrow path is not a directory" >&2
+    exit 1
+  fi
+  if [ -L "$dir" ]; then
+    echo "refusing symlink" >&2
+    exit 1
+  fi
+  make_dir "$dir" "$BOX_USER" "$BOX_GROUP" 0700
+  list=$(mktemp)
+  unexpected=$(mktemp)
+  nonce_dir=$(dirname "$NONCE_FILE")
+  find "$nonce_dir" -maxdepth 1 -name 'nonces.json.bak*' -print > "$list"
+  while IFS= read -r bak; do
+    [ -n "$bak" ] || continue
+    name=${bak##*/}
+    if ! backup_name_ok "$name"; then
+      echo "refusing unexpected nonce backup name" >&2
+      rm -f "$list" "$unexpected"
+      exit 1
+    fi
+    if [ -L "$bak" ]; then
+      echo "refusing symlink" >&2
+      rm -f "$list" "$unexpected"
+      exit 1
+    fi
+    if [ ! -f "$bak" ]; then
+      echo "refusing non-regular file" >&2
+      rm -f "$list" "$unexpected"
+      exit 1
+    fi
+  done < "$list"
+  if [ -d "$dir" ]; then
+    find "$dir" -mindepth 1 -maxdepth 1 -print > "$unexpected"
+    while IFS= read -r entry; do
+      [ -n "$entry" ] || continue
+      name=${entry##*/}
+      case "$name" in
+        manifest.json|manifest.json.new|token|nonces.json|audit.jsonl|nonces.json.bak|nonces.json.bak.[0-9]|nonces.json.bak.[0-9][0-9]|nonces.json.bak.[0-9][0-9][0-9]|nonces.json.bak.[0-9][0-9][0-9][0-9]) ;;
+        *)
+          echo "escrow directory has an unexpected file" >&2
+          rm -f "$list" "$unexpected"
+          exit 1
+          ;;
+      esac
+    done < "$unexpected"
+  fi
+  rm -f "$unexpected"
+  copy_owned "$TOKEN_FILE" "$dir/token" "$BOX_USER" "$BOX_GROUP" 600
+  copy_owned "$NONCE_FILE" "$dir/nonces.json" "$BOX_USER" "$BOX_GROUP" 600
+  count=2
+  args="token $dir/token nonces.json $dir/nonces.json"
+  if [ -n "$audit_src" ]; then
+    copy_owned "$audit_src" "$dir/audit.jsonl" "$BOX_USER" "$BOX_GROUP" 600
+    args="$args audit.jsonl $dir/audit.jsonl"
+    count=$((count + 1))
+  fi
+  while IFS= read -r bak; do
+    [ -n "$bak" ] || continue
+    name=${bak##*/}
+    copy_owned "$bak" "$dir/$name" "$BOX_USER" "$BOX_GROUP" 600
+    args="$args $name $dir/$name"
+    count=$((count + 1))
+  done < "$list"
+  rm -f "$list"
+  # shellcheck disable=SC2086
+  signer_fs_tool manifest-write "$dir" $args || exit 1
+  claim_one "$dir/manifest.json" "$BOX_USER" "$BOX_GROUP" 600
+  echo "escrowed signer state ($count files)"
+}
+
+# Durable directories only. The live state and log directories are the bind
+# mounts under /var. Restore must not create them as root mode 0755.
+restore_signer_dirs() {
+  make_dir "$DURABLE" root root 0755
+  make_dir "$DURABLE/bin" root root 0755
+  make_dir "$STATE_SRC" "$SIGNER_USER" "$SIGNER_GROUP" 0700
+  make_dir "$LOG_SRC" "$SIGNER_USER" "$SIGNER_GROUP" 0700
+  make_dir "$EPHEMERAL" root root 0755
+  make_dir "$PREFIX" root root 0755
+  make_dir "$SOCKET_DIR" "$SIGNER_USER" "$SIGNER_GROUP" 0750
+  make_dir "$ETC" root root 0755
+}
+
+refuse_held_lock() {
+  local file="$1"
+  local message="$2"
+  refuse_special_file "$file"
+  if [ ! -f "$file" ]; then
+    return 0
+  fi
+  if ! command -v flock >/dev/null 2>&1; then
+    echo "flock is required" >&2
+    exit 1
+  fi
+  if ! flock -n "$file" true; then
+    echo "$message" >&2
+    exit 1
+  fi
+}
+
+refuse_restore_while_running() {
+  local pid
+  refuse_special_file "$PIDFILE"
+  refuse_special_file "$LOCK"
+  if [ -f "$PIDFILE" ]; then
+    pid=$(tr -d ' \n\r' < "$PIDFILE" 2>/dev/null || true)
+    case "$pid" in
+      ''|*[!0-9]*) ;;
+      *)
+        if pid_is_live "$pid"; then
+          echo "refusing to restore while the signer is running" >&2
+          exit 1
+        fi
+        ;;
+    esac
+  fi
+  refuse_held_lock "$LOCK" "refusing to restore while the start lock is held"
+  refuse_held_lock "$NONCE_FILE.lock" "refusing to restore while the nonce lock is held"
+  if [ "$STATE_SRC/nonces.json.lock" != "$NONCE_FILE.lock" ]; then
+    refuse_held_lock "$STATE_SRC/nonces.json.lock" "refusing to restore while the nonce lock is held"
+  fi
+}
+
+assert_restored_modes() {
+  local name base live_uid live_mode
+  assert_one "$DURABLE" root root 755 0
+  assert_one "$STATE_SRC" "$SIGNER_USER" "$SIGNER_GROUP" 700 0
+  assert_one "$LOG_SRC" "$SIGNER_USER" "$SIGNER_GROUP" 700 0
+  assert_one "$TOKEN_FILE" root "$SIGNER_GROUP" 640 0
+  assert_one "$STATE_SRC/nonces.json" "$SIGNER_USER" "$SIGNER_GROUP" 600 0
+  if [ -e "$STATE_SRC/audit.jsonl" ]; then
+    assert_one "$STATE_SRC/audit.jsonl" "$SIGNER_USER" "$SIGNER_GROUP" 600 0
+  fi
+  for name in "$STATE_SRC"/nonces.json.bak "$STATE_SRC"/nonces.json.bak.*; do
+    [ -e "$name" ] || continue
+    [ -L "$name" ] && { echo "refusing symlink" >&2; exit 1; }
+    base=${name##*/}
+    backup_name_ok "$base" || { echo "refusing unexpected nonce backup name" >&2; exit 1; }
+    assert_one "$name" "$SIGNER_USER" "$SIGNER_GROUP" 600 0
+  done
+  if [ "$STATE" != "$STATE_SRC" ] && [ -d "$STATE" ] && [ ! -L "$STATE" ]; then
+    live_uid=$(stat -c %u "$STATE")
+    live_mode=$(normalize_mode "$(stat -c %a "$STATE")")
+    if [ "$live_uid" = 0 ] && [ "$live_mode" = 755 ]; then
+      echo "refusing live state directory owned by root mode 0755" >&2
+      exit 1
+    fi
+  fi
+}
+
+decimal_nonce() {
+  case "$1" in
+    ''|*[!0-9]*) return 1 ;;
+    0) return 0 ;;
+    0*) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+tx_nonce_spec() {
+  local chain nonce
+  case "$1" in
+    *=*) ;;
+    *) return 1 ;;
+  esac
+  chain=${1%%=*}
+  nonce=${1#*=}
+  case "$nonce" in
+    *=*) return 1 ;;
+  esac
+  decimal_nonce "$chain" || return 1
+  decimal_nonce "$nonce" || return 1
+}
+
+restore_signer() {
+  local dir="" approval="" tx_spec="" floor="" current="" current_audit=""
+  local current_arg floor_arg approval_arg tx_arg audit_arg
+  local name base dir_resolved pairs restore_audit
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --min-nonce)
+        echo "--min-nonce was removed; pass --min-approval-nonce and --min-tx-nonce" >&2
+        exit 1
+        ;;
+      --min-approval-nonce)
+        if [ $# -lt 2 ] || [ -z "${2:-}" ] || [ -n "$approval" ]; then
+          usage
+        fi
+        approval=$2
+        shift 2
+        ;;
+      --min-tx-nonce)
+        if [ $# -lt 2 ] || [ -z "${2:-}" ]; then
+          usage
+        fi
+        if ! tx_nonce_spec "$2"; then
+          echo "min-tx-nonce must be chainId=decimal" >&2
+          exit 1
+        fi
+        if [ -z "$tx_spec" ]; then
+          tx_spec=$2
+        else
+          tx_spec="$tx_spec,$2"
+        fi
+        shift 2
+        ;;
+      --floor)
+        if [ $# -lt 2 ] || [ -z "${2:-}" ] || [ -n "$floor" ]; then
+          usage
+        fi
+        floor=$2
+        shift 2
+        ;;
+      --)
+        shift
+        break
+        ;;
+      -*)
+        usage
+        ;;
+      *)
+        if [ -n "$dir" ]; then
+          usage
+        fi
+        dir=$1
+        shift
+        ;;
+    esac
+  done
+  if [ $# -ne 0 ] || [ -z "$dir" ]; then
+    usage
+  fi
+  if [ -n "$approval" ] && ! decimal_nonce "$approval"; then
+    echo "min-approval-nonce must be a decimal" >&2
+    exit 1
+  fi
+  require_root
+  refuse_verifier_private_key
+  refuse_restore_while_running
+  assert_escrow_dir "$dir"
+  if [ ! -d "$dir" ] || [ -L "$dir" ]; then
+    echo "escrow directory is missing" >&2
+    exit 1
+  fi
+  if [ -n "$floor" ]; then
+    floor_arg=$(assert_safe_path "nonce floor" "$floor" 1)
+    dir_resolved=$(realpath -m -- "$dir") || exit 1
+    case "$floor_arg" in
+      "$dir_resolved"|"$dir_resolved"/*)
+        echo "nonce floor must be outside the escrow directory" >&2
+        exit 1
+        ;;
+    esac
+    if [ -e "$floor" ] && [ ! -f "$floor" ]; then
+      echo "refusing non-regular file" >&2
+      exit 1
+    fi
+    if [ ! -f "$floor" ]; then
+      echo "nonce floor must be a regular file" >&2
+      exit 1
+    fi
+  fi
+  refuse_special_file "$STATE_SRC/nonces.json"
+  if [ "$NONCE_FILE" != "$STATE_SRC/nonces.json" ]; then
+    refuse_special_file "$NONCE_FILE"
+  fi
+  if [ -f "$STATE_SRC/nonces.json" ]; then
+    current=$STATE_SRC/nonces.json
+  elif [ -f "$NONCE_FILE" ]; then
+    current=$NONCE_FILE
+  fi
+  if [ -z "$current" ] && [ -z "$approval" ] && [ -z "$tx_spec" ] && [ -z "$floor" ]; then
+    echo "nonce floor is required" >&2
+    exit 1
+  fi
+  current_audit=""
+  if [ -e "$STATE_SRC/audit.jsonl" ] || [ -L "$STATE_SRC/audit.jsonl" ]; then
+    require_regular_file "$STATE_SRC/audit.jsonl" "refusing to copy"
+    current_audit=$STATE_SRC/audit.jsonl
+  elif [ "$AUDIT_FILE" != "$STATE_SRC/audit.jsonl" ] && { [ -e "$AUDIT_FILE" ] || [ -L "$AUDIT_FILE" ]; }; then
+    require_regular_file "$AUDIT_FILE" "refusing to copy"
+    current_audit=$AUDIT_FILE
+  fi
+  restore_audit=0
+  if [ -e "$dir/audit.jsonl" ] || [ -L "$dir/audit.jsonl" ]; then
+    require_regular_file "$dir/audit.jsonl" "refusing to copy"
+    restore_audit=1
+  fi
+  pairs="token $TOKEN_FILE nonces.json $STATE_SRC/nonces.json"
+  if [ "$restore_audit" = 1 ]; then
+    pairs="$pairs audit.jsonl $STATE_SRC/audit.jsonl"
+  fi
+  for name in "$dir"/nonces.json.bak "$dir"/nonces.json.bak.*; do
+    [ -e "$name" ] || continue
+    if [ -L "$name" ]; then
+      echo "refusing symlink" >&2
+      exit 1
+    fi
+    if [ ! -f "$name" ]; then
+      echo "refusing non-regular file" >&2
+      exit 1
+    fi
+    base=${name##*/}
+    if ! backup_name_ok "$base"; then
+      echo "refusing unexpected nonce backup name" >&2
+      exit 1
+    fi
+    pairs="$pairs $base $STATE_SRC/$base"
+  done
+  ensure_signer_account
+  restore_signer_dirs
+  current_arg=${current:--}
+  floor_arg=${floor:--}
+  approval_arg=${approval:--}
+  tx_arg=${tx_spec:--}
+  audit_arg=${current_audit:--}
+  # shellcheck disable=SC2086
+  signer_fs_tool restore-all "$dir" "$current_arg" "$floor_arg" "$approval_arg" "$tx_arg" "$audit_arg" $pairs || exit 1
+  claim_one "$TOKEN_FILE" root "$SIGNER_GROUP" 640
+  claim_one "$STATE_SRC/nonces.json" "$SIGNER_USER" "$SIGNER_GROUP" 600
+  if [ "$restore_audit" = 1 ]; then
+    claim_one "$STATE_SRC/audit.jsonl" "$SIGNER_USER" "$SIGNER_GROUP" 600
+  fi
+  for name in "$dir"/nonces.json.bak "$dir"/nonces.json.bak.*; do
+    [ -e "$name" ] || continue
+    base=${name##*/}
+    claim_one "$STATE_SRC/$base" "$SIGNER_USER" "$SIGNER_GROUP" 600
+  done
+  assert_restored_modes
+  echo "restored signer state"
+}
+
 
 cmd=${1:-}
 shift || true
@@ -1346,5 +2622,7 @@ case "$cmd" in
   stop) stop_signer ;;
   health) health_signer ;;
   provision) provision_signer "$@" ;;
+  escrow) escrow_signer "$@" ;;
+  restore) restore_signer "$@" ;;
   *) usage ;;
 esac

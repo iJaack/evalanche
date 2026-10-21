@@ -123,6 +123,23 @@ jobs:
       - run: npm run build
       - run: node scripts/signer-root-layout.mjs
 
+  # The mount-namespace restore test. A skipped run fails this job.
+  signer-root-restore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Restore under a real root mount namespace
+        run: npx vitest run test/poc3/grok-bot-signer.test.ts -t "creates a missing evalanche-signer"
+        env:
+          EVALANCHE_DESTRUCTIVE_TESTS: '1'
+          EVALANCHE_REQUIRE_ROOT_RESTORE: '1'
+
   # Two fresh npm ci trees must pack to the same sha256. A symlinked
   # node_modules is not used: esbuild would embed that realpath.
   reproducible-pack:

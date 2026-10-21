@@ -5,8 +5,8 @@
  */
 import { createHash } from 'node:crypto';
 import { spawn, spawnSync, type SpawnOptions, type SpawnSyncOptions } from 'node:child_process';
-import { existsSync, readFileSync, readlinkSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { chmod, copyFile, mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { existsSync, lstatSync, readFileSync, readlinkSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmod, copyFile, mkdtemp, mkdir, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { userInfo, platform, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -200,6 +200,7 @@ afterEach(async () => {
   while (extraPids.length) {
     const pid = extraPids.pop();
     if (pid === undefined) break;
+    try { process.kill(-pid, 'SIGKILL'); } catch { /* not a process group */ }
     try { process.kill(pid, 'SIGKILL'); } catch { /* already gone */ }
   }
 });
@@ -634,7 +635,7 @@ chmod 755 "$prefix/node_modules/.bin/evalanche-signer"
     const missing = run(['provision', '', digest]);
     expect(missing.status).not.toBe(0);
     expect(`${missing.stderr}`).toMatch(/installed tree is not used/);
-    expect(`${missing.stderr}`).not.toMatch(/1\.17\.0-rc\.4/);
+    expect(`${missing.stderr}`).not.toMatch(/1\.17\.0-rc\.7/);
     expect(existsSync(box.npmLog)).toBe(false);
 
     await mkdir(box.durable, { recursive: true });
@@ -644,7 +645,7 @@ chmod 755 "$prefix/node_modules/.bin/evalanche-signer"
     const ready = run(['provision', '', digest]);
     expect(ready.status, ready.stderr).toBe(0);
     expect(existsSync(pinned)).toBe(true);
-    expect(existsSync(join(box.durable, 'evalanche-1.17.0-rc.4.tgz'))).toBe(false);
+    expect(existsSync(join(box.durable, 'evalanche-1.17.0-rc.7.tgz'))).toBe(false);
     expect(existsSync(join(box.prefix, 'dist/signer/cli.mjs'))).toBe(true);
   });
 
@@ -720,6 +721,780 @@ chmod 755 "$prefix/node_modules/.bin/evalanche-signer"
     expect(existsSync(box.npmLog)).toBe(false);
     expect(existsSync(join(box.durable, 'evalanche-9.9.9.tgz'))).toBe(false);
     expect(existsSync(join(box.prefix, 'dist/signer/cli.mjs'))).toBe(false);
+  });
+
+  function recordedOwner(stub: string, path: string): { uid: string; gid: string; mode: string } {
+    const text = readFileSync(join(stub, 'owners.tsv'), 'utf8');
+    let found: { uid: string; gid: string; mode: string } | undefined;
+    for (const line of text.split('\n')) {
+      if (!line) continue;
+      const [name, uid, gid, mode] = line.split('\t');
+      if (name === path) found = { uid: uid ?? '', gid: gid ?? '', mode: mode ?? '' };
+    }
+    if (!found) throw new Error(`no recorded owner for ${path}`);
+    return found;
+  }
+
+  function expectOwner(stub: string, path: string, uid: string, gid: string, mode: string) {
+    const recorded = recordedOwner(stub, path);
+    expect(recorded, path).toEqual({ uid, gid, mode });
+    expect(statSync(path).mode & 0o777, path).toBe(Number.parseInt(mode, 8));
+  }
+
+  it('keeps each state file owner on a second provision while the start lock exists', async () => {
+    const box = await provisionLayout();
+    const signer = '4242';
+    const stub = join(box.root, 'ownership-stub');
+    await mkdir(stub, { recursive: true });
+    const env = {
+      ...box.env,
+      EVALANCHE_BOX_USER: signer,
+      EVALANCHE_BOX_GROUP: signer,
+      EVALANCHE_BOX_OWNERSHIP_STUB: stub,
+    };
+    const run = (args: string[]) => spawnSync(script, args, {
+      env,
+      encoding: 'utf8',
+      timeout: 20_000,
+      ...(box.drop ? { uid: box.drop.uid, gid: box.drop.gid } : {}),
+    });
+    const state = join(box.durable, 'state');
+    await mkdir(join(state, 'extra'), { recursive: true });
+    const nonce = `${JSON.stringify({
+      version: 1,
+      startedAt: 1,
+      wallets: { '0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266': { lastNonce: '42', used: ['42'] } },
+    })}\n`;
+    await writeFile(join(state, 'nonces.json'), nonce, { mode: 0o644 });
+    await writeFile(join(state, 'nonces.json.bak'), nonce, { mode: 0o644 });
+    await writeFile(join(state, 'audit.jsonl'), '{"decision":"allow"}\n', { mode: 0o644 });
+    await writeFile(join(state, 'start.lock'), '', { mode: 0o644 });
+    await writeFile(join(state, 'signer.pid'), '1\n', { mode: 0o644 });
+    await writeFile(join(state, 'extra', 'keep.json'), '{}\n', { mode: 0o644 });
+    await writeFile(join(box.durable, 'token'), 'token-keep-not-logged\n', { mode: 0o644 });
+    give(box, box.durable);
+    give(box, stub);
+    const digest = createHash('sha256').update(readFileSync(box.tarball)).digest('hex');
+    const first = run(['provision', box.tarball, digest]);
+    expect(first.status, first.stderr + first.stdout).toBe(0);
+    await rm(box.prefix, { recursive: true, force: true });
+    await rm(box.ephemeral, { recursive: true, force: true });
+    await rm(box.etc, { recursive: true, force: true });
+    const second = run(['provision', box.tarball, digest]);
+    expect(second.status, second.stderr + second.stdout).toBe(0);
+    expect(second.stdout + second.stderr).not.toContain('token-keep-not-logged');
+    expectOwner(stub, join(state, 'start.lock'), '0', '0', '600');
+    expectOwner(stub, join(state, 'signer.pid'), '0', '0', '600');
+    expectOwner(stub, join(state, 'audit.jsonl'), signer, signer, '600');
+    expectOwner(stub, join(state, 'nonces.json'), signer, signer, '600');
+    expectOwner(stub, join(state, 'nonces.json.bak'), signer, signer, '600');
+    expectOwner(stub, join(state, 'extra'), signer, signer, '700');
+    expectOwner(stub, join(state, 'extra', 'keep.json'), signer, signer, '600');
+    expectOwner(stub, state, signer, signer, '700');
+    expect(readFileSync(join(state, 'nonces.json'), 'utf8')).toBe(nonce);
+    expect(readFileSync(join(state, 'audit.jsonl'), 'utf8')).toBe('{"decision":"allow"}\n');
+  });
+
+  it('escrows and restores the token, nonce high-water mark, and backups', async () => {
+    const box = await provisionLayout();
+    const signer = '4242';
+    const boxUser = '1000';
+    const stub = join(box.root, 'ownership-stub');
+    await mkdir(stub, { recursive: true });
+    const env = {
+      ...box.env,
+      EVALANCHE_BOX_USER: signer,
+      EVALANCHE_BOX_GROUP: signer,
+      EVALANCHE_BOX_BOX_USER: boxUser,
+      EVALANCHE_BOX_BOX_GROUP: boxUser,
+      EVALANCHE_BOX_OWNERSHIP_STUB: stub,
+    };
+    const run = (args: string[]) => spawnSync(script, args, {
+      env,
+      encoding: 'utf8',
+      timeout: 20_000,
+      ...(box.drop ? { uid: box.drop.uid, gid: box.drop.gid } : {}),
+    });
+    const digest = createHash('sha256').update(readFileSync(box.tarball)).digest('hex');
+    const state = join(box.durable, 'state');
+    await mkdir(state, { recursive: true });
+    const wallet = '0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266';
+    const nonceBody = (last: string) => `${JSON.stringify({
+      version: 1,
+      startedAt: 1,
+      wallets: { [wallet]: { lastNonce: last, used: [last] } },
+      txNonces: { [wallet]: { '43114': last } },
+    })}\n`;
+    const token = 'token-keep-not-logged\n';
+    const backup = 'nonce-backup-keep\n';
+    const audit = '{"decision":"allow"}\n';
+    await writeFile(join(box.durable, 'token'), token, { mode: 0o600 });
+    await writeFile(join(state, 'nonces.json'), nonceBody('10'), { mode: 0o600 });
+    await writeFile(join(state, 'nonces.json.bak'), backup, { mode: 0o600 });
+    await writeFile(join(state, 'audit.jsonl'), audit, { mode: 0o600 });
+    give(box, box.durable);
+    give(box, stub);
+    const ready = run(['provision', box.tarball, digest]);
+    expect(ready.status, ready.stderr + ready.stdout).toBe(0);
+
+    const escrow = join(box.root, 'escrow');
+    const saved = run(['escrow', escrow]);
+    expect(saved.status, saved.stderr + saved.stdout).toBe(0);
+    expect(saved.stdout + saved.stderr).not.toContain('token-keep-not-logged');
+    expect(saved.stdout + saved.stderr).not.toContain(backup.trim());
+    expectOwner(stub, escrow, boxUser, boxUser, '700');
+    expectOwner(stub, join(escrow, 'token'), boxUser, boxUser, '600');
+    expectOwner(stub, join(escrow, 'nonces.json'), boxUser, boxUser, '600');
+    expectOwner(stub, join(escrow, 'nonces.json.bak'), boxUser, boxUser, '600');
+    expectOwner(stub, join(escrow, 'audit.jsonl'), boxUser, boxUser, '600');
+    expectOwner(stub, join(escrow, 'manifest.json'), boxUser, boxUser, '600');
+    const manifest = JSON.parse(readFileSync(join(escrow, 'manifest.json'), 'utf8')) as {
+      version: number;
+      files: Array<{ name: string; sha256: string; mode: string }>;
+    };
+    expect(manifest.version).toBe(1);
+    expect(manifest.files.map((file) => file.name).sort()).toEqual(['audit.jsonl', 'nonces.json', 'nonces.json.bak', 'token']);
+    for (const file of manifest.files) {
+      expect(file.mode).toBe('600');
+      expect(file.sha256).toBe(createHash('sha256').update(readFileSync(join(escrow, file.name))).digest('hex'));
+    }
+
+    await rm(state, { recursive: true, force: true });
+    await rm(join(box.durable, 'token'), { force: true });
+    const missingFloor = run(['restore', escrow]);
+    expect(missingFloor.status).not.toBe(0);
+    expect(missingFloor.stderr).toMatch(/nonce floor is required/);
+    expect(existsSync(join(box.durable, 'token'))).toBe(false);
+    const restored = run(['restore', escrow, '--min-approval-nonce', '10', '--min-tx-nonce', '43114=10']);
+    expect(restored.status, restored.stderr + restored.stdout).toBe(0);
+    expect(restored.stdout + restored.stderr).not.toContain('token-keep-not-logged');
+    expect(readFileSync(join(box.durable, 'token'), 'utf8')).toBe(token);
+    expect(readFileSync(join(state, 'nonces.json'), 'utf8')).toBe(nonceBody('10'));
+    expect(readFileSync(join(state, 'nonces.json.bak'), 'utf8')).toBe(backup);
+    expect(readFileSync(join(state, 'audit.jsonl'), 'utf8')).toBe(audit);
+    expect(existsSync(join(state, 'nonces.json.restore-tmp'))).toBe(false);
+    expectOwner(stub, box.durable, '0', '0', '755');
+    expectOwner(stub, state, signer, signer, '700');
+    expectOwner(stub, join(box.durable, 'log'), signer, signer, '700');
+    expectOwner(stub, join(box.ephemeral, 'run'), signer, signer, '750');
+    expectOwner(stub, join(box.durable, 'token'), '0', signer, '640');
+    expectOwner(stub, join(state, 'nonces.json'), signer, signer, '600');
+    expectOwner(stub, join(state, 'nonces.json.bak'), signer, signer, '600');
+    expectOwner(stub, join(state, 'audit.jsonl'), signer, signer, '600');
+
+    const tampered = JSON.parse(readFileSync(join(escrow, 'manifest.json'), 'utf8')) as {
+      files: Array<{ name: string; sha256: string }>;
+    };
+    const tokenEntry = tampered.files.find((file) => file.name === 'token');
+    expect(tokenEntry).toBeDefined();
+    tokenEntry!.sha256 = tokenEntry!.sha256.replace(/./, (char) => (char === 'a' ? 'b' : 'a'));
+    await writeFile(join(escrow, 'manifest.json'), `${JSON.stringify(tampered)}\n`);
+    give(box, escrow);
+    await writeFile(join(state, 'nonces.json'), nonceBody('10'));
+    const refused = run(['restore', escrow]);
+    expect(refused.status).not.toBe(0);
+    expect(refused.stderr).toMatch(/hash mismatch/);
+    expect(refused.stdout + refused.stderr).not.toContain('token-keep-not-logged');
+    expect(readFileSync(join(state, 'nonces.json'), 'utf8')).toBe(nonceBody('10'));
+
+    await writeFile(join(escrow, 'manifest.json'), `${JSON.stringify(manifest)}\n`);
+    give(box, escrow);
+    await writeFile(join(state, 'nonces.json'), nonceBody('11'));
+    give(box, state);
+    const rollback = run(['restore', escrow]);
+    expect(rollback.status).not.toBe(0);
+    expect(rollback.stderr).toMatch(/high-water mark/);
+    expect(rollback.stdout + rollback.stderr).not.toMatch(/lastNonce|"11"/);
+    expect(readFileSync(join(state, 'nonces.json'), 'utf8')).toBe(nonceBody('11'));
+
+    await writeFile(join(state, 'nonces.json'), nonceBody('10'));
+    give(box, state);
+    const same = run(['restore', escrow]);
+    expect(same.status, same.stderr + same.stdout).toBe(0);
+    expect(readFileSync(join(state, 'nonces.json'), 'utf8')).toBe(nonceBody('10'));
+    expect(same.stdout + same.stderr).not.toContain('token-keep-not-logged');
+  });
+
+  async function escrowFixture() {
+    const box = await provisionLayout();
+    const signer = '4242';
+    const boxUser = '1000';
+    const stub = join(box.root, 'ownership-stub');
+    await mkdir(stub, { recursive: true });
+    const env = {
+      ...box.env,
+      EVALANCHE_BOX_USER: signer,
+      EVALANCHE_BOX_GROUP: signer,
+      EVALANCHE_BOX_BOX_USER: boxUser,
+      EVALANCHE_BOX_BOX_GROUP: boxUser,
+      EVALANCHE_BOX_OWNERSHIP_STUB: stub,
+    };
+    const run = (args: string[], extra?: Record<string, string>) => spawnSync(script, args, {
+      env: { ...env, ...extra },
+      encoding: 'utf8' as const,
+      timeout: 20_000,
+      ...(box.drop ? { uid: box.drop.uid, gid: box.drop.gid } : {}),
+    });
+    const digest = createHash('sha256').update(readFileSync(box.tarball)).digest('hex');
+    const state = join(box.durable, 'state');
+    await mkdir(state, { recursive: true });
+    const wallet = '0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266';
+    const nonceBody = (last: string, extra: Record<string, unknown> = {}) => `${JSON.stringify({
+      version: 1,
+      startedAt: 1,
+      wallets: { [wallet]: { lastNonce: last, used: [last] } },
+      txNonces: { [wallet]: { '43114': last } },
+      ...extra,
+    })}\n`;
+    const token = 'token-keep-not-logged\n';
+    await writeFile(join(box.durable, 'token'), token, { mode: 0o600 });
+    await writeFile(join(state, 'nonces.json'), nonceBody('10'), { mode: 0o600 });
+    await writeFile(join(state, 'audit.jsonl'), '{"decision":"allow"}\n', { mode: 0o600 });
+    give(box, box.durable);
+    give(box, stub);
+    const ready = run(['provision', box.tarball, digest]);
+    expect(ready.status, ready.stderr + ready.stdout).toBe(0);
+    const escrow = join(box.root, 'escrow');
+    const saved = run(['escrow', escrow]);
+    expect(saved.status, saved.stderr + saved.stdout).toBe(0);
+    expect(saved.stdout + saved.stderr).not.toContain('token-keep-not-logged');
+    return { box, run, state, escrow, wallet, nonceBody, token };
+  }
+
+  async function replaceEscrow(escrow: string, name: string, body: string) {
+    await writeFile(join(escrow, name), body);
+    const manifestPath = join(escrow, 'manifest.json');
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
+      files: Array<{ name: string; sha256: string }>;
+    };
+    const entry = manifest.files.find((file) => file.name === name);
+    expect(entry, name).toBeDefined();
+    entry!.sha256 = createHash('sha256').update(body).digest('hex');
+    await writeFile(manifestPath, `${JSON.stringify(manifest)}\n`);
+  }
+
+  it('requires a nonce floor when the current file is gone and honors separate approval and tx floors', async () => {
+    const { box, run, state, escrow, token } = await escrowFixture();
+    await rm(join(state, 'nonces.json'), { force: true });
+    await rm(join(box.durable, 'token'), { force: true });
+    const missing = run(['restore', escrow]);
+    expect(missing.status).not.toBe(0);
+    expect(missing.stderr).toMatch(/nonce floor is required/);
+    expect(existsSync(join(box.durable, 'token'))).toBe(false);
+
+    const removed = run(['restore', escrow, '--min-nonce', '10']);
+    expect(removed.status).not.toBe(0);
+    expect(removed.stderr).toMatch(/--min-nonce was removed/);
+    expect(existsSync(join(box.durable, 'token'))).toBe(false);
+
+    const low = run(['restore', escrow, '--min-approval-nonce', '11', '--min-tx-nonce', '43114=11']);
+    expect(low.status).not.toBe(0);
+    expect(low.stderr).toMatch(/high-water mark/);
+    expect(low.stdout + low.stderr).not.toMatch(/"11"/);
+    expect(existsSync(join(box.durable, 'token'))).toBe(false);
+
+    const empty = `${JSON.stringify({ version: 1, startedAt: 1, wallets: {} })}\n`;
+    await replaceEscrow(escrow, 'nonces.json', empty);
+    give(box, escrow);
+    const noMark = run(['restore', escrow, '--min-approval-nonce', '1']);
+    expect(noMark.status).not.toBe(0);
+    expect(noMark.stderr).toMatch(/high-water mark/);
+    expect(existsSync(join(state, 'nonces.json'))).toBe(false);
+  });
+
+  it('accepts an outside floor file and refuses one inside the escrow directory', async () => {
+    const fix = await escrowFixture();
+    const floor = join(fix.box.root, 'floor.json');
+    await writeFile(floor, fix.nonceBody('10'));
+    await rm(join(fix.state, 'nonces.json'), { force: true });
+    await rm(join(fix.box.durable, 'token'), { force: true });
+    give(fix.box, floor);
+    const restored = fix.run(['restore', fix.escrow, '--floor', floor]);
+    expect(restored.status, restored.stderr + restored.stdout).toBe(0);
+    expect(readFileSync(join(fix.box.durable, 'token'), 'utf8')).toBe(fix.token);
+    expect(restored.stdout + restored.stderr).not.toContain('token-keep-not-logged');
+
+    await rm(join(fix.state, 'nonces.json'), { force: true });
+    await writeFile(floor, fix.nonceBody('11'));
+    give(fix.box, floor);
+    const higher = fix.run(['restore', fix.escrow, '--floor', floor]);
+    expect(higher.status).not.toBe(0);
+    expect(higher.stderr).toMatch(/high-water mark/);
+    expect(higher.stdout + higher.stderr).not.toMatch(/"11"/);
+    expect(existsSync(join(fix.state, 'nonces.json'))).toBe(false);
+
+    const inside = join(fix.escrow, 'floor.json');
+    await writeFile(inside, fix.nonceBody('10'));
+    give(fix.box, inside);
+    const nested = fix.run(['restore', fix.escrow, '--floor', inside]);
+    expect(nested.status).not.toBe(0);
+    expect(nested.stderr).toMatch(/outside the escrow/);
+    expect(existsSync(join(fix.state, 'nonces.json'))).toBe(false);
+
+    const link = join(fix.box.root, 'floor-link');
+    await symlink(floor, link);
+    give(fix.box, link);
+    const linked = fix.run(['restore', fix.escrow, '--floor', link]);
+    expect(linked.status).not.toBe(0);
+    expect(linked.stderr).toMatch(/symlink/);
+  });
+
+  it('refuses a rollback of used nonces, startedAt, or polymarket order history', async () => {
+    const { box, run, state, escrow, wallet, nonceBody } = await escrowFixture();
+    const usedBody = nonceBody('10', {
+      wallets: { [wallet]: { lastNonce: '10', used: ['10', '9'] } },
+    });
+    await writeFile(join(state, 'nonces.json'), usedBody);
+    give(box, state);
+    const used = run(['restore', escrow]);
+    expect(used.status).not.toBe(0);
+    expect(used.stderr).toMatch(/nonce state/);
+    expect(used.stdout + used.stderr).not.toContain('"9"');
+    expect(readFileSync(join(state, 'nonces.json'), 'utf8')).toBe(usedBody);
+
+    const startedBody = nonceBody('10', { startedAt: 2 });
+    await writeFile(join(state, 'nonces.json'), startedBody);
+    give(box, state);
+    const started = run(['restore', escrow]);
+    expect(started.status).not.toBe(0);
+    expect(started.stderr).toMatch(/nonce state/);
+    expect(started.stdout + started.stderr).not.toMatch(/startedAt/);
+    expect(readFileSync(join(state, 'nonces.json'), 'utf8')).toBe(startedBody);
+
+    const orderBody = nonceBody('10', {
+      polymarketOrders: [{ hash: 'order-hash-keep', salt: '1', at: 5, kind: 'limit', usdMicros: '10' }],
+    });
+    await writeFile(join(state, 'nonces.json'), orderBody);
+    give(box, state);
+    const orders = run(['restore', escrow]);
+    expect(orders.status).not.toBe(0);
+    expect(orders.stderr).toMatch(/nonce state/);
+    expect(orders.stdout + orders.stderr).not.toContain('order-hash-keep');
+    expect(readFileSync(join(state, 'nonces.json'), 'utf8')).toBe(orderBody);
+  });
+
+  it('refuses restore while the signer pid is live or the start lock is held', async () => {
+    const { box, run, state, escrow, token } = await escrowFixture();
+    const tokenPath = join(box.durable, 'token');
+    await writeFile(tokenPath, 'CHANGED\n');
+    const pidfile = join(state, 'signer.pid');
+    await writeFile(pidfile, `${process.pid}\n`);
+    give(box, box.durable);
+    const live = run(['restore', escrow]);
+    expect(live.status).not.toBe(0);
+    expect(live.stderr).toMatch(/signer is running/);
+    expect(readFileSync(tokenPath, 'utf8')).toBe('CHANGED\n');
+
+    const child = spawn('sleep', ['30'], { stdio: 'ignore' });
+    expect(child.pid).toBeGreaterThan(1);
+    extraPids.push(child.pid!);
+    child.kill('SIGKILL');
+    await new Promise((resolve) => child.on('exit', resolve));
+    await writeFile(pidfile, `${child.pid}\n`);
+    give(box, pidfile);
+    const stale = run(['restore', escrow]);
+    expect(stale.status, stale.stderr + stale.stdout).toBe(0);
+    expect(readFileSync(tokenPath, 'utf8')).toBe(token);
+    expect(existsSync(`${tokenPath}.restore-tmp`)).toBe(false);
+
+    await writeFile(tokenPath, 'CHANGED\n');
+    const lock = join(state, 'start.lock');
+    await writeFile(lock, '');
+    give(box, lock);
+    give(box, tokenPath);
+    const holder = spawn('flock', [lock, 'sleep', '30'], { stdio: 'ignore' });
+    expect(holder.pid).toBeGreaterThan(1);
+    extraPids.push(holder.pid!);
+    const held = await new Promise<boolean>((resolve) => {
+      const started = Date.now();
+      const poll = () => {
+        const probe = spawnSync('flock', ['-n', lock, 'true']);
+        if (probe.status !== 0) {
+          resolve(true);
+          return;
+        }
+        if (Date.now() - started > 2000) {
+          resolve(false);
+          return;
+        }
+        setTimeout(poll, 20);
+      };
+      poll();
+    });
+    expect(held).toBe(true);
+    const locked = run(['restore', escrow]);
+    expect(locked.status).not.toBe(0);
+    expect(locked.stderr).toMatch(/start lock is held/);
+    expect(readFileSync(tokenPath, 'utf8')).toBe('CHANGED\n');
+    holder.kill('SIGKILL');
+  });
+
+  it('keeps the live state directory mode and replaces files by rename', async () => {
+    const fix = await escrowFixture();
+    const live = join(fix.box.root, 'live-state');
+    await mkdir(live, { mode: 0o700 });
+    await chmod(live, 0o700);
+    const before = lstatSync(live);
+    const tokenPath = join(fix.box.durable, 'token');
+    const beforeIno = statSync(tokenPath).ino;
+    await writeFile(tokenPath, 'CHANGED\n');
+    give(fix.box, tokenPath);
+    const restored = fix.run(['restore', fix.escrow], { EVALANCHE_BOX_STATE: live });
+    expect(restored.status, restored.stderr + restored.stdout).toBe(0);
+    expect(readFileSync(tokenPath, 'utf8')).toBe(fix.token);
+    expect(statSync(tokenPath).ino).not.toBe(beforeIno);
+    expect(existsSync(`${tokenPath}.restore-tmp`)).toBe(false);
+    const after = lstatSync(live);
+    expect(after.mode & 0o777).toBe(0o700);
+    expect(after.uid).toBe(before.uid);
+    expect(after.ino).toBe(before.ino);
+    expect(after.mode & 0o777).not.toBe(0o755);
+  });
+
+  it('refuses symlink copies for the manifest, source, destination, and temp file', async () => {
+    const fix = await escrowFixture();
+    const outside = join(fix.box.root, 'outside-secret');
+    await writeFile(outside, 'OUTSIDE\n');
+    const manifestLink = join(fix.escrow, 'manifest.json.new');
+    await symlink(outside, manifestLink);
+    give(fix.box, fix.box.root);
+    const manifest = fix.run(['escrow', fix.escrow]);
+    expect(manifest.status).not.toBe(0);
+    expect(manifest.stderr).toMatch(/symlink/);
+    expect(readFileSync(outside, 'utf8')).toBe('OUTSIDE\n');
+    expect(manifest.stdout + manifest.stderr).not.toContain('OUTSIDE');
+
+    await rm(manifestLink, { force: true });
+    await rm(join(fix.escrow, 'token'), { force: true });
+    await symlink(outside, join(fix.escrow, 'token'));
+    give(fix.box, fix.escrow);
+    const source = fix.run(['restore', fix.escrow]);
+    expect(source.status).not.toBe(0);
+    expect(source.stderr).toMatch(/symlink/);
+    expect(readFileSync(outside, 'utf8')).toBe('OUTSIDE\n');
+    expect(readFileSync(join(fix.box.durable, 'token'), 'utf8')).toBe(fix.token);
+
+    await rm(join(fix.escrow, 'token'), { force: true });
+    const saved = fix.run(['escrow', fix.escrow]);
+    expect(saved.status, saved.stderr + saved.stdout).toBe(0);
+    const tokenPath = join(fix.box.durable, 'token');
+    await rm(tokenPath, { force: true });
+    await symlink(outside, tokenPath);
+    give(fix.box, tokenPath);
+    const dest = fix.run(['restore', fix.escrow]);
+    expect(dest.status).not.toBe(0);
+    expect(dest.stderr).toMatch(/symlink/);
+    expect(readFileSync(outside, 'utf8')).toBe('OUTSIDE\n');
+    expect(lstatSync(tokenPath).isSymbolicLink()).toBe(true);
+
+    await rm(tokenPath, { force: true });
+    await writeFile(tokenPath, 'CHANGED\n');
+    await symlink(outside, `${tokenPath}.restore-tmp`);
+    give(fix.box, fix.box.durable);
+    const temp = fix.run(['restore', fix.escrow]);
+    expect(temp.status).not.toBe(0);
+    expect(temp.stderr).toMatch(/symlink/);
+    expect(readFileSync(outside, 'utf8')).toBe('OUTSIDE\n');
+    expect(readFileSync(tokenPath, 'utf8')).toBe('CHANGED\n');
+  });
+
+  it('refuses .., a symlinked parent, and the live signer state path', async () => {
+    const { box, run } = await escrowFixture();
+    const tricky = `${box.root}/nested/../escaped`;
+    const traversed = run(['escrow', tricky]);
+    expect(traversed.status).not.toBe(0);
+    expect(traversed.stderr).toMatch(/\.\./);
+    expect(traversed.stdout).not.toMatch(/escrowed/);
+    expect(existsSync(join(box.root, 'escaped'))).toBe(false);
+    expect(existsSync(join(box.root, 'nested'))).toBe(false);
+
+    const real = join(box.root, 'real-parent');
+    const link = join(box.root, 'linked-parent');
+    await mkdir(real);
+    await symlink(real, link);
+    give(box, box.root);
+    const linked = run(['escrow', join(link, 'escrow')]);
+    expect(linked.status).not.toBe(0);
+    expect(linked.stderr).toMatch(/symlink/);
+    expect(readdirSync(real)).toEqual([]);
+
+    const live = '/var/lib/evalanche-signer/state';
+    const before = existsSync(live) ? lstatSync(live) : undefined;
+    const attacked = run(['escrow', '/home/../var/lib/evalanche-signer/state']);
+    expect(attacked.status).not.toBe(0);
+    expect(attacked.stdout).not.toMatch(/escrowed/);
+    expect(attacked.stderr).toMatch(/\.\.|signer install/);
+    if (before) {
+      const after = lstatSync(live);
+      expect(after.ino).toBe(before.ino);
+      expect(after.mtimeMs).toBe(before.mtimeMs);
+      expect(after.mode).toBe(before.mode);
+    }
+  });
+
+  it('round-trips escrow and restore through a symlinked agent-data directory', async () => {
+    const fix = await escrowFixture();
+    const agentData = join(fix.box.root, 'home', 'box', 'agent-data');
+    const realAgent = join(fix.box.root, 'real-agent-data');
+    await rename(agentData, realAgent);
+    await symlink(realAgent, agentData);
+    give(fix.box, fix.box.root);
+    give(fix.box, realAgent);
+    const again = fix.run(['escrow', fix.escrow]);
+    expect(again.status, again.stderr + again.stdout).toBe(0);
+    expect(again.stdout).toMatch(/escrowed signer state/);
+
+    const tokenPath = join(agentData, 'evalanche-persist', 'token');
+    const noncePath = join(agentData, 'evalanche-persist', 'state', 'nonces.json');
+    const auditPath = join(agentData, 'evalanche-persist', 'state', 'audit.jsonl');
+    await rm(tokenPath, { force: true });
+    await rm(noncePath, { force: true });
+    const restored = fix.run([
+      'restore', fix.escrow,
+      '--min-approval-nonce', '10',
+      '--min-tx-nonce', '43114=10',
+    ]);
+    expect(restored.status, restored.stderr + restored.stdout).toBe(0);
+    expect(restored.stdout).toMatch(/restored signer state/);
+    expect(readFileSync(tokenPath, 'utf8')).toBe(fix.token);
+    expect(readFileSync(noncePath, 'utf8')).toContain('"lastNonce":"10"');
+    expect(readFileSync(auditPath, 'utf8')).toContain('"decision":"allow"');
+    expect(restored.stdout + restored.stderr).not.toContain('token-keep-not-logged');
+
+    const stateLink = join(realAgent, 'evalanche-persist', 'state');
+    const stateReal = join(realAgent, 'evalanche-persist', 'state-real');
+    await rename(stateLink, stateReal);
+    await symlink(stateReal, stateLink);
+    give(fix.box, realAgent);
+    const before = readFileSync(join(stateReal, 'nonces.json'), 'utf8');
+    const inside = fix.run(['escrow', fix.escrow]);
+    expect(inside.status).not.toBe(0);
+    expect(inside.stderr).toMatch(/symlink/);
+    expect(readFileSync(join(stateReal, 'nonces.json'), 'utf8')).toBe(before);
+    expect(inside.stdout + inside.stderr).not.toContain('token-keep-not-logged');
+  });
+
+  it('keeps an approval floor off the transaction nonce', async () => {
+    const fix = await escrowFixture();
+    const body = `${JSON.stringify({
+      version: 1,
+      startedAt: 1,
+      wallets: { [fix.wallet]: { lastNonce: '1790000000000000', used: ['1790000000000000'] } },
+      txNonces: { [fix.wallet]: { '43114': '208' } },
+    })}\n`;
+    await replaceEscrow(fix.escrow, 'nonces.json', body);
+    give(fix.box, fix.escrow);
+    await rm(join(fix.state, 'nonces.json'), { force: true });
+    await rm(join(fix.box.durable, 'token'), { force: true });
+
+    const approvalOnly = fix.run(['restore', fix.escrow, '--min-approval-nonce', '1790000000000000']);
+    expect(approvalOnly.status).not.toBe(0);
+    expect(approvalOnly.stderr).toMatch(/nonce floor is required/);
+    expect(approvalOnly.stdout + approvalOnly.stderr).not.toMatch(/1790000000000000|208/);
+    expect(existsSync(join(fix.box.durable, 'token'))).toBe(false);
+
+    const txHigh = fix.run([
+      'restore', fix.escrow,
+      '--min-approval-nonce', '1790000000000000',
+      '--min-tx-nonce', '43114=209',
+    ]);
+    expect(txHigh.status).not.toBe(0);
+    expect(txHigh.stderr).toMatch(/high-water mark/);
+    expect(txHigh.stdout + txHigh.stderr).not.toMatch(/1790000000000000|"208"|"209"/);
+    expect(existsSync(join(fix.state, 'nonces.json'))).toBe(false);
+
+    const approvalHigh = fix.run([
+      'restore', fix.escrow,
+      '--min-approval-nonce', '1790000000000001',
+      '--min-tx-nonce', '43114=208',
+    ]);
+    expect(approvalHigh.status).not.toBe(0);
+    expect(approvalHigh.stderr).toMatch(/high-water mark/);
+    expect(approvalHigh.stdout + approvalHigh.stderr).not.toMatch(/1790000000000001/);
+    expect(existsSync(join(fix.state, 'nonces.json'))).toBe(false);
+
+    const restored = fix.run([
+      'restore', fix.escrow,
+      '--min-approval-nonce', '1790000000000000',
+      '--min-tx-nonce', '43114=208',
+    ]);
+    expect(restored.status, restored.stderr + restored.stdout).toBe(0);
+    expect(readFileSync(join(fix.state, 'nonces.json'), 'utf8')).toBe(body);
+    expect(readFileSync(join(fix.box.durable, 'token'), 'utf8')).toBe(fix.token);
+    expect(restored.stdout + restored.stderr).not.toMatch(/1790000000000000|token-keep-not-logged/);
+  });
+
+  it('rejects a floor file that is not a nonce state file', async () => {
+    const fix = await escrowFixture();
+    const floor = join(fix.box.root, 'floor.json');
+    const tokenPath = join(fix.box.durable, 'token');
+    const cases = [
+      {},
+      { highWater: '1' },
+      { version: 1, wallets: { [fix.wallet]: { lastNonce: '10', used: ['10'] } } },
+      { version: 1, startedAt: 1 },
+      { version: 1, startedAt: 1, wallets: [] },
+      { version: 1, startedAt: '1', wallets: {} },
+      { version: 1, startedAt: 1, wallets: { [fix.wallet]: { lastNonce: 10, used: [] } } },
+      { version: 1, startedAt: 1, wallets: {} },
+    ];
+    for (const body of cases) {
+      await writeFile(tokenPath, 'CHANGED\n');
+      await writeFile(floor, `${JSON.stringify(body)}\n`);
+      give(fix.box, floor);
+      give(fix.box, tokenPath);
+      const refused = fix.run(['restore', fix.escrow, '--floor', floor]);
+      expect(refused.status, JSON.stringify(body)).not.toBe(0);
+      expect(refused.stderr, JSON.stringify(body)).toMatch(/nonce floor is not a nonce state file/);
+      expect(refused.stdout + refused.stderr, JSON.stringify(body)).not.toMatch(/highWater|lastNonce|startedAt/);
+      expect(readFileSync(tokenPath, 'utf8')).toBe('CHANGED\n');
+    }
+  });
+
+  it('refuses a fifo without opening it and replaces a stale restore temp', async () => {
+    const fix = await escrowFixture();
+    const tokenPath = join(fix.box.durable, 'token');
+    await rm(tokenPath, { force: true });
+    const made = spawnSync('mkfifo', [tokenPath]);
+    expect(made.status, made.stderr?.toString()).toBe(0);
+    give(fix.box, tokenPath);
+    const started = Date.now();
+    const refused = fix.run(['escrow', fix.escrow]);
+    expect(Date.now() - started).toBeLessThan(5000);
+    expect(refused.status).not.toBe(0);
+    expect(refused.stderr).toMatch(/non-regular file/);
+    expect(refused.stdout + refused.stderr).not.toContain('token-keep-not-logged');
+
+    await rm(tokenPath, { force: true });
+    await writeFile(tokenPath, 'CHANGED\n');
+    await writeFile(`${tokenPath}.restore-tmp`, 'stale-temp\n');
+    give(fix.box, fix.box.durable);
+    const restored = fix.run(['restore', fix.escrow]);
+    expect(restored.status, restored.stderr + restored.stdout).toBe(0);
+    expect(readFileSync(tokenPath, 'utf8')).toBe(fix.token);
+    expect(existsSync(`${tokenPath}.restore-tmp`)).toBe(false);
+    expect(restored.stdout + restored.stderr).not.toContain('stale-temp');
+  });
+
+  it('treats a held nonce lock as a running signer', async () => {
+    const fix = await escrowFixture();
+    const tokenPath = join(fix.box.durable, 'token');
+    await writeFile(tokenPath, 'CHANGED\n');
+    const lock = join(fix.state, 'nonces.json.lock');
+    await writeFile(lock, '');
+    give(fix.box, fix.box.durable);
+    const holder = spawn('flock', [lock, 'sleep', '30'], { stdio: 'ignore', detached: true });
+    expect(holder.pid).toBeGreaterThan(1);
+    extraPids.push(holder.pid!);
+    const held = await new Promise<boolean>((resolve) => {
+      const started = Date.now();
+      const poll = () => {
+        const probe = spawnSync('flock', ['-n', lock, 'true']);
+        if (probe.status !== 0) {
+          resolve(true);
+          return;
+        }
+        if (Date.now() - started > 2000) {
+          resolve(false);
+          return;
+        }
+        setTimeout(poll, 20);
+      };
+      poll();
+    });
+    expect(held).toBe(true);
+    const locked = fix.run(['restore', fix.escrow]);
+    expect(locked.status).not.toBe(0);
+    expect(locked.stderr).toMatch(/nonce lock is held/);
+    expect(readFileSync(tokenPath, 'utf8')).toBe('CHANGED\n');
+    await new Promise((resolve) => {
+      holder.once('exit', resolve);
+      try { process.kill(-holder.pid!, 'SIGKILL'); } catch { resolve(); }
+    });
+
+    const other = join(fix.box.root, 'other-nonces.json');
+    const otherLock = `${other}.lock`;
+    await writeFile(other, fix.nonceBody('10'));
+    await writeFile(otherLock, '');
+    give(fix.box, otherLock);
+    const otherHolder = spawn('flock', [otherLock, 'sleep', '30'], { stdio: 'ignore', detached: true });
+    expect(otherHolder.pid).toBeGreaterThan(1);
+    extraPids.push(otherHolder.pid!);
+    const otherHeld = await new Promise<boolean>((resolve) => {
+      const started = Date.now();
+      const poll = () => {
+        const probe = spawnSync('flock', ['-n', otherLock, 'true']);
+        if (probe.status !== 0) {
+          resolve(true);
+          return;
+        }
+        if (Date.now() - started > 2000) {
+          resolve(false);
+          return;
+        }
+        setTimeout(poll, 20);
+      };
+      poll();
+    });
+    expect(otherHeld).toBe(true);
+    const otherLocked = fix.run(['restore', fix.escrow], { EVALANCHE_BOX_NONCE: other });
+    expect(otherLocked.status).not.toBe(0);
+    expect(otherLocked.stderr).toMatch(/nonce lock is held/);
+    expect(readFileSync(tokenPath, 'utf8')).toBe('CHANGED\n');
+    await new Promise((resolve) => {
+      otherHolder.once('exit', resolve);
+      try { process.kill(-otherHolder.pid!, 'SIGKILL'); } catch { resolve(); }
+    });
+
+    const unlocked = fix.run(['restore', fix.escrow]);
+    expect(unlocked.status, unlocked.stderr + unlocked.stdout).toBe(0);
+    expect(readFileSync(tokenPath, 'utf8')).toBe(fix.token);
+    expect(existsSync(lock)).toBe(true);
+  });
+
+  it('refuses an audit log that is shorter or older than the current one', async () => {
+    const fix = await escrowFixture();
+    const current = '{"prevHash":"aa","timestamp":"2026-10-21T00:00:00.000Z","decision":"allow"}\n{"prevHash":"bb","timestamp":"2026-10-21T01:00:00.000Z","decision":"allow"}\n';
+    const auditPath = join(fix.state, 'audit.jsonl');
+    const tokenPath = join(fix.box.durable, 'token');
+    await writeFile(auditPath, current);
+    await writeFile(tokenPath, 'CHANGED\n');
+    give(fix.box, fix.state);
+    give(fix.box, tokenPath);
+
+    const shorter = '{"prevHash":"cc","timestamp":"2026-10-21T02:00:00.000Z","decision":"allow"}\n';
+    await replaceEscrow(fix.escrow, 'audit.jsonl', shorter);
+    give(fix.box, fix.escrow);
+    const short = fix.run(['restore', fix.escrow]);
+    expect(short.status).not.toBe(0);
+    expect(short.stderr).toMatch(/shorter than the current one/);
+    expect(short.stdout + short.stderr).not.toContain('2026-10-21');
+    expect(readFileSync(auditPath, 'utf8')).toBe(current);
+    expect(readFileSync(tokenPath, 'utf8')).toBe('CHANGED\n');
+
+    const older = `${current}{"prevHash":"dd","timestamp":"2026-10-20T00:00:00.000Z","decision":"allow"}\n`;
+    await replaceEscrow(fix.escrow, 'audit.jsonl', older);
+    give(fix.box, fix.escrow);
+    const old = fix.run(['restore', fix.escrow]);
+    expect(old.status).not.toBe(0);
+    expect(old.stderr).toMatch(/older than the current one/);
+    expect(old.stdout + old.stderr).not.toContain('2026-10-20');
+    expect(readFileSync(auditPath, 'utf8')).toBe(current);
+    expect(readFileSync(tokenPath, 'utf8')).toBe('CHANGED\n');
+
+    const manifestPath = join(fix.escrow, 'manifest.json');
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
+      files: Array<{ name: string; sha256: string }>;
+    };
+    manifest.files = manifest.files.filter((file) => file.name !== 'audit.jsonl');
+    await writeFile(manifestPath, `${JSON.stringify(manifest)}\n`);
+    await rm(join(fix.escrow, 'audit.jsonl'), { force: true });
+    give(fix.box, fix.escrow);
+    const missing = fix.run(['restore', fix.escrow]);
+    expect(missing.status).not.toBe(0);
+    expect(missing.stderr).toMatch(/shorter than the current one/);
+    expect(readFileSync(auditPath, 'utf8')).toBe(current);
+    expect(readFileSync(tokenPath, 'utf8')).toBe('CHANGED\n');
   });
 });
 
@@ -1060,6 +1835,135 @@ printf '%s\\n' 'root-ignores-tarball-env'
       : ['sudo', '-n', 'unshare', '--mount', 'bash', file];
     const result = spawnSync(cmd[0]!, cmd.slice(1), { encoding: 'utf8', timeout: 120_000 });
     expect(`${result.stdout}\n${result.stderr}`, result.stderr).toContain('root-ignores-tarball-env');
+    expect(result.status, result.stderr).toBe(0);
+    await rm(file, { force: true });
+    await rm(signerHome, { recursive: true, force: true });
+  }, 120_000);
+});
+
+const REQUIRE_ROOT_RESTORE = process.env.EVALANCHE_REQUIRE_ROOT_RESTORE === '1';
+
+describe.skipIf(!REQUIRE_ROOT_RESTORE && (!DESTRUCTIVE || !canEnterMountNamespace()))('grok-bot signer root restore', () => {
+  it('creates a missing evalanche-signer user and does not chmod the live state dir', async () => {
+    if (!canEnterMountNamespace()) {
+      throw new Error('root restore test did not run');
+    }
+    const scriptBody = `#!/bin/bash
+set -eu
+fake=$(mktemp -d)
+cleanup() {
+  umount /var /home /opt /etc 2>/dev/null || true
+  umount "$fake/node" 2>/dev/null || true
+  rm -rf "$fake"
+}
+trap cleanup EXIT
+mkdir -p "$fake/etc" "$fake/home" "$fake/opt" "$fake/var" "$fake/bin"
+nodebin="$NODE"
+nodedir=$(dirname "$(readlink -f "$nodebin")")
+case "$nodebin" in
+  /home/*|/opt/*|/var/*|/etc/*)
+    mkdir -p "$fake/node"
+    mount --bind "$nodedir" "$fake/node"
+    nodedir="$fake/node"
+    ;;
+esac
+cp -a /etc/. "$fake/etc/"
+mount --bind "$fake/etc" /etc
+mount --bind "$fake/home" /home
+mount --bind "$fake/opt" /opt
+mount --bind "$fake/var" /var
+export PATH="/usr/sbin:/usr/bin:/sbin:/bin:$fake/bin:$nodedir"
+if id evalanche-signer >/dev/null 2>&1; then
+  userdel evalanche-signer || true
+fi
+if getent group evalanche-signer >/dev/null 2>&1; then
+  groupdel evalanche-signer || true
+fi
+if ! id box >/dev/null 2>&1; then
+  useradd --system --create-home --home-dir /home/box --shell /bin/false box
+fi
+mkdir -p /home/box/agent-data
+persist=/home/box/agent-data/evalanche-persist
+mkdir -p "$persist/state" /var/lib/evalanche-signer/state
+printf '%s\\n' 'token-keep-not-logged' > "$persist/token"
+printf '%s\\n' '{"version":1,"startedAt":1,"wallets":{"0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266":{"lastNonce":"42","used":["42"]}},"txNonces":{"0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266":{"43114":"42"}}}' > /var/lib/evalanche-signer/state/nonces.json
+printf '%s\\n' '{"decision":"allow"}' > /var/lib/evalanche-signer/state/audit.jsonl
+export EVALANCHE_BOX_DURABLE=/tmp/decoy-durable
+export EVALANCHE_BOX_STATE=/tmp/decoy-state
+export EVALANCHE_BOX_USER=not-a-signer
+"$SCRIPT" escrow /home/box/agent-data/evalanche-escrow
+test -f /home/box/agent-data/evalanche-escrow/manifest.json
+test -f /home/box/agent-data/evalanche-escrow/audit.jsonl
+test ! -e /tmp/decoy-durable
+rm -f /var/lib/evalanche-signer/state/nonces.json /var/lib/evalanche-signer/state/audit.jsonl
+rm -f "$persist/state/nonces.json"
+if id evalanche-signer >/dev/null 2>&1; then
+  echo 'signer user existed before restore' >&2
+  exit 1
+fi
+chown 1000:1000 /var/lib/evalanche-signer/state
+chmod 0700 /var/lib/evalanche-signer/state
+before_uid=$(stat -c %u /var/lib/evalanche-signer/state)
+before_mode=$(stat -c %a /var/lib/evalanche-signer/state)
+before_ino=$(stat -c %i /var/lib/evalanche-signer/state)
+set +e
+no_floor=$("$SCRIPT" restore /home/box/agent-data/evalanche-escrow 2>&1)
+no_rc=$?
+set -e
+test "$no_rc" -ne 0
+printf '%s\\n' "$no_floor" | grep -q 'nonce floor is required'
+if printf '%s\\n' "$no_floor" | grep -q 'token-keep-not-logged'; then
+  echo 'token leaked' >&2
+  exit 1
+fi
+if id evalanche-signer >/dev/null 2>&1; then
+  echo 'signer user created by a refused restore' >&2
+  exit 1
+fi
+test "$(stat -c %u /var/lib/evalanche-signer/state)" = "$before_uid"
+test "$(stat -c %a /var/lib/evalanche-signer/state)" = "$before_mode"
+test "$(stat -c %i /var/lib/evalanche-signer/state)" = "$before_ino"
+restored=$("$SCRIPT" restore /home/box/agent-data/evalanche-escrow --min-approval-nonce 42 --min-tx-nonce 43114=42 2>&1)
+printf '%s\\n' "$restored" | grep -q 'restored signer state'
+if printf '%s\\n' "$restored" | grep -q 'token-keep-not-logged'; then
+  echo 'token leaked' >&2
+  exit 1
+fi
+uid=$(id -u evalanche-signer)
+test "$uid" -ge 100
+test "$uid" -le 999
+test "$(id -un evalanche-signer)" = evalanche-signer
+gid=$(id -g evalanche-signer)
+test "$(stat -c %u "$persist/state")" = "$uid"
+test "$(stat -c %a "$persist/state")" = 700
+test "$(stat -c %u "$persist/state/nonces.json")" = "$uid"
+test "$(stat -c %a "$persist/state/nonces.json")" = 600
+test "$(stat -c %u "$persist/state/audit.jsonl")" = "$uid"
+test "$(stat -c %a "$persist/state/audit.jsonl")" = 600
+test "$(stat -c %u "$persist/token")" = 0
+test "$(stat -c %g "$persist/token")" = "$gid"
+test "$(stat -c %a "$persist/token")" = 640
+test "$(stat -c %u /var/lib/evalanche-signer/state)" = 1000
+test "$(stat -c %a /var/lib/evalanche-signer/state)" = 700
+test "$(stat -c %i /var/lib/evalanche-signer/state)" = "$before_ino"
+test ! -e /var/lib/evalanche-signer/state/nonces.json
+test ! -e /var/lib/evalanche-signer/state/audit.jsonl
+grep -q '"lastNonce":"42"' "$persist/state/nonces.json"
+test ! -e /tmp/decoy-state
+printf '%s\\n' 'root-restore-ok'
+`;
+    const file = join(tmpdir(), `gbs-root-restore-${process.pid}.sh`);
+    const signerHome = join(tmpdir(), `gbs-root-restore-src-${process.pid}`);
+    const signerCopy = join(signerHome, 'scripts', 'grok-bot-signer.sh');
+    await mkdir(join(signerHome, 'scripts'), { recursive: true });
+    await copyFile(script, signerCopy);
+    await chmod(signerCopy, 0o755);
+    await writeFile(file, scriptBody.replaceAll('$SCRIPT', signerCopy).replaceAll('$NODE', process.execPath), { mode: 0o755 });
+    const cmd = (process.getuid?.() ?? -1) === 0
+      ? ['unshare', '--mount', 'bash', file]
+      : ['sudo', '-n', 'unshare', '--mount', 'bash', file];
+    const result = spawnSync(cmd[0]!, cmd.slice(1), { encoding: 'utf8', timeout: 120_000 });
+    expect(`${result.stdout}\n${result.stderr}`, result.stderr).toContain('root-restore-ok');
     expect(result.status, result.stderr).toBe(0);
     await rm(file, { force: true });
     await rm(signerHome, { recursive: true, force: true });

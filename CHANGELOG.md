@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.17.0-rc.7
+
+- Release candidate. Provision `evalanche-1.17.0-rc.7.tgz` as a new pin. Leave `evalanche-1.17.0-rc.1.tgz`, `evalanche-1.17.0-rc.2.tgz`, `evalanche-1.17.0-rc.3.tgz`, `evalanche-1.17.0-rc.4.tgz`, `evalanche-1.17.0-rc.5.tgz`, and `evalanche-1.17.0-rc.6.tgz` in place. Provisioning again under one of those filenames would overwrite a rollback pin.
+- Restore resolves each configured signer directory once. A symlink is allowed only when its target is a strict ancestor of one of those directories, so a symlinked `/home/box/agent-data` can reach the signer root. A symlink inside that resolved root, and any symlink in the escrow directory, is still refused.
+- `--min-approval-nonce` applies only to wallet `lastNonce`. Repeatable `--min-tx-nonce CHAIN=N` applies only to that chain's transaction nonce. `--min-nonce` is removed. A missing floor is still refused.
+- `--floor` must be a nonce state file with version 1, a numeric `startedAt`, a `wallets` object, decimal nonce strings, and at least one approval or transaction nonce. `{}` is refused.
+- Restore reads the manifest and each source once from an `O_NOFOLLOW` descriptor, then checks and writes those same bytes.
+- A held `nonces.json.lock` is treated as a running signer. An audit log that is shorter or older than the current one is refused. FIFOs and other non-regular files are refused. A stale regular `*.restore-tmp` is replaced.
+- The root restore test runs in CI. The job fails if that test is skipped.
+
+## 1.17.0-rc.6
+
+- Release candidate. Provision `evalanche-1.17.0-rc.6.tgz` as a new pin. Leave `evalanche-1.17.0-rc.1.tgz`, `evalanche-1.17.0-rc.2.tgz`, `evalanche-1.17.0-rc.3.tgz`, `evalanche-1.17.0-rc.4.tgz`, and `evalanche-1.17.0-rc.5.tgz` in place. Provisioning again under one of those filenames would overwrite a rollback pin.
+- `restore` creates the `evalanche-signer` user when that account is missing, so a restore after a reset can run before `provision`. The order is escrow, then restore, then provision, then start.
+- A restore with no current nonce file requires `--min-nonce N` and/or `--floor PATH`. The floor file is a nonce snapshot stored outside the escrow directory. The restore is refused when neither the current file nor a floor is available. When the current file exists, it is a floor, and an explicit `--min-nonce` or `--floor` is also enforced. The compare covers `startedAt`, each wallet `lastNonce`, `used[]`, transaction nonces, and Polymarket order history.
+- The sha256 manifest detects accidental corruption. It lives in the same box-writable directory as the copies, so it is not a tamper seal.
+- `restore` refuses a live signer pid and a held start lock. Copies are atomic: a temp file in the destination directory, fsync, rename, then fsync the directory. The live state directory is not changed to root mode `0755`. `audit.jsonl` is escrowed when it is present. Paths containing `..`, a symlinked parent, or a resolved path under the signer install, including `/var/lib/evalanche-signer`, are refused. Manifest and file bytes are opened with `O_NOFOLLOW`.
+
+## 1.17.0-rc.5
+
+- Release candidate. The live box is 1.17.0-rc.2 at `a55e307` (`a55e3075688be09431cec97acb5e7e7365abdd14`). Provision `evalanche-1.17.0-rc.5.tgz` as a new pin. Leave `evalanche-1.17.0-rc.1.tgz`, `evalanche-1.17.0-rc.2.tgz`, `evalanche-1.17.0-rc.3.tgz`, and `evalanche-1.17.0-rc.4.tgz` in place. Provisioning again under one of those filenames would overwrite a rollback pin.
+- `provision` records the owner and mode for each state file on that call. After it claims the root-owned `start.lock`, later files no longer inherit root. `audit.jsonl`, `nonces.json`, and the other state files stay `evalanche-signer` mode `0600`. `start.lock` and `signer.pid` stay root mode `0600`. A second provision with the lock still present does not change those owners.
+- `escrow <dir>` and `restore <dir>` are opt-in and are not run by `provision` or `start`. `escrow` copies the bearer token, the nonce high-water mark, and `nonces.json.bak` backups into a box-owned directory (mode `0700`, files `0600`) and writes a sha256 manifest. `restore` checks the manifest, recreates the signer directories with their owners and modes, and refuses a nonce high-water mark below the current one. It does not log the token or the nonce file.
+
 ## 1.17.0-rc.4
 
 - Release candidate. The live box is 1.17.0-rc.2 at `a55e307` (`a55e3075688be09431cec97acb5e7e7365abdd14`). Provision `evalanche-1.17.0-rc.4.tgz` as a new pin. Leave `evalanche-1.17.0-rc.1.tgz`, `evalanche-1.17.0-rc.2.tgz`, and `evalanche-1.17.0-rc.3.tgz` in place. Provisioning again under one of those filenames would overwrite a rollback pin.
