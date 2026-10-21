@@ -634,7 +634,7 @@ chmod 755 "$prefix/node_modules/.bin/evalanche-signer"
     const missing = run(['provision', '', digest]);
     expect(missing.status).not.toBe(0);
     expect(`${missing.stderr}`).toMatch(/installed tree is not used/);
-    expect(`${missing.stderr}`).not.toMatch(/1\.17\.0-rc\.4/);
+    expect(`${missing.stderr}`).not.toMatch(/1\.17\.0-rc\.5/);
     expect(existsSync(box.npmLog)).toBe(false);
 
     await mkdir(box.durable, { recursive: true });
@@ -644,7 +644,7 @@ chmod 755 "$prefix/node_modules/.bin/evalanche-signer"
     const ready = run(['provision', '', digest]);
     expect(ready.status, ready.stderr).toBe(0);
     expect(existsSync(pinned)).toBe(true);
-    expect(existsSync(join(box.durable, 'evalanche-1.17.0-rc.4.tgz'))).toBe(false);
+    expect(existsSync(join(box.durable, 'evalanche-1.17.0-rc.5.tgz'))).toBe(false);
     expect(existsSync(join(box.prefix, 'dist/signer/cli.mjs'))).toBe(true);
   });
 
@@ -720,6 +720,188 @@ chmod 755 "$prefix/node_modules/.bin/evalanche-signer"
     expect(existsSync(box.npmLog)).toBe(false);
     expect(existsSync(join(box.durable, 'evalanche-9.9.9.tgz'))).toBe(false);
     expect(existsSync(join(box.prefix, 'dist/signer/cli.mjs'))).toBe(false);
+  });
+
+  function recordedOwner(stub: string, path: string): { uid: string; gid: string; mode: string } {
+    const text = readFileSync(join(stub, 'owners.tsv'), 'utf8');
+    let found: { uid: string; gid: string; mode: string } | undefined;
+    for (const line of text.split('\n')) {
+      if (!line) continue;
+      const [name, uid, gid, mode] = line.split('\t');
+      if (name === path) found = { uid: uid ?? '', gid: gid ?? '', mode: mode ?? '' };
+    }
+    if (!found) throw new Error(`no recorded owner for ${path}`);
+    return found;
+  }
+
+  function expectOwner(stub: string, path: string, uid: string, gid: string, mode: string) {
+    const recorded = recordedOwner(stub, path);
+    expect(recorded, path).toEqual({ uid, gid, mode });
+    expect(statSync(path).mode & 0o777, path).toBe(Number.parseInt(mode, 8));
+  }
+
+  it('keeps each state file owner on a second provision while the start lock exists', async () => {
+    const box = await provisionLayout();
+    const signer = '4242';
+    const stub = join(box.root, 'ownership-stub');
+    await mkdir(stub, { recursive: true });
+    const env = {
+      ...box.env,
+      EVALANCHE_BOX_USER: signer,
+      EVALANCHE_BOX_GROUP: signer,
+      EVALANCHE_BOX_OWNERSHIP_STUB: stub,
+    };
+    const run = (args: string[]) => spawnSync(script, args, {
+      env,
+      encoding: 'utf8',
+      timeout: 20_000,
+      ...(box.drop ? { uid: box.drop.uid, gid: box.drop.gid } : {}),
+    });
+    const state = join(box.durable, 'state');
+    await mkdir(join(state, 'extra'), { recursive: true });
+    const nonce = `${JSON.stringify({
+      version: 1,
+      startedAt: 1,
+      wallets: { '0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266': { lastNonce: '42', used: ['42'] } },
+    })}\n`;
+    await writeFile(join(state, 'nonces.json'), nonce, { mode: 0o644 });
+    await writeFile(join(state, 'nonces.json.bak'), nonce, { mode: 0o644 });
+    await writeFile(join(state, 'audit.jsonl'), '{"decision":"allow"}\n', { mode: 0o644 });
+    await writeFile(join(state, 'start.lock'), '', { mode: 0o644 });
+    await writeFile(join(state, 'signer.pid'), '1\n', { mode: 0o644 });
+    await writeFile(join(state, 'extra', 'keep.json'), '{}\n', { mode: 0o644 });
+    await writeFile(join(box.durable, 'token'), 'token-keep-not-logged\n', { mode: 0o644 });
+    give(box, box.durable);
+    give(box, stub);
+    const digest = createHash('sha256').update(readFileSync(box.tarball)).digest('hex');
+    const first = run(['provision', box.tarball, digest]);
+    expect(first.status, first.stderr + first.stdout).toBe(0);
+    await rm(box.prefix, { recursive: true, force: true });
+    await rm(box.ephemeral, { recursive: true, force: true });
+    await rm(box.etc, { recursive: true, force: true });
+    const second = run(['provision', box.tarball, digest]);
+    expect(second.status, second.stderr + second.stdout).toBe(0);
+    expect(second.stdout + second.stderr).not.toContain('token-keep-not-logged');
+    expectOwner(stub, join(state, 'start.lock'), '0', '0', '600');
+    expectOwner(stub, join(state, 'signer.pid'), '0', '0', '600');
+    expectOwner(stub, join(state, 'audit.jsonl'), signer, signer, '600');
+    expectOwner(stub, join(state, 'nonces.json'), signer, signer, '600');
+    expectOwner(stub, join(state, 'nonces.json.bak'), signer, signer, '600');
+    expectOwner(stub, join(state, 'extra'), signer, signer, '700');
+    expectOwner(stub, join(state, 'extra', 'keep.json'), signer, signer, '600');
+    expectOwner(stub, state, signer, signer, '700');
+    expect(readFileSync(join(state, 'nonces.json'), 'utf8')).toBe(nonce);
+    expect(readFileSync(join(state, 'audit.jsonl'), 'utf8')).toBe('{"decision":"allow"}\n');
+  });
+
+  it('escrows and restores the token, nonce high-water mark, and backups', async () => {
+    const box = await provisionLayout();
+    const signer = '4242';
+    const boxUser = '1000';
+    const stub = join(box.root, 'ownership-stub');
+    await mkdir(stub, { recursive: true });
+    const env = {
+      ...box.env,
+      EVALANCHE_BOX_USER: signer,
+      EVALANCHE_BOX_GROUP: signer,
+      EVALANCHE_BOX_BOX_USER: boxUser,
+      EVALANCHE_BOX_BOX_GROUP: boxUser,
+      EVALANCHE_BOX_OWNERSHIP_STUB: stub,
+    };
+    const run = (args: string[]) => spawnSync(script, args, {
+      env,
+      encoding: 'utf8',
+      timeout: 20_000,
+      ...(box.drop ? { uid: box.drop.uid, gid: box.drop.gid } : {}),
+    });
+    const digest = createHash('sha256').update(readFileSync(box.tarball)).digest('hex');
+    const state = join(box.durable, 'state');
+    await mkdir(state, { recursive: true });
+    const wallet = '0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266';
+    const nonceBody = (last: string) => `${JSON.stringify({
+      version: 1,
+      startedAt: 1,
+      wallets: { [wallet]: { lastNonce: last, used: [last] } },
+      txNonces: { [wallet]: { '43114': last } },
+    })}\n`;
+    const token = 'token-keep-not-logged\n';
+    const backup = 'nonce-backup-keep\n';
+    await writeFile(join(box.durable, 'token'), token, { mode: 0o600 });
+    await writeFile(join(state, 'nonces.json'), nonceBody('10'), { mode: 0o600 });
+    await writeFile(join(state, 'nonces.json.bak'), backup, { mode: 0o600 });
+    give(box, box.durable);
+    give(box, stub);
+    const ready = run(['provision', box.tarball, digest]);
+    expect(ready.status, ready.stderr + ready.stdout).toBe(0);
+
+    const escrow = join(box.root, 'escrow');
+    const saved = run(['escrow', escrow]);
+    expect(saved.status, saved.stderr + saved.stdout).toBe(0);
+    expect(saved.stdout + saved.stderr).not.toContain('token-keep-not-logged');
+    expect(saved.stdout + saved.stderr).not.toContain(backup.trim());
+    expectOwner(stub, escrow, boxUser, boxUser, '700');
+    expectOwner(stub, join(escrow, 'token'), boxUser, boxUser, '600');
+    expectOwner(stub, join(escrow, 'nonces.json'), boxUser, boxUser, '600');
+    expectOwner(stub, join(escrow, 'nonces.json.bak'), boxUser, boxUser, '600');
+    expectOwner(stub, join(escrow, 'manifest.json'), boxUser, boxUser, '600');
+    const manifest = JSON.parse(readFileSync(join(escrow, 'manifest.json'), 'utf8')) as {
+      version: number;
+      files: Array<{ name: string; sha256: string; mode: string }>;
+    };
+    expect(manifest.version).toBe(1);
+    expect(manifest.files.map((file) => file.name).sort()).toEqual(['nonces.json', 'nonces.json.bak', 'token']);
+    for (const file of manifest.files) {
+      expect(file.mode).toBe('600');
+      expect(file.sha256).toBe(createHash('sha256').update(readFileSync(join(escrow, file.name))).digest('hex'));
+    }
+
+    await rm(state, { recursive: true, force: true });
+    await rm(join(box.durable, 'token'), { force: true });
+    const restored = run(['restore', escrow]);
+    expect(restored.status, restored.stderr + restored.stdout).toBe(0);
+    expect(restored.stdout + restored.stderr).not.toContain('token-keep-not-logged');
+    expect(readFileSync(join(box.durable, 'token'), 'utf8')).toBe(token);
+    expect(readFileSync(join(state, 'nonces.json'), 'utf8')).toBe(nonceBody('10'));
+    expect(readFileSync(join(state, 'nonces.json.bak'), 'utf8')).toBe(backup);
+    expectOwner(stub, box.durable, '0', '0', '755');
+    expectOwner(stub, state, signer, signer, '700');
+    expectOwner(stub, join(box.durable, 'log'), signer, signer, '700');
+    expectOwner(stub, join(box.ephemeral, 'run'), signer, signer, '750');
+    expectOwner(stub, join(box.durable, 'token'), '0', signer, '640');
+    expectOwner(stub, join(state, 'nonces.json'), signer, signer, '600');
+    expectOwner(stub, join(state, 'nonces.json.bak'), signer, signer, '600');
+
+    const tampered = JSON.parse(readFileSync(join(escrow, 'manifest.json'), 'utf8')) as {
+      files: Array<{ name: string; sha256: string }>;
+    };
+    const tokenEntry = tampered.files.find((file) => file.name === 'token');
+    expect(tokenEntry).toBeDefined();
+    tokenEntry!.sha256 = tokenEntry!.sha256.replace(/./, (char) => (char === 'a' ? 'b' : 'a'));
+    await writeFile(join(escrow, 'manifest.json'), `${JSON.stringify(tampered)}\n`);
+    give(box, escrow);
+    await writeFile(join(state, 'nonces.json'), nonceBody('10'));
+    const refused = run(['restore', escrow]);
+    expect(refused.status).not.toBe(0);
+    expect(refused.stderr).toMatch(/hash mismatch/);
+    expect(refused.stdout + refused.stderr).not.toContain('token-keep-not-logged');
+    expect(readFileSync(join(state, 'nonces.json'), 'utf8')).toBe(nonceBody('10'));
+
+    await writeFile(join(escrow, 'manifest.json'), `${JSON.stringify(manifest)}\n`);
+    give(box, escrow);
+    await writeFile(join(state, 'nonces.json'), nonceBody('11'));
+    give(box, state);
+    const rollback = run(['restore', escrow]);
+    expect(rollback.status).not.toBe(0);
+    expect(rollback.stderr).toMatch(/high-water mark/);
+    expect(rollback.stdout + rollback.stderr).not.toMatch(/lastNonce|"11"/);
+    expect(readFileSync(join(state, 'nonces.json'), 'utf8')).toBe(nonceBody('11'));
+
+    await writeFile(join(state, 'nonces.json'), nonceBody('10'));
+    give(box, state);
+    const same = run(['restore', escrow]);
+    expect(same.status, same.stderr + same.stdout).toBe(0);
+    expect(readFileSync(join(state, 'nonces.json'), 'utf8')).toBe(nonceBody('10'));
+    expect(same.stdout + same.stderr).not.toContain('token-keep-not-logged');
   });
 });
 

@@ -9,6 +9,7 @@
 # State and log are bind-mounted onto /var/lib/evalanche-signer/{state,log}.
 # provision recreates the user, /opt, and /etc from the persistent directory.
 # It does not regenerate keys or reset nonces. There is no boot hook.
+# escrow and restore are opt-in. provision and start do not call them.
 # As root, EVALANCHE_BOX_* overrides are ignored.
 set -eu
 
@@ -41,6 +42,9 @@ if [ "$(id -u)" -eq 0 ]; then
   VERIFIER_PUB=$DURABLE/verifier.pub
   LOCK=$STATE/start.lock
   SKIP_ROOT=0
+  BOX_USER=box
+  BOX_GROUP=box
+  OWNERSHIP_STUB=
 else
   PREFIX=${EVALANCHE_BOX_PREFIX:-/opt/evalanche-signer}
   DURABLE=${EVALANCHE_BOX_DURABLE:-/home/box/agent-data/evalanche-persist}
@@ -67,6 +71,10 @@ else
   VERIFIER_PUB=${EVALANCHE_BOX_VERIFIER_PUB:-$DURABLE/verifier.pub}
   LOCK=${EVALANCHE_BOX_LOCK:-$STATE/start.lock}
   SKIP_ROOT=${EVALANCHE_BOX_SKIP_ROOT:-0}
+  BOX_USER=${EVALANCHE_BOX_BOX_USER:-box}
+  BOX_GROUP=${EVALANCHE_BOX_BOX_GROUP:-box}
+  OWNERSHIP_STUB=${EVALANCHE_BOX_OWNERSHIP_STUB:-}
+  SIGNER_GROUP=${EVALANCHE_BOX_GROUP:-$SIGNER_GROUP}
 fi
 # TARBALL and STAGED_TARBALL are set in provision. start does not need them.
 # The pinned name is evalanche-<version>.tgz. The version is read from the
@@ -74,10 +82,12 @@ fi
 # EVALANCHE_BOX_TARBALL is ignored.
 
 usage() {
-  echo "usage: grok-bot-signer.sh start [--live] | init [--live] | stop | health | provision [tarball] <sha256>" >&2
+  echo "usage: grok-bot-signer.sh start [--live] | init [--live] | stop | health | provision [tarball] <sha256> | escrow <dir> | restore <dir>" >&2
   echo "start and init are dry-run unless --live is passed. init also passes --init-nonces." >&2
   echo "provision recreates the user, /opt, and /etc from the persistent directory." >&2
   echo "It bind-mounts state and log, chowns the persistent files, and does not regenerate a key or reset a nonce store." >&2
+  echo "escrow and restore are off unless those commands are passed. escrow copies the token, the nonce high-water mark, and nonce backups." >&2
+  echo "restore checks those hashes and refuses a nonce high-water mark below the current one." >&2
   exit 2
 }
 
@@ -525,10 +535,23 @@ health_signer() {
 }
 
 make_dir() {
-  path=$1
-  owner=$2
-  group=$3
-  mode=$4
+  local path="$1"
+  local owner="$2"
+  local group="$3"
+  local mode="$4"
+  local uid_n gid_n
+  if [ -n "$OWNERSHIP_STUB" ]; then
+    mkdir -p "$path"
+    chmod "$mode" "$path"
+    uid_n=$(resolve_id "$owner")
+    gid_n=$(resolve_gid "$group")
+    if [ -z "$uid_n" ] || [ -z "$gid_n" ]; then
+      echo "cannot resolve owner $owner:$group for $path" >&2
+      exit 1
+    fi
+    stub_record "$path" "$uid_n" "$gid_n" "$mode"
+    return 0
+  fi
   if [ "$SKIP_ROOT" = 1 ]; then
     mkdir -p "$path"
     chmod "$mode" "$path"
@@ -634,6 +657,7 @@ resolve_gid() {
 }
 
 normalize_mode() {
+  local stripped
   stripped=$(printf '%s' "$1" | sed 's/^0*//')
   if [ -z "$stripped" ]; then
     printf '0\n'
@@ -642,15 +666,35 @@ normalize_mode() {
   fi
 }
 
+# Test hook. Unset when this script runs as root. Records the owner and mode
+# claim_one would have applied, so a reinstall can be checked without sudo.
+stub_record() {
+  local path="$1"
+  local uid="$2"
+  local gid="$3"
+  local mode="$4"
+  local norm
+  norm=$(normalize_mode "$mode")
+  mkdir -p "$OWNERSHIP_STUB"
+  printf '%s\t%s\t%s\t%s\n' "$path" "$uid" "$gid" "$norm" >> "$OWNERSHIP_STUB/owners.tsv"
+}
+
+stub_lookup() {
+  local path="$1"
+  [ -f "$OWNERSHIP_STUB/owners.tsv" ] || return 0
+  awk -F '\t' -v p="$path" '($1 == p) { uid = $2; gid = $3; mode = $4 } END { if (uid != "") printf "%s %s %s\n", uid, gid, mode }' "$OWNERSHIP_STUB/owners.tsv"
+}
+
 # Chown and chmod one existing path through a descriptor opened with
 # O_NOFOLLOW, then read the result back. A symlink is refused. fchown does
 # not follow a name swapped in after the check. A chown that does not stick
 # is a failure: do not trust the file.
 claim_one() {
-  path=$1
-  uid=$2
-  group=$3
-  mode=$4
+  local path="$1"
+  local uid="$2"
+  local group="$3"
+  local mode="$4"
+  local uid_n gid_n
   if [ -L "$path" ]; then
     echo "refusing symlink $path" >&2
     exit 1
@@ -663,6 +707,12 @@ claim_one() {
   if [ -z "$uid_n" ] || [ -z "$gid_n" ]; then
     echo "cannot resolve owner $uid:$group for $path" >&2
     exit 1
+  fi
+  if [ -n "$OWNERSHIP_STUB" ]; then
+    chmod "$mode" "$path" || exit 1
+    stub_record "$path" "$uid_n" "$gid_n" "$mode"
+    assert_one "$path" "$uid" "$group" "$mode" 0
+    return 0
   fi
   node -e '
     const fs = require("node:fs");
@@ -702,11 +752,12 @@ claim_one() {
 # Stat only. Does not chown. Start uses this so a box-owned file is never
 # promoted to root just by launching the signer.
 assert_one() {
-  path=$1
-  uid=$2
-  group=$3
-  mode=$4
-  optional=$5
+  local path="$1"
+  local uid="$2"
+  local group="$3"
+  local mode="$4"
+  local optional="$5"
+  local actual_uid actual_gid actual_mode want_uid want_gid want_mode recorded
   if [ ! -e "$path" ]; then
     if [ "$optional" = 1 ]; then
       return 0
@@ -718,15 +769,23 @@ assert_one() {
     echo "refusing symlink $path" >&2
     exit 1
   fi
-  actual_uid=$(stat -c %u "$path")
-  actual_gid=$(stat -c %g "$path")
-  actual_mode=$(normalize_mode "$(stat -c %a "$path")")
   want_uid=$(resolve_id "$uid")
   want_gid=$(resolve_gid "$group")
   want_mode=$(normalize_mode "$mode")
   if [ -z "$want_uid" ] || [ -z "$want_gid" ]; then
     echo "cannot resolve owner $uid:$group for $path" >&2
     exit 1
+  fi
+  if [ -n "$OWNERSHIP_STUB" ]; then
+    recorded=$(stub_lookup "$path")
+    actual_uid=${recorded%% *}
+    recorded=${recorded#* }
+    actual_gid=${recorded%% *}
+    actual_mode=${recorded#* }
+  else
+    actual_uid=$(stat -c %u "$path")
+    actual_gid=$(stat -c %g "$path")
+    actual_mode=$(normalize_mode "$(stat -c %a "$path")")
   fi
   if [ "$actual_uid" != "$want_uid" ] || [ "$actual_gid" != "$want_gid" ] || [ "$actual_mode" != "$want_mode" ]; then
     echo "refusing untrusted $path (owner $actual_uid:$actual_gid mode $actual_mode, expected $want_uid:$want_gid mode $want_mode)" >&2
@@ -735,16 +794,26 @@ assert_one() {
 }
 
 claim_tree() {
-  root=$1
-  uid=$2
-  group=$3
-  dir_mode=$4
-  file_mode=$5
+  # uid, group, and both modes stay local to this call. claim_one used to
+  # assign those same names in the global shell, so the root owner of
+  # start.lock leaked into every later file, including audit.jsonl.
+  local root="$1"
+  local uid="$2"
+  local group="$3"
+  local dir_mode="$4"
+  local file_mode="$5"
+  local list entry base
   if [ -L "$root" ] || [ ! -d "$root" ]; then
     echo "missing directory $root" >&2
     exit 1
   fi
   claim_one "$root" "$uid" "$group" "$dir_mode"
+  if [ -f "$root/start.lock" ] && [ ! -L "$root/start.lock" ]; then
+    claim_one "$root/start.lock" root root 600
+  fi
+  if [ -f "$root/signer.pid" ] && [ ! -L "$root/signer.pid" ]; then
+    claim_one "$root/signer.pid" root root 600
+  fi
   list=$(mktemp)
   find "$root" -mindepth 1 -xdev -print > "$list"
   while IFS= read -r entry; do
@@ -773,7 +842,7 @@ claim_tree() {
 }
 
 claim_durable_ownership() {
-  if [ "$SKIP_ROOT" = 1 ]; then
+  if [ "$SKIP_ROOT" = 1 ] && [ -z "$OWNERSHIP_STUB" ]; then
     return 0
   fi
   claim_one "$DURABLE" root root 755
@@ -788,7 +857,7 @@ claim_durable_ownership() {
 }
 
 assert_trusted_files() {
-  if [ "$SKIP_ROOT" = 1 ]; then
+  if [ "$SKIP_ROOT" = 1 ] && [ -z "$OWNERSHIP_STUB" ]; then
     return 0
   fi
   assert_one "$CONFIG_SRC" root root 644 0
@@ -1096,10 +1165,10 @@ install_pinned_tarball() {
 # Copy one persistent file onto the recreated /etc tree. Never creates a key,
 # and never writes back into the persistent directory.
 restore_etc_file() {
-  src=$1
-  dest=$2
-  mode=$3
-  group=$4
+  local src="$1"
+  local dest="$2"
+  local mode="$3"
+  local group="$4"
   if [ ! -f "$src" ] || [ -L "$src" ]; then
     return 0
   fi
@@ -1113,6 +1182,9 @@ restore_etc_file() {
     chown "root:$group" "$dest.tmp"
   fi
   mv "$dest.tmp" "$dest"
+  if [ -n "$OWNERSHIP_STUB" ]; then
+    claim_one "$dest" root "$group" "$mode"
+  fi
 }
 
 restore_etc() {
@@ -1333,9 +1405,359 @@ provision_signer() {
     mount_bind "$STATE_SRC" "$STATE"
     mount_bind "$LOG_SRC" "$LOG_DIR"
     require_persistent_mounts
+  fi
+  # Claim again so files written above (config, token, tarball, script) are
+  # included. Owner and mode are per call, so the lock cannot leak onto them.
+  claim_durable_ownership
+  if [ "$SKIP_ROOT" != 1 ] || [ -n "$OWNERSHIP_STUB" ]; then
     assert_trusted_files
   fi
   echo "signer provisioned"
+}
+
+# escrow and restore are not used by provision or start.
+assert_escrow_dir() {
+  local dir="$1"
+  case "$dir" in
+    /*) ;;
+    *)
+      echo "escrow directory must be an absolute path" >&2
+      exit 1
+      ;;
+  esac
+  if [ "$SKIP_ROOT" != 1 ]; then
+    case "$dir" in
+      /home/*) ;;
+      *)
+        echo "escrow directory must live under /home" >&2
+        exit 1
+        ;;
+    esac
+  fi
+  case "$dir" in
+    "$DURABLE"|"$DURABLE"/*|"$STATE"|"$STATE"/*|"$STATE_SRC"|"$STATE_SRC"/*|"$ETC"|"$ETC"/*|"$PREFIX"|"$PREFIX"/*|"$EPHEMERAL"|"$EPHEMERAL"/*)
+      echo "escrow directory must be outside the signer install" >&2
+      exit 1
+      ;;
+  esac
+}
+
+copy_owned() {
+  local src="$1"
+  local dest="$2"
+  local uid="$3"
+  local group="$4"
+  local mode="$5"
+  if [ -L "$src" ] || [ ! -f "$src" ]; then
+    echo "refusing to copy" >&2
+    exit 1
+  fi
+  if [ -L "$dest" ]; then
+    echo "refusing symlink" >&2
+    exit 1
+  fi
+  rm -f "$dest"
+  install -m "$mode" "$src" "$dest"
+  claim_one "$dest" "$uid" "$group" "$mode"
+}
+
+write_escrow_manifest() {
+  local dest="$1"
+  shift
+  node - "$dest" "$@" <<'END'
+const fs = require('node:fs');
+const crypto = require('node:crypto');
+const dest = process.argv[2];
+const files = [];
+for (let i = 3; i < process.argv.length; i += 2) {
+  const name = process.argv[i];
+  const path = process.argv[i + 1];
+  if (!/^[A-Za-z0-9._-]+$/.test(name)) {
+    console.error('refusing escrow name');
+    process.exit(1);
+  }
+  const sha256 = crypto.createHash('sha256').update(fs.readFileSync(path)).digest('hex');
+  files.push({ name, sha256, mode: '600' });
+}
+files.sort((left, right) => (left.name < right.name ? -1 : left.name > right.name ? 1 : 0));
+fs.writeFileSync(dest, JSON.stringify({ version: 1, files }) + '\n', { mode: 0o600 });
+END
+}
+
+check_escrow_manifest() {
+  local dir="$1"
+  node - "$dir" <<'END'
+const fs = require('node:fs');
+const crypto = require('node:crypto');
+const dir = process.argv[2];
+const manifestPath = `${dir}/manifest.json`;
+let manifest;
+try {
+  manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+} catch {
+  console.error('escrow manifest is unreadable');
+  process.exit(1);
+}
+if (!manifest || manifest.version !== 1 || !Array.isArray(manifest.files)) {
+  console.error('escrow manifest is invalid');
+  process.exit(1);
+}
+const allowed = (name) => name === 'token'
+  || name === 'nonces.json'
+  || name === 'nonces.json.bak'
+  || /^nonces\.json\.bak\.[0-9]{1,4}$/.test(name);
+const seen = new Set();
+for (const entry of manifest.files) {
+  if (!entry || typeof entry.name !== 'string' || typeof entry.sha256 !== 'string' || entry.mode !== '600') {
+    console.error('escrow manifest entry is invalid');
+    process.exit(1);
+  }
+  if (!allowed(entry.name) || seen.has(entry.name) || !/^[0-9a-f]{64}$/.test(entry.sha256)) {
+    console.error('escrow manifest entry is invalid');
+    process.exit(1);
+  }
+  const path = `${dir}/${entry.name}`;
+  const info = fs.lstatSync(path);
+  if (info.isSymbolicLink() || !info.isFile()) {
+    console.error('refusing symlink in escrow');
+    process.exit(1);
+  }
+  const got = crypto.createHash('sha256').update(fs.readFileSync(path)).digest('hex');
+  if (got !== entry.sha256) {
+    console.error('escrow manifest hash mismatch');
+    process.exit(1);
+  }
+  seen.add(entry.name);
+}
+if (!seen.has('token') || !seen.has('nonces.json')) {
+  console.error('escrow manifest is missing required files');
+  process.exit(1);
+}
+for (const name of fs.readdirSync(dir)) {
+  if (name === 'manifest.json') continue;
+  if (!seen.has(name)) {
+    console.error('escrow directory has an unexpected file');
+    process.exit(1);
+  }
+}
+END
+}
+
+# Exit 0 when every current wallet and tx nonce is present and not lower.
+nonce_restore_allowed() {
+  local current="$1"
+  local escrowed="$2"
+  node - "$current" "$escrowed" <<'END'
+const fs = require('node:fs');
+const currentPath = process.argv[2];
+const escrowPath = process.argv[3];
+function load(path) {
+  if (!fs.existsSync(path)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(path, 'utf8'));
+  } catch {
+    console.error('nonce file is not json');
+    process.exit(3);
+  }
+}
+function take(file, into) {
+  if (!file || typeof file !== 'object') return;
+  const wallets = file.wallets && typeof file.wallets === 'object' ? file.wallets : {};
+  for (const [wallet, entry] of Object.entries(wallets)) {
+    const last = entry && typeof entry.lastNonce === 'string' ? entry.lastNonce : '';
+    into.set(`wallet:${wallet}`, last);
+  }
+  const tx = file.txNonces && typeof file.txNonces === 'object' ? file.txNonces : {};
+  for (const [wallet, chains] of Object.entries(tx)) {
+    if (!chains || typeof chains !== 'object') continue;
+    for (const [chain, nonce] of Object.entries(chains)) {
+      if (typeof nonce === 'string') into.set(`tx:${wallet}:${chain}`, nonce);
+    }
+  }
+}
+function order(left, right) {
+  if (!/^-?(0|[1-9][0-9]*)$/.test(left) || !/^-?(0|[1-9][0-9]*)$/.test(right)) return null;
+  const a = BigInt(left);
+  const b = BigInt(right);
+  if (a < b) return -1;
+  if (a > b) return 1;
+  return 0;
+}
+const escrowed = load(escrowPath);
+if (!escrowed) {
+  console.error('escrow is missing the nonce file');
+  process.exit(3);
+}
+const current = load(currentPath);
+if (!current) process.exit(0);
+const have = new Map();
+const want = new Map();
+take(current, have);
+take(escrowed, want);
+for (const [key, value] of have) {
+  if (!want.has(key)) {
+    console.error('refusing to restore a nonce high-water mark below the current one');
+    process.exit(2);
+  }
+  const compared = order(want.get(key), value);
+  if (compared === null) {
+    console.error('nonce high-water mark is not a decimal string');
+    process.exit(3);
+  }
+  if (compared < 0) {
+    console.error('refusing to restore a nonce high-water mark below the current one');
+    process.exit(2);
+  }
+}
+END
+}
+
+backup_name_ok() {
+  local name="$1"
+  case "$name" in
+    nonces.json.bak) return 0 ;;
+    nonces.json.bak.[0-9]|nonces.json.bak.[0-9][0-9]|nonces.json.bak.[0-9][0-9][0-9]|nonces.json.bak.[0-9][0-9][0-9][0-9]) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+escrow_signer() {
+  local dir="${1:-}"
+  local nonce_dir name list args bak count
+  if [ -z "$dir" ] || [ -n "${2:-}" ]; then
+    usage
+  fi
+  require_root
+  refuse_verifier_private_key
+  assert_escrow_dir "$dir"
+  if [ "$(basename "$NONCE_FILE")" != nonces.json ]; then
+    echo "nonce file must be named nonces.json" >&2
+    exit 1
+  fi
+  if [ -L "$TOKEN_FILE" ] || [ ! -f "$TOKEN_FILE" ]; then
+    echo "missing bearer token file" >&2
+    exit 1
+  fi
+  if [ -L "$NONCE_FILE" ] || [ ! -f "$NONCE_FILE" ]; then
+    echo "missing nonce file" >&2
+    exit 1
+  fi
+  if [ -e "$dir" ] && [ ! -d "$dir" ]; then
+    echo "escrow path is not a directory" >&2
+    exit 1
+  fi
+  if [ -L "$dir" ]; then
+    echo "refusing symlink" >&2
+    exit 1
+  fi
+  make_dir "$dir" "$BOX_USER" "$BOX_GROUP" 0700
+  list=$(mktemp)
+  nonce_dir=$(dirname "$NONCE_FILE")
+  find "$nonce_dir" -maxdepth 1 -name 'nonces.json.bak*' -print > "$list"
+  while IFS= read -r bak; do
+    [ -n "$bak" ] || continue
+    name=${bak##*/}
+    if ! backup_name_ok "$name"; then
+      echo "refusing unexpected nonce backup name" >&2
+      rm -f "$list"
+      exit 1
+    fi
+    if [ -L "$bak" ] || [ ! -f "$bak" ]; then
+      echo "refusing symlink" >&2
+      rm -f "$list"
+      exit 1
+    fi
+  done < "$list"
+  if [ -d "$dir" ]; then
+    find "$dir" -mindepth 1 -maxdepth 1 -print | while IFS= read -r entry; do
+      name=${entry##*/}
+      case "$name" in
+        manifest.json|token|nonces.json|nonces.json.bak|nonces.json.bak.[0-9]|nonces.json.bak.[0-9][0-9]|nonces.json.bak.[0-9][0-9][0-9]|nonces.json.bak.[0-9][0-9][0-9][0-9]) ;;
+        *)
+          echo "escrow directory has an unexpected file" >&2
+          exit 1
+          ;;
+      esac
+    done
+  fi
+  copy_owned "$TOKEN_FILE" "$dir/token" "$BOX_USER" "$BOX_GROUP" 600
+  copy_owned "$NONCE_FILE" "$dir/nonces.json" "$BOX_USER" "$BOX_GROUP" 600
+  count=2
+  args="token $dir/token nonces.json $dir/nonces.json"
+  while IFS= read -r bak; do
+    [ -n "$bak" ] || continue
+    name=${bak##*/}
+    copy_owned "$bak" "$dir/$name" "$BOX_USER" "$BOX_GROUP" 600
+    args="$args $name $dir/$name"
+    count=$((count + 1))
+  done < "$list"
+  rm -f "$list"
+  # shellcheck disable=SC2086
+  write_escrow_manifest "$dir/manifest.json.new" $args
+  mv -f "$dir/manifest.json.new" "$dir/manifest.json"
+  claim_one "$dir/manifest.json" "$BOX_USER" "$BOX_GROUP" 600
+  echo "escrowed signer state ($count files)"
+}
+
+restore_signer_dirs() {
+  make_dir "$DURABLE" root root 0755
+  make_dir "$DURABLE/bin" root root 0755
+  make_dir "$STATE_SRC" "$SIGNER_USER" "$SIGNER_GROUP" 0700
+  make_dir "$LOG_SRC" "$SIGNER_USER" "$SIGNER_GROUP" 0700
+  make_dir "$EPHEMERAL" root root 0755
+  if [ "$STATE" != "$STATE_SRC" ]; then
+    make_dir "$STATE" root root 0755
+  fi
+  if [ "$LOG_DIR" != "$LOG_SRC" ]; then
+    make_dir "$LOG_DIR" root root 0755
+  fi
+  make_dir "$PREFIX" root root 0755
+  make_dir "$SOCKET_DIR" "$SIGNER_USER" "$SIGNER_GROUP" 0750
+  make_dir "$ETC" root root 0755
+}
+
+restore_signer() {
+  local dir="${1:-}"
+  local current name
+  if [ -z "$dir" ] || [ -n "${2:-}" ]; then
+    usage
+  fi
+  require_root
+  refuse_verifier_private_key
+  assert_escrow_dir "$dir"
+  if [ ! -d "$dir" ] || [ -L "$dir" ]; then
+    echo "escrow directory is missing" >&2
+    exit 1
+  fi
+  check_escrow_manifest "$dir" || exit 1
+  if [ -f "$STATE_SRC/nonces.json" ] && [ ! -L "$STATE_SRC/nonces.json" ]; then
+    current=$STATE_SRC/nonces.json
+  elif [ -f "$NONCE_FILE" ] && [ ! -L "$NONCE_FILE" ]; then
+    current=$NONCE_FILE
+  else
+    current=""
+  fi
+  if [ -n "$current" ]; then
+    nonce_restore_allowed "$current" "$dir/nonces.json" || exit 1
+  else
+    nonce_restore_allowed "$dir/.no-current-nonce" "$dir/nonces.json" || exit 1
+  fi
+  restore_signer_dirs
+  copy_owned "$dir/token" "$TOKEN_FILE" root "$SIGNER_GROUP" 640
+  copy_owned "$dir/nonces.json" "$STATE_SRC/nonces.json" "$SIGNER_USER" "$SIGNER_GROUP" 600
+  if [ "$NONCE_FILE" != "$STATE_SRC/nonces.json" ]; then
+    make_dir "$(dirname "$NONCE_FILE")" "$SIGNER_USER" "$SIGNER_GROUP" 0700
+    copy_owned "$dir/nonces.json" "$NONCE_FILE" "$SIGNER_USER" "$SIGNER_GROUP" 600
+  fi
+  for name in "$dir"/nonces.json.bak "$dir"/nonces.json.bak.*; do
+    [ -f "$name" ] || continue
+    [ -L "$name" ] && { echo "refusing symlink" >&2; exit 1; }
+    copy_owned "$name" "$STATE_SRC/${name##*/}" "$SIGNER_USER" "$SIGNER_GROUP" 600
+    if [ "$NONCE_FILE" != "$STATE_SRC/nonces.json" ]; then
+      copy_owned "$name" "$(dirname "$NONCE_FILE")/${name##*/}" "$SIGNER_USER" "$SIGNER_GROUP" 600
+    fi
+  done
+  echo "restored signer state"
 }
 
 cmd=${1:-}
@@ -1346,5 +1768,7 @@ case "$cmd" in
   stop) stop_signer ;;
   health) health_signer ;;
   provision) provision_signer "$@" ;;
+  escrow) escrow_signer "$@" ;;
+  restore) restore_signer "$@" ;;
   *) usage ;;
 esac

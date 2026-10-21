@@ -64,7 +64,7 @@ mount -o remount,bind,nosuid,nodev,noexec /var/lib/evalanche-signer/log
 
 ### Ownership after a reset
 
-A reset restores the persistent tree as uid 1000, not root. Every `provision` chowns and chmods it again, then reads the owners back. Config, the verifier pubkey, the token, and the pinned tarball must come back as root, with modes `0644`, `0644`, `0640`, and `0644`. The state and log directories must come back as `evalanche-signer` mode `0700`, and the nonce and audit files as that user mode `0600`. If `chown` or `chmod` fails, or the stat afterwards does not match, `provision` exits non-zero and does not report success. `start` checks the same owners and modes and does not chown. A box-owned nonce or config is never used. A `verifier.key` file is refused whether or not it is root-owned.
+A reset restores the persistent tree as uid 1000, not root. Every `provision` chowns and chmods it again, then reads the owners back. Each file is claimed with its own owner and mode. Handling the root-owned `start.lock` does not change the owner of the files that follow it. Config, the verifier pubkey, the token, and the pinned tarball must come back as root, with modes `0644`, `0644`, `0640`, and `0644`. The state and log directories must come back as `evalanche-signer` mode `0700`, and the nonce and audit files as that user mode `0600`. `start.lock` and `signer.pid` stay root mode `0600`. If `chown` or `chmod` fails, or the stat afterwards does not match, `provision` exits non-zero and does not report success. `start` checks the same owners and modes and does not chown. A box-owned nonce or config is never used. A `verifier.key` file is refused whether or not it is root-owned.
 
 ### Trust anchor
 
@@ -120,7 +120,7 @@ npm pack
 sha256sum evalanche-$(node -p "require('./package.json').version").tgz
 ```
 
-`npm pack` names the file from `package.json`. At 1.17.0-rc.4 that file is `evalanche-1.17.0-rc.4.tgz`. The live box is 1.17.0-rc.2 at `a55e307`. Leave `evalanche-1.17.0-rc.1.tgz`, `evalanche-1.17.0-rc.2.tgz`, and `evalanche-1.17.0-rc.3.tgz` in place. Provisioning again under one of those filenames would overwrite a rollback pin. Record that digest with the release or the CI pack artifact. On the box, pass that recorded digest. Do not hash the file you are about to install: a copy under `/home` can be replaced before `provision` reads it. `provision` copies the bytes to `/var/lib/evalanche-signer/evalanche-staged.tgz`, which is root-owned, hashes that copy, and only then reads `package/package.json` from it. The pin is `/home/box/agent-data/evalanche-persist/evalanche-<version>.tgz`. The installed tree, the script directory, and the working directory are not consulted, so the copy under `.../bin` still works after `/opt` is wiped. A version that is not a release version is refused. A source named `evalanche-<other>.tgz` that does not match the inner version is refused. Those failures happen before `npm` and before the pin is replaced. As root, `EVALANCHE_BOX_TARBALL` is ignored. When the tarball path is omitted, the single `evalanche-*.tgz` already under the durable directory is the source. `start` does not need `package.json`. The sha256 argument is required. A digest that does not match fails before `npm` and before the pinned copy is replaced.
+`npm pack` names the file from `package.json`. At 1.17.0-rc.5 that file is `evalanche-1.17.0-rc.5.tgz`. The live box is 1.17.0-rc.2 at `a55e307`. Leave `evalanche-1.17.0-rc.1.tgz`, `evalanche-1.17.0-rc.2.tgz`, `evalanche-1.17.0-rc.3.tgz`, and `evalanche-1.17.0-rc.4.tgz` in place. Provisioning again under one of those filenames would overwrite a rollback pin. Record that digest with the release or the CI pack artifact. On the box, pass that recorded digest. Do not hash the file you are about to install: a copy under `/home` can be replaced before `provision` reads it. `provision` copies the bytes to `/var/lib/evalanche-signer/evalanche-staged.tgz`, which is root-owned, hashes that copy, and only then reads `package/package.json` from it. The pin is `/home/box/agent-data/evalanche-persist/evalanche-<version>.tgz`. The installed tree, the script directory, and the working directory are not consulted, so the copy under `.../bin` still works after `/opt` is wiped. A version that is not a release version is refused. A source named `evalanche-<other>.tgz` that does not match the inner version is refused. Those failures happen before `npm` and before the pin is replaced. As root, `EVALANCHE_BOX_TARBALL` is ignored. When the tarball path is omitted, the single `evalanche-*.tgz` already under the durable directory is the source. `start` does not need `package.json`. The sha256 argument is required. A digest that does not match fails before `npm` and before the pinned copy is replaced.
 
 ```sh
 id box
@@ -129,7 +129,7 @@ sudo -u box sudo -n true
 
 # EVALANCHE_TARBALL_SHA256 is the digest published with the release, not a hash of the local file.
 sudo /workspace/scripts/grok-bot-signer.sh provision \
-  /workspace/evalanche-1.17.0-rc.4.tgz \
+  /workspace/evalanche-1.17.0-rc.5.tgz \
   "$EVALANCHE_TARBALL_SHA256"
 ```
 
@@ -206,6 +206,24 @@ mv /home/box/agent-data/evalanche-persist/token.new /home/box/agent-data/evalanc
 ```
 
 The file is root-owned, mode `0640`, group `evalanche-signer`. `box` can read it after the group change and an agent restart. Do not log the token and do not put it in `config.json`. `provision` does not rotate this file.
+
+## Escrow before a reset
+
+A box reset keeps files the box user can read and drops directory modes. The nonce file and its backups are mode `0600` and owned by `evalanche-signer`, so they are not readable by `box` and do not survive that reset. `escrow` and `restore` are the supported path. They are off unless you pass the command. `provision` and `start` do not call them.
+
+Run `escrow` as root before the reset. The directory must be an absolute path under `/home` and outside the signer install. It is created mode `0700`, owned by `box`. Each file is mode `0600`, owned by `box`. The command copies the bearer token, `nonces.json`, and any `nonces.json.bak` or `nonces.json.bak.<digits>` file beside it. It writes `manifest.json` with a sha256 for each file. It does not print the token or the nonce file.
+
+```sh
+sudo /home/box/agent-data/evalanche-persist/bin/grok-bot-signer.sh escrow \
+  /home/box/agent-data/evalanche-escrow
+```
+
+After the reset, `restore` checks the manifest and every hash. A mismatch refuses the restore and leaves the current nonce file in place. It also refuses when an escrowed wallet or transaction nonce is below the current high-water mark. A missing current nonce file is restored as-is. An equal or higher mark is restored. The command then recreates the signer directories: the durable root and `/etc`, `/opt`, and `/var/lib/evalanche-signer` at `0755` root, state and log at `0700` `evalanche-signer`, and the socket directory at `0750` `evalanche-signer`. The token returns to mode `0640` root:`evalanche-signer`. The nonce file and backups return to mode `0600` `evalanche-signer`. Run `provision` after `restore` to recreate the account, the install, and the bind mounts.
+
+```sh
+sudo /home/box/agent-data/evalanche-persist/bin/grok-bot-signer.sh restore \
+  /home/box/agent-data/evalanche-escrow
+```
 
 ## After a reset
 

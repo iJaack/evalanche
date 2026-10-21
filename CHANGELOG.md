@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.17.0-rc.5
+
+- Release candidate. The live box is 1.17.0-rc.2 at `a55e307` (`a55e3075688be09431cec97acb5e7e7365abdd14`). Provision `evalanche-1.17.0-rc.5.tgz` as a new pin. Leave `evalanche-1.17.0-rc.1.tgz`, `evalanche-1.17.0-rc.2.tgz`, `evalanche-1.17.0-rc.3.tgz`, and `evalanche-1.17.0-rc.4.tgz` in place. Provisioning again under one of those filenames would overwrite a rollback pin.
+- `provision` records the owner and mode for each state file on that call. After it claims the root-owned `start.lock`, later files no longer inherit root. `audit.jsonl`, `nonces.json`, and the other state files stay `evalanche-signer` mode `0600`. `start.lock` and `signer.pid` stay root mode `0600`. A second provision with the lock still present does not change those owners.
+- `escrow <dir>` and `restore <dir>` are opt-in and are not run by `provision` or `start`. `escrow` copies the bearer token, the nonce high-water mark, and `nonces.json.bak` backups into a box-owned directory (mode `0700`, files `0600`) and writes a sha256 manifest. `restore` checks the manifest, recreates the signer directories with their owners and modes, and refuses a nonce high-water mark below the current one. It does not log the token or the nonce file.
+
 ## 1.17.0-rc.4
 
 - Release candidate. The live box is 1.17.0-rc.2 at `a55e307` (`a55e3075688be09431cec97acb5e7e7365abdd14`). Provision `evalanche-1.17.0-rc.4.tgz` as a new pin. Leave `evalanche-1.17.0-rc.1.tgz`, `evalanche-1.17.0-rc.2.tgz`, and `evalanche-1.17.0-rc.3.tgz` in place. Provisioning again under one of those filenames would overwrite a rollback pin.
