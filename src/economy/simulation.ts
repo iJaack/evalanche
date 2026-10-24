@@ -29,6 +29,7 @@ export async function simulateTransaction(
   tx: PendingTransaction,
 ): Promise<SimulationResult> {
   const callParams = {
+    from: tx.from,
     to: tx.to,
     value: tx.value ? BigInt(tx.value) : undefined,
     data: tx.data,

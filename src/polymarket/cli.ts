@@ -19,6 +19,14 @@ export type PolymarketCliRunner = (
 export interface PolymarketCliOptions {
   binary?: string;
   privateKey?: string;
+  /**
+   * When false, do not read POLYMARKET_PRIVATE_KEY from the environment.
+   * Remote-signer and address-only agents set this so a key in the shared
+   * environment cannot be picked up by accident.
+   */
+  allowEnvPrivateKey?: boolean;
+  /** Set when this process must not use a private key at all. */
+  keylessReason?: 'remote-signer' | 'readonly';
   signatureType?: 'proxy' | 'eoa' | 'gnosis-safe' | string;
   timeoutMs?: number;
   maxBufferBytes?: number;
@@ -71,6 +79,7 @@ function buildMinimalEnv(privateKey: string | undefined, signatureType: string):
 export class PolymarketCli {
   private readonly binary: string;
   private readonly privateKey?: string;
+  private readonly keylessReason?: 'remote-signer' | 'readonly';
   private readonly signatureType: string;
   private readonly timeoutMs: number;
   private readonly maxBufferBytes: number;
@@ -78,7 +87,9 @@ export class PolymarketCli {
 
   constructor(options: PolymarketCliOptions = {}) {
     this.binary = options.binary ?? process.env.EVALANCHE_POLYMARKET_CLI_BIN ?? 'polymarket';
-    this.privateKey = normalizePrivateKey(options.privateKey ?? process.env.POLYMARKET_PRIVATE_KEY);
+    this.keylessReason = options.keylessReason;
+    const envKey = options.allowEnvPrivateKey === false ? undefined : process.env.POLYMARKET_PRIVATE_KEY;
+    this.privateKey = this.keylessReason ? undefined : normalizePrivateKey(options.privateKey ?? envKey);
     this.signatureType = options.signatureType ?? process.env.POLYMARKET_SIGNATURE_TYPE ?? 'proxy';
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.maxBufferBytes = options.maxBufferBytes ?? DEFAULT_MAX_BUFFER_BYTES;
@@ -96,6 +107,14 @@ export class PolymarketCli {
   }
 
   async runJson(args: string[], options: PolymarketCliRunOptions = {}): Promise<unknown> {
+    if (options.requiresPrivateKey && this.keylessReason) {
+      throw new EvalancheError(
+        this.keylessReason === 'remote-signer'
+          ? 'Polymarket CLI requires POLYMARKET_PRIVATE_KEY in this process. A remote signer cannot supply it.'
+          : 'Polymarket CLI requires a local private key. An address-only wallet cannot sign.',
+        EvalancheErrorCode.REMOTE_SIGNER_UNSUPPORTED,
+      );
+    }
     if (options.requiresPrivateKey && !this.privateKey) {
       throw new EvalancheError(
         'Official Polymarket CLI command requires a signer private key. Configure the Evalanche wallet or POLYMARKET_PRIVATE_KEY.',

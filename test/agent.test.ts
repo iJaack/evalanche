@@ -29,7 +29,7 @@ describe('Evalanche', () => {
 
     it('should throw if neither privateKey nor mnemonic is provided', () => {
       expect(() => new Evalanche({ network: 'fuji' })).toThrow(EvalancheError);
-      expect(() => new Evalanche({ network: 'fuji' })).toThrow('Either privateKey or mnemonic is required');
+      expect(() => new Evalanche({ network: 'fuji' })).toThrow('Either privateKey, mnemonic, signer, or address is required');
     });
 
     it('should default to avalanche network', () => {

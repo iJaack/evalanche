@@ -1,0 +1,48 @@
+# Changelog
+
+## 1.15.0
+
+- Add a pluggable signer so an agent can sign without a local private key in the Evalanche process.
+- Add a remote signer HTTP(S) and unix-socket client. The client sends a canonical signing request and rejects a signed transaction that does not decode to the requested fields.
+- Add the `evalanche-signer` reference server. It holds the key, checks an Ed25519 verifier approval, recomputes the intent hash, and enforces a monotonic single-use nonce, expiry, a deny list, SpendingPolicy, token-amount caps, and simulation. Dry-run never signs. Decisions are appended to a JSONL audit log. The default bind is `127.0.0.1` or a unix socket.
+- `evalanche-mcp` accepts `--signer-url` / `EVALANCHE_SIGNER_URL` and can run keyless. `EVALANCHE_ADDRESS` is address-only mode.
+- Polymarket CLI and Avalanche X/P-chain paths fail with `REMOTE_SIGNER_UNSUPPORTED` when a remote signer or address-only wallet is configured. They do not fall back to an environment private key.
+- Harden the remote signer. Approvals bind the full transaction, the decision, and dry-run or live mode. Calldata checks decode known calls and deny the rest. The nonce store must be initialized, is locked and fsynced, and rejects approvals created before its start time. Message and typed-data signing are off unless allowlisted. Permit, Permit2, increaseAllowance, Benqi sAVAX instant unstake, Polymarket, and Hyperliquid typed data are denied. The audit log is a prevHash chain rooted at the SHA-256 of `evalanche-audit-root/v1`.
+- Record the accepted root risk for TM-008. On the production box the verifier agent holds the wallet key, so separation of duties between key-holder and verifier is gone. The signer enforces policy and is not a boundary against root. Review date 2027-01-16.
+- Document the Grok Bot box signer launch. The signer reads `EVALANCHE_SIGNER_PRIVATE_KEY` and then removes it from the environment. It also removes `EVALANCHE_SIGNER_TOKEN`.
+- Default the Grok Bot signer to dry-run. `/health` reports the mode. Start and stop follow the new process. The bearer token is a root-owned file. `init` passes `--init-nonces`. Signer checks also run on Node 20.19.2.
+- Stop a running Grok Bot signer when the pidfile is missing. Halt the signer before close so a held connection gets no signature. Serialize start with flock. Record proposed exit triggers pending owner confirmation.
+- Provision signer state under the persistent home. `grok-bot-signer.sh provision` recreates the signer user and reinstalls the pinned tarball after a reset. The nonce store, audit log, verifier key, and config stay under `/home/box/agent-data/evalanche-persist`.
+- Reuse the persistent signer state on reprovision. `provision` recreates the user, `/opt`, and `/etc` from that directory and does not regenerate keys or reset nonces that already exist. Re-run it by hand. There is no boot hook.
+- Bind-mount persistent signer state and reassert ownership. `provision` chowns the persistent tree back from uid 1000 and fails closed if it cannot. State and log are bind-mounted under `/var/lib/evalanche-signer`. A `trustAnchor` can stop state-path parent checks at a root-owned directory.
+- Refuse a verifier private key on disk. The approval private key is the bot secret OPS_VERIFIER_ED25519. The signer keeps only verifier.pub.
+- Match the TM-008 approval key to the bot secret. Only verifier.pub stays on disk. The acceptance, owner, and 2027-01-16 review are unchanged.
+- Leave trustAnchor unset in production. The Grok Bot bind mounts already cover nonce and audit.
+- Document approve operating rules for live swaps. Approve only right before the paired swap, for exactly fromAmount. Reset the allowance to 0 if the swap fails, and sweep diamond allowances periodically.
+- Pick a free signer group gid in the reset test when 996 is already taken.
+- Keep node visible when the reset test hides /opt.
+- Claim signer paths through a no-follow file descriptor. `provision` uses fchown and fchmod on that descriptor.
+- Reuse the existing evalanche-signer uid instead of pinning uid 960. A missing user gets a free system uid, and the nonce file owner is checked afterwards.
+- Close the start lock before the sudo launcher. A second start refuses while a signer is running.
+- Build a single-step Kyber Li.Fi route from the KyberSwap aggregator. One GenericSwapFacetV3 call, no Li.Fi fixed-fee step, and minOut from the bought-token class cap. Keep the Kyber route out of the bridge import.
+- Match the Kyber route and build to the request. tokenIn, tokenOut, and amountIn must be exact, the router must be the one for the chain, and the build amountOut must be within 0.1% of the route amountOut.
+- Refuse a Kyber quote below the reference price. An optional reference amount or fetcher throws when quotedAmountOut is more than 1% below it. The signer does not run the check.
+- Remount signer state mounts nosuid, nodev, and noexec. `start` fails closed when a state or log bind is missing one of those flags.
+- Set example slippage caps to the Avalanche classes. USDC and USDt are 50 bps, WAVAX, BTC.b, WETH.e, and sAVAX are 200 bps, and every other token is 300 bps.
+- Refuse a node binary that is not root-owned, and refuse one whose directory chain is group or world writable.
+- Refuse a signer uid outside the system range. `provision` does not reuse uid 0 or a uid below 100 or above 999.
+- Document the hyperliquid Node engine warning. `@nktkas/hyperliquid` 0.33.3 asks for Node 22.12, and `npm ci` on Node 20 prints it. The pin stays.
+- Reuse the existing evalanche-signer group gid instead of hardcoding gid 960.
+- Apply Avalanche slippage classes to USDC and sAVAX. USDC is 50 bps. WAVAX, BTC.b, WETH.e, and sAVAX are 200 bps instead of the 300 bps default.
+- Reject trailing bytes on outer Li.Fi V3 calldata. The decoded `0x4666fc80` and `0x5fd9ae2e` payloads must re-encode to the same length.
+- Match Kyber srcReceivers to decoded pools. Appended and unaligned addresses, and the zero address, are denied.
+- Deny Kyber router selectors other than swap. Executor `callTarget`, `srcReceivers`, and fee amounts are checked. Trailing Kyber bytes are denied.
+- Require quotedAmountOut on Li.Fi V3 swaps. A missing or one-unit quote is denied, and the quote must sit within the bought-token cap.
+- Run the signer cli with the pinned node. `start` executes `dist/signer/cli.mjs` and does not use `node_modules/.bin/evalanche-signer`.
+- Install the pinned signer tarball with npm ci. The sha256 is required, the hashed bytes are the bytes that are installed, and `npm-shrinkwrap.json` locks the dependency tree.
+- Gate destructive signer reset tests. `EVALANCHE_DESTRUCTIVE_TESTS` must be set before the suite runs sudo, unshare, or userdel.
+- Test signer ownership outside the home directory. The reset test keeps the signer script reachable when `/home` is replaced, and a root start reports the real state bind mount.
+- Set the Li.Fi integrator fee to zero and allow exchanges from config. Quotes send `fee` 0 so a FeeForwarder step is not added. `allowExchanges` defaults from config and can limit routes to `kyberswap`.
+- Reject a zero Li.Fi V3 minOut and decode Kyber receivers. `quotedAmountOut` sets a slippage floor from the bought-token class cap (stables 50 bps, top assets 200 bps, other tokens 300 bps). A Kyber `swap` (`0xe21fd0e9`) inside a V3 leg must pay the Li.Fi diamond, or an allowlisted recipient on the last leg. An approve of zero still signs so a failed swap can reset its allowance.
+- Decode Avalanche Li.Fi V3 swap selectors `0x4666fc80` and `0x5fd9ae2e` on GenericSwapFacetV3 `0x31a9b1835864706Af10103b31Ea2b79bdb995F5F`. `swapTokensGeneric` is not registered on the Avalanche diamond. Every leg is decoded, approve spenders and inner call targets must be allowlisted, the receiver must have the recipient role, caps price the sold asset, and `minAmountOut` is enforced. Unknown selectors stay denied.
+- Bind Li.Fi swap legs to the intent and cap the sold asset. Allow entries need `dex`, `spender`, `recipient`, `token`, and `vault` roles, and roles are additive. A native send requires `recipient`. A token cannot be `callTo`. The first swap leg must set `requiresDeposit`. Reject small-order verifier keys, non-canonical signatures, and Polymarket typed data. Open signer files with `O_NOFOLLOW`. Config and keys are root-owned; state directories are owned by the signer user at mode `0700`. Exec the pinned lock helper from its checked descriptor (`O_EXLOCK` `0x20` on macOS). A dead helper stops the signer. Rebuild that binary with the pinned GCC 13.3 recipe. Default the gas cap to about 0.02 native tokens.

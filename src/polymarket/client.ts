@@ -26,6 +26,7 @@
 
 import type { AgentSigner } from '../wallet/signer';
 import { EvalancheError, EvalancheErrorCode } from '../utils/errors';
+import { signerModeOf } from '../signer/ethers-adapter';
 import { safeFetch } from '../utils/safe-fetch';
 import { PolymarketCli } from './cli';
 
@@ -439,6 +440,7 @@ export class PolymarketClient {
   private apiCreds?: { key: string; secret: string };
   private clobClient: any = null;
   private cli: PolymarketCli;
+  private readonly keylessReason?: 'remote-signer' | 'readonly';
 
   constructor(
     signer: AgentSigner,
@@ -450,7 +452,21 @@ export class PolymarketClient {
     this.chainId = chainId;
     this.host = host;
     this.apiCreds = apiCreds;
-    this.cli = new PolymarketCli({ privateKey: this.getOptionalPrivateKey() });
+    const mode = signerModeOf(signer);
+    this.keylessReason = mode === 'remote' ? 'remote-signer' : mode === 'readonly' ? 'readonly' : undefined;
+    this.cli = new PolymarketCli({
+      privateKey: this.keylessReason ? undefined : this.getOptionalPrivateKey(),
+      allowEnvPrivateKey: !this.keylessReason,
+      keylessReason: this.keylessReason,
+    });
+  }
+
+  private assertLocalKey(action: string): void {
+    if (!this.keylessReason) return;
+    throw new EvalancheError(
+      `${action} requires POLYMARKET_PRIVATE_KEY in this process. A remote signer or address-only wallet cannot supply it.`,
+      EvalancheErrorCode.REMOTE_SIGNER_UNSUPPORTED,
+    );
   }
 
   private requireConditionId(conditionId: string): `0x${string}` {
@@ -465,6 +481,7 @@ export class PolymarketClient {
   }
 
   private requirePrivateKey(): `0x${string}` {
+    this.assertLocalKey('Polymarket on-chain redemption');
     const raw = typeof this.signer === 'object' && this.signer && 'privateKey' in this.signer
       ? String((this.signer as any).privateKey ?? '')
       : '';
@@ -940,6 +957,7 @@ export class PolymarketClient {
    * Supports both BUY and SELL.
    */
   async placeOrder(params: PolymarketOrderParams): Promise<PolymarketOrderResult> {
+    this.assertLocalKey('Polymarket CLOB orders');
     try {
       const order = await this.cli.createOrder({
         tokenId: params.tokenId,
@@ -958,6 +976,7 @@ export class PolymarketClient {
   }
 
   async cancelOrder(orderId: string): Promise<void> {
+    this.assertLocalKey('Polymarket cancel');
     try {
       await this.cli.cancelOrder(orderId);
     } catch (error) {
@@ -970,6 +989,7 @@ export class PolymarketClient {
   }
 
   async getOrder(orderId: string): Promise<any> {
+    this.assertLocalKey('Polymarket order read');
     try {
       return await this.cli.order(orderId);
     } catch (error) {
@@ -982,6 +1002,7 @@ export class PolymarketClient {
   }
 
   async getOpenOrders(tokenId?: string): Promise<any[]> {
+    this.assertLocalKey('Polymarket open orders');
     try {
       return this.unwrapCliList(await this.cli.openOrders(tokenId));
     } catch (error) {
@@ -1020,6 +1041,7 @@ export class PolymarketClient {
   }
 
   async getBalances(tokenId?: string): Promise<any> {
+    this.assertLocalKey('Polymarket balances');
     try {
       const [collateral, conditional] = await Promise.all([
         this.cli.balance('collateral'),
@@ -1040,6 +1062,7 @@ export class PolymarketClient {
   }
 
   async getTradeHistory(tokenId?: string): Promise<any[]> {
+    this.assertLocalKey('Polymarket trades');
     try {
       return this.unwrapCliList(await this.cli.trades(tokenId));
     } catch (error) {
@@ -1099,6 +1122,7 @@ export class PolymarketClient {
     totalUSDC: number;
     tokenId: string;
   }> {
+    this.assertLocalKey('Polymarket market sell');
     const { conditionId, outcome, amountUSDC } = params;
 
     // Get market to find tokenId (unauthenticated read is fine)
@@ -1150,6 +1174,7 @@ export class PolymarketClient {
     toTokenAddress: string;
     recipientAddr: string;
   }): Promise<PolymarketWithdrawalResult> {
+    this.assertLocalKey('Polymarket withdrawal');
     const rawAmount = String(params.amountUSDC ?? '').trim();
     const toChainId = String(params.toChainId ?? '').trim();
     const toTokenAddress = String(params.toTokenAddress ?? '').trim();
@@ -1274,6 +1299,7 @@ export class PolymarketClient {
   }
 
   async redeemPositions(conditionId: string): Promise<PolymarketRedemptionResult> {
+    this.assertLocalKey('Polymarket redemption');
     const normalizedConditionId = this.requireConditionId(conditionId);
     const { formatUnits } = await import('viem');
     const { account, walletClient, publicClient } = await this.createPolygonClients();

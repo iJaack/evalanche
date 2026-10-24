@@ -140,11 +140,19 @@ vi.mock('ethers', () => {
     }
   }
 
+  class MockAbstractSigner {
+    provider: unknown;
+    constructor(provider?: unknown) {
+      this.provider = provider;
+    }
+  }
+
   return {
     JsonRpcProvider: MockJsonRpcProvider,
     Wallet: MockWallet,
     HDNodeWallet: MockHDNodeWallet,
     Contract: MockContract,
+    AbstractSigner: MockAbstractSigner,
     getAddress: vi.fn((address: string) => address),
     parseEther: vi.fn((v: string) => BigInt(Math.floor(parseFloat(v) * 1e18))),
     parseUnits: vi.fn((v: string, d: number) => BigInt(Math.floor(parseFloat(v) * (10 ** d)))),
@@ -189,7 +197,7 @@ describe('EvalancheMCPServer', () => {
     const result = res.result as { protocolVersion: string; serverInfo: { name: string; version: string } };
     expect(result.protocolVersion).toBe('2024-11-05');
     expect(result.serverInfo.name).toBe('evalanche');
-    expect(result.serverInfo.version).toBe('1.14.0');
+    expect(result.serverInfo.version).toBe('1.15.0');
   });
 
   it('creates providers with batching disabled', () => {

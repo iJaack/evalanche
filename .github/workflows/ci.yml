@@ -16,14 +16,20 @@ jobs:
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['20.19.2', '22']
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
       - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
-          node-version: '22'
+          node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci
       - run: npm test
+        env:
+          EVALANCHE_DESTRUCTIVE_TESTS: '1'
       - run: npm run typecheck
       - run: npm run build
       - name: Validate docs, exports, package and smoke
@@ -36,6 +42,7 @@ jobs:
           node scripts/check-package-tarball.mjs --pack-json .release-artifacts/npm-pack.json
           node scripts/check-consumer-install.mjs --pack-json .release-artifacts/npm-pack.json --out .release-artifacts/consumer-install.json
           node scripts/release-smoke.mjs
+          node scripts/check-signer-bin.mjs --pack-json .release-artifacts/npm-pack.json
       - name: Audit regression gate
         run: |
           npm audit --omit=dev --json > .release-artifacts/audit.json || true
@@ -43,6 +50,75 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
-          name: sdk-check-evidence
+          name: sdk-check-evidence-node-${{ matrix.node }}
           path: .release-artifacts/
           include-hidden-files: true
+
+  # No compiler and no Python. The signer lock must come from the pinned helper.
+  signer-linux-clean:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ['node:20.19.2-bookworm-slim', 'node:22-bookworm-slim']
+    container:
+      image: ${{ matrix.image }}
+    timeout-minutes: 20
+    steps:
+      - name: Install git without build tools
+        run: apt-get update && apt-get install -y --no-install-recommends git ca-certificates
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+      - run: npm ci
+      - run: npx vitest run test/signer test/poc test/poc2 test/poc3
+        env:
+          EVALANCHE_DESTRUCTIVE_TESTS: '1'
+
+  signer-macos:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npx vitest run test/signer test/poc test/poc2 test/poc3
+        env:
+          EVALANCHE_DESTRUCTIVE_TESTS: '1'
+
+  # Rebuild the committed helper with the pinned GCC 13.3 toolchain and compare sha256.
+  flock-reproducible:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+      - name: Rebuild flock-linux-x64 and compare the pinned digest
+        run: |
+          docker build --platform linux/amd64 -t evalanche-flock-repro -f docker/flock-helper.Dockerfile .
+          mkdir -p .flock-repro
+          cid=$(docker create evalanche-flock-repro)
+          docker cp "$cid":/flock-linux-x64 .flock-repro/flock-linux-x64
+          docker rm "$cid" >/dev/null
+          digest=$(sed -n "s/.*LINUX_HELPER_SHA256 = '\\([0-9a-f]\\{64\\}\\)'.*/\\1/p" src/signer/flock.ts)
+          test -n "$digest"
+          echo "$digest  .flock-repro/flock-linux-x64" | sha256sum -c -
+          cmp .flock-repro/flock-linux-x64 src/signer/helpers/flock-linux-x64
+
+  # Root-owned config and a dedicated signer user. The container entrypoint is root.
+  signer-root-layout:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ['node:20.19.2-bookworm-slim', 'node:22-bookworm-slim']
+    container:
+      image: ${{ matrix.image }}
+    timeout-minutes: 20
+    steps:
+      - name: Install git and useradd without build tools
+        run: apt-get update && apt-get install -y --no-install-recommends git ca-certificates passwd
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+      - run: npm ci
+      - run: npm run build
+      - run: node scripts/signer-root-layout.mjs

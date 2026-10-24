@@ -5,6 +5,38 @@
 export { Evalanche } from './agent';
 export type { EvalancheConfig } from './agent';
 
+export {
+  RemoteSignerClient,
+  EvalancheSignerServer,
+  startSignerServer,
+  canonicalIntentJson,
+  canonicalJson,
+  computeApprovedTxHash,
+  computeIntentHash,
+  computeMessageRouteHash,
+  computeRequestRouteHash,
+  computeRouteHash,
+  generateEd25519KeyPair,
+  signIntentHash,
+  signVerifierApproval,
+  verifyIntentHash,
+  isRemoteSignerConfig,
+  isSigningProvider,
+  AUDIT_ROOT,
+  HARD_MAX_GAS_COST_WEI,
+} from './signer';
+export type {
+  CanonicalSigningRequest,
+  RemoteSignerConfig,
+  SigningContext,
+  SigningIntent,
+  SigningProvider,
+  SigningResult,
+  TokenRef,
+  VerifierApproval,
+  SignerServerOptions,
+} from './signer';
+
 export { EvalancheError, EvalancheErrorCode } from './utils/errors';
 
 export {
@@ -25,6 +57,8 @@ export { X402Client, X402Facilitator } from './x402';
 export type { PaymentRequirements, PayAndFetchOptions, PayAndFetchResult } from './x402';
 
 export { BridgeClient, LiFiClient, GasZipClient, NATIVE_TOKEN } from './bridge';
+export { KYBER_AGGREGATOR_API, assembleLifiV3FromKyber, buildKyberLifiSwap } from './bridge/kyber-route';
+export type { KyberLifiSwap, KyberLifiSwapOptions, KyberLifiSwapRequest, KyberReferenceRequest } from './bridge/kyber-route';
 export type {
   BridgeQuoteParams,
   BridgeQuote,

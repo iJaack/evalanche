@@ -154,6 +154,18 @@ export class PolicyEngine {
     this._pruneHistory();
   }
 
+  /** Replace history from the durable budget file. Used when the signer restarts. */
+  restore(records: SpendRecord[]): void {
+    this._spendHistory = records.map((record) => ({ ...record }));
+    this._pruneHistory();
+  }
+
+  /** Spends still inside the daily window. The signer writes these to disk. */
+  exportHistory(): SpendRecord[] {
+    this._pruneHistory();
+    return this._spendHistory.map((record) => ({ ...record }));
+  }
+
   /** Get the current budget status */
   getBudgetStatus(): BudgetStatus {
     const now = Date.now();
