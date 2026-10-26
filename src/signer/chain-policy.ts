@@ -10,6 +10,12 @@
  */
 
 import { getAddress } from 'ethers';
+import { SOLANA_CLUSTERS, type SolanaChainId } from './solana-intent';
+import { resolveSolanaConfig } from './solana-policy';
+export { resolveSolanaConfig, assertSolanaClusterReady, assertSolanaPoolTransferAllowed,
+  SOLANA_GENESIS_HASHES, SOLANA_PHASE1_PROGRAM_IDS, SOLANA_PHASE1_MAINNET_MINTS } from './solana-policy';
+export type { SolanaPolicyInput, SolanaClusterConfig, ResolvedSolanaCluster, ResolvedSolanaConfig,
+  SolanaFeesConfig, SolanaPriceConfig, SolanaMintConfig, SolanaPoolConfig, SolanaPoolTransferInput } from './solana-policy';
 import { EvalancheError, EvalancheErrorCode } from '../utils/errors';
 import { LIFI_DIAMOND, NATIVE_ADDRESS } from './decode';
 import { nativeCoinGeckoId, normalizeCoinGeckoFeed, type CoinGeckoPriceBound, type CoinGeckoPriceFeed } from './price-feed';
@@ -543,4 +549,26 @@ export function tokenCap(chain: ResolvedChain, address: string): string | undefi
 /** URLs simulation may use for this chain, in order. */
 export function rpcUrlsFor(chain: ResolvedChain): string[] {
   return chain.rpcUrls;
+}
+
+export interface ResolvedSolanaPolicy {
+  enabled: boolean;
+  clusters: Record<SolanaChainId, { enabled: boolean; killSwitch: boolean }>;
+  effective: SolanaChainId[];
+}
+
+/** Resolve flags independently of readiness; validate the full typed configuration. */
+export function resolveSolanaPolicy(value: unknown): ResolvedSolanaPolicy {
+  const config = resolveSolanaConfig(value);
+  const clusters: ResolvedSolanaPolicy['clusters'] = {
+    'solana:mainnet': { enabled: false, killSwitch: false },
+    'solana:devnet': { enabled: false, killSwitch: false },
+  };
+  const effective: SolanaChainId[] = [];
+  for (const cluster of SOLANA_CLUSTERS) {
+    const { enabled, killSwitch } = config.clusters[cluster];
+    clusters[cluster] = { enabled, killSwitch };
+    if (config.enabled && enabled && !killSwitch) effective.push(cluster);
+  }
+  return { enabled: config.enabled, clusters, effective };
 }

@@ -10,6 +10,16 @@ import { createPrivateKey, createPublicKey, generateKeyPairSync, sign, verify, t
 import { getAddress, getBytes, hexlify, keccak256, toUtf8Bytes } from 'ethers';
 import { ed25519PointError, ed25519SignatureError } from './ed25519';
 import { canonicalJson } from './jcs';
+import {
+  assertSolanaApprovalShape, assertSolanaIntentShape, solanaApprovalSigningBytes,
+  type SolanaSigningIntent,
+} from './solana-intent';
+export {
+  SOLANA_APPROVAL_DOMAIN, SOLANA_CLUSTERS, isSolanaChainId, assertSolanaIntentShape,
+  assertSolanaRequestShape, computeSolanaRouteHash, solanaApprovalSigningBytes,
+  parseSolanaMessage, assertSolanaMessageMatchesIntent, solanaPriorityFeeLamports,
+} from './solana-intent';
+export type { ParsedSolanaMessage, SolanaComputeBudgetCaps, SolanaChainId, SolanaTokenRef, SolanaTransaction, SolanaSigningIntent, SolanaSigningRequest } from './solana-intent';
 
 export interface TokenRef {
   address: string;
@@ -297,7 +307,15 @@ export function normalizeApprovedTx(tx: ApprovedTransaction): ApprovedTransactio
 }
 
 /** Reject extra keys, non-canonical numbers, and prototype keys. Returns the normalized intent. */
-export function assertIntentShape(value: unknown): SigningIntent {
+export function assertIntentShape(value: unknown): SigningIntent | SolanaSigningIntent {
+  if (value && typeof value === 'object' && !Array.isArray(value)
+    && typeof (value as { chainId?: unknown }).chainId === 'string') {
+    return assertSolanaIntentShape(value);
+  }
+  return assertEvmIntentShape(value);
+}
+
+function assertEvmIntentShape(value: unknown): SigningIntent {
   const record = assertExactKeys(value, INTENT_FIELDS, 'intent');
   if (record.version !== '1') reject('intent.version must be "1"');
   const intent: SigningIntent = {
@@ -338,6 +356,9 @@ export function assertIntentShape(value: unknown): SigningIntent {
   if (record.postFrictionEvUsd !== undefined) intent.postFrictionEvUsd = decimal(record.postFrictionEvUsd, 'intent.postFrictionEvUsd');
   if (record.signalRefs !== undefined) {
     if (!Array.isArray(record.signalRefs)) reject('intent.signalRefs must be an array');
+    for (let i = 0; i < record.signalRefs.length; i++) {
+      if (!Object.hasOwn(record.signalRefs, i)) reject('intent.signalRefs must not be sparse');
+    }
     intent.signalRefs = record.signalRefs.map((entry, index) => nfc(entry, `intent.signalRefs[${index}]`));
   }
   if (record.tx !== undefined) {
@@ -395,18 +416,21 @@ function polymarketOrder(value: unknown): NonNullable<SigningIntent['polymarket'
 function clmmOwned(value: unknown): NonNullable<SigningIntent['clmm']> {
   const record = assertExactKeys(value, ['ownedTokenIds'], 'clmm');
   if (!Array.isArray(record.ownedTokenIds)) reject('clmm.ownedTokenIds must be an array');
+  for (let i = 0; i < record.ownedTokenIds.length; i++) {
+    if (!Object.hasOwn(record.ownedTokenIds, i)) reject('clmm.ownedTokenIds must not be sparse');
+  }
   return {
     ownedTokenIds: record.ownedTokenIds.map((entry, index) => decimal(entry, `clmm.ownedTokenIds[${index}]`)),
   };
 }
 
 /** Canonical intent JSON. Object keys are sorted at every level. */
-export function canonicalIntentJson(intent: SigningIntent): string {
+export function canonicalIntentJson(intent: SigningIntent | SolanaSigningIntent): string {
   return canonicalJson(assertIntentShape(intent));
 }
 
 /** keccak256 of the canonical intent JSON, as a 0x-prefixed hex string. */
-export function computeIntentHash(intent: SigningIntent): string {
+export function computeIntentHash(intent: SigningIntent | SolanaSigningIntent): string {
   return keccak256(toUtf8Bytes(canonicalIntentJson(intent)));
 }
 
@@ -616,7 +640,7 @@ export function signVerifierApproval(args: {
   mode?: ApprovalMode;
   signerAddress?: string;
 }): VerifierApproval {
-  const intent = assertIntentShape(args.intent);
+  const intent = assertEvmIntentShape(args.intent);
   const decision = args.decision ?? 'approve';
   const mode = args.mode ?? 'live';
   const signerAddress = getAddress(args.signerAddress ?? intent.wallet);
@@ -644,4 +668,53 @@ export const SWAP_ACTIONS = new Set(['swap', 'bridge', 'lifi', 'bridge-swap']);
 
 export function actionRequiresMinAmountOut(action: string): boolean {
   return SWAP_ACTIONS.has(action.trim().toLowerCase());
+}
+
+/** Sign an offline Solana verifier approval; this never signs a Solana transaction. */
+export function signSolanaVerifierApproval(args: {
+  intent: SolanaSigningIntent;
+  verifierPrivateKey: string;
+  verifierPublicKey: string;
+  decision?: ApprovalDecision;
+  mode?: ApprovalMode;
+  signerAddress?: string;
+}): VerifierApproval {
+  const intent = assertSolanaIntentShape(args.intent);
+  const decision = args.decision ?? 'approve';
+  if (decision !== 'approve') reject('Solana verifier only signs approve decisions');
+  const mode = args.mode ?? 'live';
+  const signerAddress = args.signerAddress ?? intent.wallet;
+  if (signerAddress !== intent.wallet) reject('Solana approval signerAddress must match treasury wallet');
+  if (!/^0x[0-9a-fA-F]{64}$/.test(args.verifierPublicKey)) reject('Verifier must be 32-byte hex');
+  if (!/^0x[0-9a-fA-F]{64}$/.test(args.verifierPrivateKey)) reject('Verifier seed must be 32-byte hex');
+  assertEd25519PublicKey(args.verifierPublicKey);
+  const intentHash = computeIntentHash(intent);
+  const bytes = solanaApprovalSigningBytes({ decision, mode, signerPubkey: signerAddress, cluster: intent.chainId, intentHash });
+  return { intentHash, nonce: intent.nonce, expiresAt: intent.expiresAt, verifier: args.verifierPublicKey,
+    signature: signBytes(bytes, args.verifierPrivateKey, args.verifierPublicKey), decision, mode, signerAddress };
+}
+
+/** Fail closed on malformed approvals, substitutions, or signatures from any unpinned key. */
+export function verifySolanaApproval(args: {
+  intent: unknown;
+  approval: unknown;
+  mode: ApprovalMode;
+  verifierPublicKey: string;
+}): boolean {
+  try {
+    const intent = assertSolanaIntentShape(args.intent);
+    const approval = assertSolanaApprovalShape(args.approval);
+    if (approval.decision !== 'approve' || approval.mode !== args.mode
+      || approval.signerAddress !== intent.wallet || approval.nonce !== intent.nonce
+      || approval.expiresAt !== intent.expiresAt) return false;
+    if (!/^0x[0-9a-fA-F]{64}$/.test(args.verifierPublicKey)
+      || !keysEqual(approval.verifier, args.verifierPublicKey)) return false;
+    const intentHash = computeIntentHash(intent);
+    if (approval.intentHash.toLowerCase() !== intentHash) return false;
+    const bytes = solanaApprovalSigningBytes({ decision: approval.decision, mode: approval.mode,
+      signerPubkey: approval.signerAddress, cluster: intent.chainId, intentHash });
+    return verifyBytes(bytes, approval.signature, args.verifierPublicKey);
+  } catch {
+    return false;
+  }
 }
