@@ -11,6 +11,11 @@
 
 import { getAddress } from 'ethers';
 import { SOLANA_CLUSTERS, type SolanaChainId } from './solana-intent';
+import { resolveSolanaConfig } from './solana-policy';
+export { resolveSolanaConfig, assertSolanaClusterReady, assertSolanaPoolTransferAllowed,
+  SOLANA_GENESIS_HASHES, SOLANA_PHASE1_PROGRAM_IDS, SOLANA_PHASE1_MAINNET_MINTS } from './solana-policy';
+export type { SolanaPolicyInput, SolanaClusterConfig, ResolvedSolanaCluster, ResolvedSolanaConfig,
+  SolanaFeesConfig, SolanaPriceConfig, SolanaMintConfig, SolanaPoolConfig, SolanaPoolTransferInput } from './solana-policy';
 import { EvalancheError, EvalancheErrorCode } from '../utils/errors';
 import { LIFI_DIAMOND, NATIVE_ADDRESS } from './decode';
 import { nativeCoinGeckoId, normalizeCoinGeckoFeed, type CoinGeckoPriceBound, type CoinGeckoPriceFeed } from './price-feed';
@@ -546,47 +551,24 @@ export function rpcUrlsFor(chain: ResolvedChain): string[] {
   return chain.rpcUrls;
 }
 
-/** PR1 accepts only flags. Readiness and signing configuration belong to later PRs. */
-export interface SolanaPolicyInput {
-  enabled?: boolean;
-  clusters?: Partial<Record<SolanaChainId, { enabled?: boolean; killSwitch?: boolean }>>;
-}
-
 export interface ResolvedSolanaPolicy {
   enabled: boolean;
   clusters: Record<SolanaChainId, { enabled: boolean; killSwitch: boolean }>;
   effective: SolanaChainId[];
 }
 
-function solanaObject(value: unknown, allowed: readonly string[], label: string): Record<string, unknown> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) fail(`${label} must be an object`);
-  for (const key of Reflect.ownKeys(value)) {
-    if (typeof key !== 'string' || !allowed.includes(key)) fail(`${label}.${String(key)} is not a recognized setting`);
-    if (!('value' in Object.getOwnPropertyDescriptor(value, key)!)) fail(`${label}.${key} must be a data field`);
-  }
-  return value as Record<string, unknown>;
-}
-
-function solanaFlag(record: Record<string, unknown>, key: string, label: string): boolean {
-  if (!Object.hasOwn(record, key)) return false;
-  if (typeof record[key] !== 'boolean') fail(`${label}.${key} must be boolean`);
-  return record[key] as boolean;
-}
-
-/** Resolve the Solana object independently of EVM defaults; a kill switch always wins. */
+/** Resolve flags independently of readiness; validate the full typed configuration. */
 export function resolveSolanaPolicy(value: unknown): ResolvedSolanaPolicy {
-  const record = value === undefined ? {} : solanaObject(value, ['enabled', 'clusters'], 'solana');
-  const enabled = solanaFlag(record, 'enabled', 'solana');
-  const input = Object.hasOwn(record, 'clusters') ? solanaObject(record.clusters, SOLANA_CLUSTERS, 'solana.clusters') : {};
+  const config = resolveSolanaConfig(value);
   const clusters: ResolvedSolanaPolicy['clusters'] = {
     'solana:mainnet': { enabled: false, killSwitch: false },
     'solana:devnet': { enabled: false, killSwitch: false },
   };
   const effective: SolanaChainId[] = [];
   for (const cluster of SOLANA_CLUSTERS) {
-    const entry = Object.hasOwn(input, cluster) ? solanaObject(input[cluster], ['enabled', 'killSwitch'], `solana.clusters.${cluster}`) : {};
-    clusters[cluster] = { enabled: solanaFlag(entry, 'enabled', cluster), killSwitch: solanaFlag(entry, 'killSwitch', cluster) };
-    if (enabled && clusters[cluster].enabled && !clusters[cluster].killSwitch) effective.push(cluster);
+    const { enabled, killSwitch } = config.clusters[cluster];
+    clusters[cluster] = { enabled, killSwitch };
+    if (config.enabled && enabled && !killSwitch) effective.push(cluster);
   }
-  return { enabled, clusters, effective };
+  return { enabled: config.enabled, clusters, effective };
 }

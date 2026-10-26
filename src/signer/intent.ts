@@ -17,8 +17,9 @@ import {
 export {
   SOLANA_APPROVAL_DOMAIN, SOLANA_CLUSTERS, isSolanaChainId, assertSolanaIntentShape,
   assertSolanaRequestShape, computeSolanaRouteHash, solanaApprovalSigningBytes,
+  parseSolanaMessage, assertSolanaMessageMatchesIntent, solanaPriorityFeeLamports,
 } from './solana-intent';
-export type { SolanaChainId, SolanaTokenRef, SolanaTransaction, SolanaSigningIntent, SolanaSigningRequest } from './solana-intent';
+export type { ParsedSolanaMessage, SolanaComputeBudgetCaps, SolanaChainId, SolanaTokenRef, SolanaTransaction, SolanaSigningIntent, SolanaSigningRequest } from './solana-intent';
 
 export interface TokenRef {
   address: string;
