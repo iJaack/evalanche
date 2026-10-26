@@ -239,7 +239,13 @@ export function solanaPriorityFeeLamports(limit: number, price: string | bigint)
   return (BigInt(limit) * value + 999999n) / 1000000n;
 }
 
-/** Additional PR2 binding; PR1 schema-only callers intentionally remain unchanged. */
+/**
+ * Additional PR2 binding; PR1 schema-only callers intentionally remain unchanged.
+ * Only an intent that declares `tx.durableNonce` is rejected here. PR2 does not decode
+ * System instructions, so a message whose first instruction is AdvanceNonceAccount is
+ * not detected. Rejecting durable-nonce messages (AdvanceNonceAccount) at the message
+ * level is required in PR3, before any signing is enabled.
+ */
 export function assertSolanaMessageMatchesIntent(value: unknown, options: { caps?: SolanaComputeBudgetCaps } = {}): ParsedSolanaMessage {
   const intent = assertSolanaIntentShape(value);
   const message = parseSolanaMessage(intent.tx.serializedMessage);

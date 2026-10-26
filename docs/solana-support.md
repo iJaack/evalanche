@@ -11,7 +11,7 @@ PR1 supplies offline schemas, hashes, verifier approvals and flags. PR2 adds the
 | API | Offline contract |
 | --- | --- |
 | `parseSolanaMessage(message)` | Accept canonical base64 or `Uint8Array` unsigned v0 message bytes. Validate compact-u16 lengths, static keys, signer header, indices and complete consumption. Parse lookup entries completely, then deny every non-empty lookup list. |
-| `assertSolanaMessageMatchesIntent(intent, {caps?})` | Apply schema/hash checks, bind treasury payer and recent blockhash, and require exactly one matching CU limit and price. Reject durable nonce messages and unsupported ComputeBudget instructions. Optional explicit caps constrain units, price and rounded priority fee. This does not decode SPL/Jupiter actions or prove the CPI program set. |
+| `assertSolanaMessageMatchesIntent(intent, {caps?})` | Apply schema/hash checks, bind treasury payer and recent blockhash, and require exactly one matching CU limit and price. Reject intents that declare `tx.durableNonce` and unsupported ComputeBudget instructions. System instructions are not decoded, so a message that starts with `AdvanceNonceAccount` is not rejected yet; message-level durable-nonce rejection is required in PR3, before any signing. Optional explicit caps constrain units, price and rounded priority fee. This does not decode SPL/Jupiter actions or prove the CPI program set. |
 | `solanaPriorityFeeLamports(limit, price)` | Return bigint `ceil(limit * price / 1000000)`; price is a u64 decimal string or bigint. |
 | `resolveSolanaConfig(solana)` | Validate exact typed configuration, including dormant settings and absolute `secretKeyPath` syntax. Preserve case-sensitive mint and price-map keys. Default flags off; provisional `fees.maxFeeUsd` is `'0.50'`. Require explicit `maxPerTxUsd` on policy-bearing profiles; retain PR1 flag-only profiles. |
 | `resolveSolanaPolicy(solana)` | Accept the full config while preserving PR1's flags/effective-clusters return shape. |
@@ -230,7 +230,7 @@ Decided by Ops, 26 Oct 2026: an init command, and **no** environment-variable ke
 - POST-RESET currently forbids keys on disk, so this custody model needs Giacomo's approval (see Decisions pending Giacomo).
 - No funds go to the Solana treasury before a full reset-and-restore drill passes with a devnet key.
 
-The key is never returned, logged, committed, or exported in plaintext. `EVALANCHE_SIGNER_SOLANA_SECRET_KEY` is not supported, and startup rejects it if it is set. PR2 implements init, escrow export, and the restore check; PR4 extends replay-state escrow and restore alongside it.
+The key is never returned, logged, committed, or exported in plaintext. `EVALANCHE_SIGNER_SOLANA_SECRET_KEY` is not supported, and startup rejects it if it is set. PR2 does not implement custody: init, escrow export, and the restore check move to a later PR, to be defined. PR4 extends replay-state escrow and restore alongside it.
 
 The shared box still has root-capable agents. File permissions and a native signing library do not change TM-008. Enabling Solana requires a fresh owner review of that exposure.
 
@@ -522,12 +522,19 @@ Every PR is TDD-first: failing tests commit, implementation commit, then opt-in 
 | PR | Scope | Completion evidence |
 | --- | --- | --- |
 | PR1 | Intent union, strict schema, hashes, Solana approval bytes, shared vectors, flag off. | EVM vectors unchanged. Cross-domain/mode/cluster attacks fail. Absent/off Solana is unreachable and performs no Solana RPC or key load. |
-| PR2 | Key custody, install/recovery design, selected pinned public-data dependencies, v0 parsing, static keys only; lookup-table messages denied. | Native signing vector; secret redaction; protected file tests; wrong signer/header/ALT/genesis tests; Node 20/22 and package/audit/size evidence. No funded key created by this doc. |
+| PR2 | Offline v0 message parsing (static keys only; lookup-table messages denied), intent binding (payer, blockhash, route hash), ComputeBudget limit/price checks and priority-fee arithmetic, full config typing and readiness, the CPI-only pool-vault rule, genesis/program/mint constants, and one exact-pinned public-data dependency (`@solana/addresses@8.5.0`, not yet imported). Signing stays disabled. Key custody (init, escrow export, restore check) moves to a later PR, to be defined. | Wrong signer/header/ALT/ComputeBudget/config/pool tests; dependency pin tests; Node 20/22 and package/audit/size evidence. No key is created or read. |
 | PR3 | System/Token/Token-2022/ATA/ComputeBudget decoders, allowlists, treasury/ATA checks, exact approve/revoke, fee/value/token caps, prediction denials. | Allowed fixtures pass; all forbidden instructions/recipients/extensions fail. Fee rounding/cap boundaries pass. Review actual prediction program ids before admission. |
 | PR4 | Blockhash and durable-nonce replay, message/value reservations, additive nonce fields, audit fields, escrow/restore compatibility. | Old version 1 files survive read/write; replay, concurrency, crash, lock, restart, restore-floor, and mixed-audit tests pass. Durable validity limitation documented. |
 | PR5 | Jupiter v6 decoder, verified IDL/AMM layouts, quote freshness, slippage, CPI checks, simulation balance deltas. | Frozen SOL/USDC exact-in API fixtures and negative mutations pass. The CPI-only vault exemption and its three invariants are tested. Unknown variants/unchecked transfers stay denied. No Jupiter enablement until a route satisfies the actual policy. |
 | PR6 | SDK/proposer builders, Solana remote client, MCP tools, docs/export parity. | Byte-identical response verification before broadcast; mocked API/transport tests; no private key in proposer; existing EVM tools unchanged; docs/package parity gates pass. |
 | PR7 | Reusable opt-in devnet and Mac mini validator/fork E2E harness. | Runtime-only keys, devnet stand-in mint, confirmed transfer/approve/revoke/nonce results, local Jupiter route, and hard mainnet-send rejection. Normal CI remains offline for Solana. |
+
+### Open items from PR2 for later PRs
+
+- Durable-nonce rejection at the message level (PR3): decode System instructions and deny a message with `AdvanceNonceAccount`, before any signing.
+- Pool rule (PR5): `assertSolanaPoolTransferAllowed` does not yet require Jupiter v6 at `stack[0]` of the CPI stack; PR5 must check it.
+- Compare `intent.programIds` with the program set derived from the message; PR2 does not do this yet.
+- Tarball margin: after PR2 the npm tarball is 985,630 bytes, 14,370 bytes under the 1,000,000-byte cap, so later PRs need a size plan.
 
 Phase 1b, after PR7: on-chain ALT resolution behind `alt.enabled`, with the verifier and signer each fetching the tables, fully expanding the accounts, and running the same owner and program checks. Unresolvable routes are denied. The flag stays false until phase 1b passes its own TDD and E2E.
 
