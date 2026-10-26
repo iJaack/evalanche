@@ -1,4 +1,14 @@
 export {
+  SOLANA_APPROVAL_DOMAIN,
+  SOLANA_CLUSTERS,
+  isSolanaChainId,
+  assertIntentShape,
+  assertSolanaIntentShape,
+  assertSolanaRequestShape,
+  computeSolanaRouteHash,
+  solanaApprovalSigningBytes,
+  signSolanaVerifierApproval,
+  verifySolanaApproval,
   canonicalIntentJson,
   canonicalJson,
   computeApprovedTxHash,
@@ -14,6 +24,11 @@ export {
   verifyIntentHash,
 } from './intent';
 export type {
+  SolanaChainId,
+  SolanaTokenRef,
+  SolanaTransaction,
+  SolanaSigningIntent,
+  SolanaSigningRequest,
   CanonicalSigningRequest,
   Ed25519KeyPair,
   RemoteSignerConfig,
@@ -55,3 +70,6 @@ export {
   buildRevokeOperator,
 } from './funding-intent';
 export type { FundingIntentFields, PolymarketKillIntentFields } from './funding-intent';
+
+export { resolveSolanaPolicy } from './chain-policy';
+export type { SolanaPolicyInput, ResolvedSolanaPolicy } from './chain-policy';
