@@ -30,6 +30,7 @@ import {
   actionRequiresMinAmountOut,
   approvalSigningBytes,
   assertIntentShape,
+  isSolanaChainId,
   computeApprovedTxHash,
   computeIntentHash,
   computeMessageRouteHash,
@@ -57,7 +58,7 @@ import {
   type DecodedCall,
 } from './decode';
 import { NonceStore, writeDurable } from './nonce-store';
-import { resolveSignerPolicy, rpcUrlsFor, tokenCap, type ResolvedChain, type SignerChainConfig, type SignerPolicy } from './chain-policy';
+import { resolveSolanaPolicy, type SolanaPolicyInput, resolveSignerPolicy, rpcUrlsFor, tokenCap, type ResolvedChain, type SignerChainConfig, type SignerPolicy } from './chain-policy';
 import { assertCoinGeckoPricePlausible, coinGeckoBindings, fetchCoinGeckoSimplePrice, nativeCoinGeckoId } from './price-feed';
 import { CLMM_CHAIN_ID, assertClmmConfig, clmmFundingTokens, isClmmNpmApprove, isClmmPositionManager } from './clmm';
 import { assertDexConfig, dexVenue, isDexRouter } from './dex-venue';
@@ -224,6 +225,8 @@ export interface SignerServerOptions {
    * unless `enabled: true`. Old files omit this and keep their chain list.
    */
   chains?: Record<string, SignerChainConfig>;
+  /** Solana flags are recognized, but effective enablement is refused in PR1. */
+  solana?: SolanaPolicyInput;
   messageAllowlist?: string[];
   typedDataAllow?: TypedDataAllow[];
   explicitAllows?: ExplicitAllow[];
@@ -563,6 +566,10 @@ export class EvalancheSignerServer {
     ) {
       deny('Unknown signing kind', EvalancheErrorCode.INVALID_PARAMS);
     }
+    const chainId: unknown = request.chainId;
+    if (typeof chainId === 'string' && chainId.startsWith('solana:')) {
+      deny('Solana disabled: transaction signing is not implemented in PR1');
+    }
     let from: string;
     try {
       from = getAddress(request.from);
@@ -583,7 +590,10 @@ export class EvalancheSignerServer {
     if (!approval) deny('Verifier approval is required', EvalancheErrorCode.APPROVAL_INVALID);
     let intent: SigningIntent;
     try {
-      intent = assertIntentShape(request.structuredIntent);
+      const normalized = assertIntentShape(request.structuredIntent);
+      if (isSolanaChainId(normalized.chainId)) deny('Solana disabled: transaction signing is not implemented in PR1');
+      if (typeof normalized.chainId !== 'number') deny('Intent chainId must be an EVM integer');
+      intent = normalized as SigningIntent;
     } catch (error) {
       deny(error instanceof Error ? error.message : 'Structured intent is invalid', EvalancheErrorCode.APPROVAL_INVALID);
     }
@@ -1508,7 +1518,7 @@ const SIGNER_OPTION_KEYS = new Set([
   'initNonces', 'chainId', 'chainIds', 'allow', 'host', 'port', 'socketPath', 'dryRun', 'allowNonLoopback',
   'rpcUrl', 'simulate', 'policy', 'maxPerTxUsd', 'prices', 'tokenCaps', 'priceSourceUrl', 'priceFeed',
   'priceTtlMs', 'maxGasCostWei', 'slippageCaps', 'kyberExecutors', 'rpcUrls', 'chains', 'messageAllowlist',
-  'typedDataAllow', 'explicitAllows', 'keyId',
+  'typedDataAllow', 'explicitAllows', 'keyId', 'solana',
 ]);
 
 function indexAllow(allow: Record<string, AllowEntry[]>): Map<number, AllowEntry[]> {
@@ -1558,6 +1568,9 @@ function assertStartup(options: SignerServerOptions): void {
     if (!SIGNER_OPTION_KEYS.has(key)) {
       throw new EvalancheError(`${key} is not a recognized signer setting`, EvalancheErrorCode.INVALID_CONFIG);
     }
+  }
+  if (resolveSolanaPolicy(options.solana).effective.length > 0) {
+    throw new EvalancheError('Solana signing is not implemented in PR1; disable all clusters', EvalancheErrorCode.INVALID_CONFIG);
   }
   if (!options.token) throw new EvalancheError('Signer auth token is required', EvalancheErrorCode.INVALID_CONFIG);
   if (!options.verifierPublicKey) throw new EvalancheError('Pinned verifier public key is required', EvalancheErrorCode.INVALID_CONFIG);

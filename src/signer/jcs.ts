@@ -15,7 +15,12 @@ function jcs(value: unknown): string {
   if (typeof value === 'number') return jcsNumber(value);
   if (typeof value === 'string') return JSON.stringify(value.normalize('NFC'));
   if (Array.isArray(value)) {
-    return `[${value.map((entry) => jcs(entry)).join(',')}]`;
+    const parts: string[] = [];
+    for (let i = 0; i < value.length; i++) {
+      if (!Object.hasOwn(value, i)) throw new Error('Canonical JSON rejected a sparse array');
+      parts.push(jcs(value[i]));
+    }
+    return `[${parts.join(',')}]`;
   }
   if (typeof value === 'object') return jcsObject(value as Record<string, unknown>);
   throw new Error('Canonical JSON rejected an unsupported value');
