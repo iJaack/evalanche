@@ -12,11 +12,13 @@
         "@avalanche-sdk/client": "0.1.3",
         "@nktkas/hyperliquid": "^0.33.3",
         "@scure/bip32": "1.7.0",
+        "@solana/addresses": "8.5.0",
         "ethers": "^6.13.0",
         "viem": "^2.47.6"
       },
       "bin": {
-        "evalanche-mcp": "dist/mcp/cli.mjs"
+        "evalanche-mcp": "dist/mcp/cli.mjs",
+        "evalanche-signer": "dist/signer/cli.mjs"
       },
       "devDependencies": {
         "tsup": "^8.0.0",
@@ -1329,6 +1331,167 @@
         "url": "https://paulmillr.com/funding/"
       }
     },
+    "node_modules/@solana/addresses": {
+      "version": "8.5.0",
+      "resolved": "https://registry.npmjs.org/@solana/addresses/-/addresses-8.5.0.tgz",
+      "integrity": "sha512-LwTrDbDSJBng9y0vwiKqb/kSS9daspTGrSYoZPafeMWpAlpmutdD1KXPDHVTa4Xz00hcAfOJXYxRXX5VAoiOag==",
+      "license": "MIT",
+      "dependencies": {
+        "@solana/assertions": "8.5.0",
+        "@solana/codecs-core": "8.5.0",
+        "@solana/codecs-strings": "8.5.0",
+        "@solana/errors": "8.5.0",
+        "@solana/nominal-types": "8.5.0"
+      },
+      "engines": {
+        "node": ">=20.18.0"
+      },
+      "peerDependencies": {
+        "typescript": ">=5.4.0"
+      },
+      "peerDependenciesMeta": {
+        "typescript": {
+          "optional": true
+        }
+      }
+    },
+    "node_modules/@solana/assertions": {
+      "version": "8.5.0",
+      "resolved": "https://registry.npmjs.org/@solana/assertions/-/assertions-8.5.0.tgz",
+      "integrity": "sha512-EZDY5rJIV8Mv9xYJ7P+jvE5pihG7pmKZ6pTqbunba/4uZSQN4Klw0FX54LDDklfDvhzmAdXN0nYAnjovTGAPEg==",
+      "license": "MIT",
+      "dependencies": {
+        "@solana/errors": "8.5.0"
+      },
+      "engines": {
+        "node": ">=20.18.0"
+      },
+      "peerDependencies": {
+        "typescript": ">=5.4.0"
+      },
+      "peerDependenciesMeta": {
+        "typescript": {
+          "optional": true
+        }
+      }
+    },
+    "node_modules/@solana/codecs-core": {
+      "version": "8.5.0",
+      "resolved": "https://registry.npmjs.org/@solana/codecs-core/-/codecs-core-8.5.0.tgz",
+      "integrity": "sha512-ou38qNrf9XOzCWsu/I4sTzRmnrKqhblwMVvpXwXPKAAUZwkSAKQXonwgZFY68I5HK6nkfq1NLWfZFmTEIZYLiw==",
+      "license": "MIT",
+      "dependencies": {
+        "@solana/errors": "8.5.0"
+      },
+      "engines": {
+        "node": ">=20.18.0"
+      },
+      "peerDependencies": {
+        "typescript": ">=5.4.0"
+      },
+      "peerDependenciesMeta": {
+        "typescript": {
+          "optional": true
+        }
+      }
+    },
+    "node_modules/@solana/codecs-numbers": {
+      "version": "8.5.0",
+      "resolved": "https://registry.npmjs.org/@solana/codecs-numbers/-/codecs-numbers-8.5.0.tgz",
+      "integrity": "sha512-6Vtf52rHzjf98ykejn9bNGMaQ2k1f4UMIa+BGMbBy4mIRQ5ggdI5oCAb3sZPfJcel2JQHwDlsLHCYdpqC+n6Mg==",
+      "license": "MIT",
+      "dependencies": {
+        "@solana/codecs-core": "8.5.0",
+        "@solana/errors": "8.5.0"
+      },
+      "engines": {
+        "node": ">=20.18.0"
+      },
+      "peerDependencies": {
+        "typescript": ">=5.4.0"
+      },
+      "peerDependenciesMeta": {
+        "typescript": {
+          "optional": true
+        }
+      }
+    },
+    "node_modules/@solana/codecs-strings": {
+      "version": "8.5.0",
+      "resolved": "https://registry.npmjs.org/@solana/codecs-strings/-/codecs-strings-8.5.0.tgz",
+      "integrity": "sha512-9lCSCUVkbPLb1o9PLDsaOatdVgrUqqWMrAqJvZPyyuvrC5++wPuKRIGq+5iU3lICY+AwWxrzVyiwdu4xaZVCiw==",
+      "license": "MIT",
+      "dependencies": {
+        "@solana/codecs-core": "8.5.0",
+        "@solana/codecs-numbers": "8.5.0",
+        "@solana/errors": "8.5.0"
+      },
+      "engines": {
+        "node": ">=20.18.0"
+      },
+      "peerDependencies": {
+        "fastestsmallesttextencoderdecoder": "^1.0.22",
+        "typescript": ">=5.4.0"
+      },
+      "peerDependenciesMeta": {
+        "fastestsmallesttextencoderdecoder": {
+          "optional": true
+        },
+        "typescript": {
+          "optional": true
+        }
+      }
+    },
+    "node_modules/@solana/errors": {
+      "version": "8.5.0",
+      "resolved": "https://registry.npmjs.org/@solana/errors/-/errors-8.5.0.tgz",
+      "integrity": "sha512-y/XTiwAZsm2kHoEDJ3ac3NUq/0E4uCbOnBe2m5mmBXF3TGmF562tDKgN5pQ+thiRABvi7b2LqwTBCg4kAdtgRg==",
+      "license": "MIT",
+      "dependencies": {
+        "chalk": "5.6.2",
+        "commander": "15.0.0"
+      },
+      "bin": {
+        "errors": "bin/cli.mjs"
+      },
+      "engines": {
+        "node": ">=20.18.0"
+      },
+      "peerDependencies": {
+        "typescript": ">=5.4.0"
+      },
+      "peerDependenciesMeta": {
+        "typescript": {
+          "optional": true
+        }
+      }
+    },
+    "node_modules/@solana/errors/node_modules/commander": {
+      "version": "15.0.0",
+      "resolved": "https://registry.npmjs.org/commander/-/commander-15.0.0.tgz",
+      "integrity": "sha512-z67u4ZhzCL/Tydu1lJARtEZYWbWaN7oYLHbsuzocr6y4N6WZAagG3RQ4FW61V1/0+jImpj293XfrcYnd1qxtPg==",
+      "license": "MIT",
+      "engines": {
+        "node": ">=22.12.0"
+      }
+    },
+    "node_modules/@solana/nominal-types": {
+      "version": "8.5.0",
+      "resolved": "https://registry.npmjs.org/@solana/nominal-types/-/nominal-types-8.5.0.tgz",
+      "integrity": "sha512-OfTZ+w/C59Zkp51RJ3dzn2GXUojf9p/PMmSrOpxrj+hci3bdh4e6XDGY+mvP8HGPH+m0nfKWTBCygEslfoX6bg==",
+      "license": "MIT",
+      "engines": {
+        "node": ">=20.18.0"
+      },
+      "peerDependencies": {
+        "typescript": ">=5.4.0"
+      },
+      "peerDependenciesMeta": {
+        "typescript": {
+          "optional": true
+        }
+      }
+    },
     "node_modules/@standard-schema/spec": {
       "version": "1.1.0",
       "resolved": "https://registry.npmjs.org/@standard-schema/spec/-/spec-1.1.0.tgz",
@@ -1627,6 +1790,18 @@
       "license": "MIT",
       "engines": {
         "node": ">=18"
+      }
+    },
+    "node_modules/chalk": {
+      "version": "5.6.2",
+      "resolved": "https://registry.npmjs.org/chalk/-/chalk-5.6.2.tgz",
+      "integrity": "sha512-7NzBL0rN6fMUW+f7A6Io4h40qQlG+xGmtMxfbnH/K7TAtt8JQWVQK+6g0UXKMeVJoyV5EkkNsErQ8pVD3bLHbA==",
+      "license": "MIT",
+      "engines": {
+        "node": "^12.17.0 || ^14.13 || >=16.0.0"
+      },
+      "funding": {
+        "url": "https://github.com/chalk/chalk?sponsor=1"
       }
     },
     "node_modules/chokidar": {

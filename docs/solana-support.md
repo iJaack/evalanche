@@ -2,7 +2,34 @@
 
 ## Summary and status
 
-This is phase 0. Nothing described here is implemented. The baseline is `cursor/provision-escrow-684c` at `3c1220b`, release `1.17.0-rc.7`. Implementation PRs stack on `feat/solana-support`.
+This document contains the phased design and the local implementation status below. The design baseline is `cursor/provision-escrow-684c` at `3c1220b`, release `1.17.0-rc.7`. Implementation PRs stack on `feat/solana-support`.
+
+### PR2 implementation scope
+
+PR1 supplies offline schemas, hashes, verifier approvals and flags. PR2 adds the following public helpers, exported through `src/signer/index.ts` and `src/index.ts`:
+
+| API | Offline contract |
+| --- | --- |
+| `parseSolanaMessage(message)` | Accept canonical base64 or `Uint8Array` unsigned v0 message bytes. Validate compact-u16 lengths, static keys, signer header, indices and complete consumption. Parse lookup entries completely, then deny every non-empty lookup list. |
+| `assertSolanaMessageMatchesIntent(intent, {caps?})` | Apply schema/hash checks, bind treasury payer and recent blockhash, and require exactly one matching CU limit and price. Reject durable nonce messages and unsupported ComputeBudget instructions. Optional explicit caps constrain units, price and rounded priority fee. This does not decode SPL/Jupiter actions or prove the CPI program set. |
+| `solanaPriorityFeeLamports(limit, price)` | Return bigint `ceil(limit * price / 1000000)`; price is a u64 decimal string or bigint. |
+| `resolveSolanaConfig(solana)` | Validate exact typed configuration, including dormant settings and absolute `secretKeyPath` syntax. Preserve case-sensitive mint and price-map keys. Default flags off; provisional `fees.maxFeeUsd` is `'0.50'`. Require explicit `maxPerTxUsd` on policy-bearing profiles; retain PR1 flag-only profiles. |
+| `resolveSolanaPolicy(solana)` | Accept the full config while preserving PR1's flags/effective-clusters return shape. |
+| `assertSolanaClusterReady(config, cluster)` | Check configuration completeness only, including explicit value/rent caps, fee limits, mint caps and price bounds. This does not verify keys or contact providers. |
+| `assertSolanaPoolTransferAllowed(evidence)` | Check the CPI-only listed-vault exemption, admitted pool AMM, vault authority and all three invariants below. The caller must supply verified account data, complete decoded CPI/top-level actions, ATA derivation and simulation credit. No chain evidence is fetched or inferred. |
+
+`SOLANA_GENESIS_HASHES`, `SOLANA_PHASE1_PROGRAM_IDS` and `SOLANA_PHASE1_MAINNET_MINTS` expose the pins listed below. Supporting message, config, caps and evidence types are also public. Pin comparison is offline validation, not live genesis verification.
+
+The installed dependency selection is exactly `@solana/addresses@8.5.0`. PR2 reuses the small local base58 codec and parses the wire format locally; no transitive Solana package is imported directly and no custody adapter is added.
+
+```text
+unsigned bytes -> strict v0 parser -> intent / ComputeBudget binding
+typed config   -> pure readiness  -> existing startup denial
+decoded CPI evidence -> pool policy check
+Solana request -> "Solana disabled: transaction signing is not implemented in PR1"
+```
+
+Solana signing stays disabled. Enabled clusters still fail server startup. PR1 schema-only acceptance remains separate from PR2 binding. No key file is read, created or opened, and no transaction signing, key custody, RPC, DNS or network request is implemented here. Custody, recovery and live/provider checks described in later sections remain future work. The provisional fee and pool defaults are test policy pending Giacomo's confirmation, not authorization to enable a cluster.
 
 The goal is Jupiter v6 treasury swaps in phase 1. pump.fun and PumpSwap are phase 2. Every new path is off by default. No mainnet transaction is authorized by this document. Giacomo must approve mainnet enablement. No merge, tag, or release proceeds without his approval. PR #22 stays untouched.
 

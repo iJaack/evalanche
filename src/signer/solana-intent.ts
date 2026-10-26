@@ -1,6 +1,6 @@
-/** Offline Solana schema and approval domain. Wire parsing and policy belong to later PRs. */
+/** Offline Solana schema, approval domain and static-key v0 message checks. */
 import { createHash } from 'node:crypto';
-import { decodeBase58 } from './base58';
+import { decodeBase58, encodeBase58 } from './base58';
 import type { ApprovalDecision, ApprovalMode, VerifierApproval } from './intent';
 
 export const SOLANA_APPROVAL_DOMAIN = 'evalanche-verifier/solana/v1\0';
@@ -153,6 +153,121 @@ export function computeSolanaRouteHash(message: string | Uint8Array): string {
   const bytes = typeof message === 'string' ? messageBytes(message) : message;
   if (!(bytes instanceof Uint8Array) || bytes.length === 0) reject('Solana message bytes are required');
   return '0x' + createHash('sha256').update(bytes).digest('hex');
+}
+
+export interface ParsedSolanaMessage {
+  version: 0;
+  header: { numRequiredSignatures: number; numReadonlySignedAccounts: number; numReadonlyUnsignedAccounts: number };
+  staticAccountKeys: string[];
+  recentBlockhash: string;
+  instructions: Array<{ programIdIndex: number; programId: string; accountIndices: number[]; data: Uint8Array }>;
+  addressTableLookups: Array<{ accountKey: string; writable: number[]; readonly: number[] }>;
+}
+
+/** Parse the complete unsigned wire message. No lookup resolution, RPC or signing. */
+export function parseSolanaMessage(message: string | Uint8Array): ParsedSolanaMessage {
+  const bytes = typeof message === 'string' ? messageBytes(message) : message;
+  if (!(bytes instanceof Uint8Array)) reject('Solana message bytes are required');
+  let offset = 0;
+  function take(length: number): Uint8Array {
+    if (length > bytes.length - offset) reject('Truncated Solana message length');
+    const result = bytes.slice(offset, offset + length);
+    offset += length;
+    return result;
+  }
+  const byte = (): number => take(1)[0];
+  function shortvec(): number {
+    let value = 0;
+    for (let i = 0; i < 3; i++) {
+      const next = byte();
+      if (i === 2 && next > 3) reject('Solana compact-u16 overflow');
+      value |= (next & 127) << (7 * i);
+      if (!(next & 128)) {
+        if (i > 0 && next === 0) reject('Noncanonical Solana compact-u16');
+        return value;
+      }
+    }
+    reject('Invalid Solana compact-u16');
+  }
+  if (byte() !== 0x80) reject('Only Solana v0 messages are supported');
+  const header = { numRequiredSignatures: byte(), numReadonlySignedAccounts: byte(), numReadonlyUnsignedAccounts: byte() };
+  const keyCount = shortvec();
+  if (keyCount < 1 || keyCount > 256 || header.numRequiredSignatures !== 1
+    || header.numReadonlySignedAccounts !== 0 || header.numReadonlyUnsignedAccounts > keyCount - 1) {
+    reject('Invalid Solana static keys or signer header');
+  }
+  const staticAccountKeys = Array.from({ length: keyCount }, () => encodeBase58(take(32)));
+  if (new Set(staticAccountKeys).size !== keyCount) reject('Duplicate Solana static account keys');
+  const recentBlockhash = encodeBase58(take(32));
+  const instructions: ParsedSolanaMessage['instructions'] = [];
+  const instructionCount = shortvec();
+  for (let i = 0; i < instructionCount; i++) {
+    const programIdIndex = byte();
+    const accountIndices = Array.from(take(shortvec()));
+    const data = new Uint8Array(take(shortvec()));
+    instructions.push({ programIdIndex, programId: staticAccountKeys[programIdIndex], accountIndices, data });
+  }
+  const addressTableLookups: ParsedSolanaMessage['addressTableLookups'] = [];
+  const lookupCount = shortvec();
+  for (let i = 0; i < lookupCount; i++) {
+    const accountKey = encodeBase58(take(32));
+    const writable = Array.from(take(shortvec()));
+    const readonly = Array.from(take(shortvec()));
+    addressTableLookups.push({ accountKey, writable, readonly });
+  }
+  if (offset !== bytes.length) reject('Trailing bytes in Solana message');
+  if (addressTableLookups.length) reject('Solana address table lookups (ALT) are disabled');
+  for (const ix of instructions) {
+    if (ix.programIdIndex === 0 || ix.programIdIndex >= keyCount || ix.accountIndices.some((index) => index >= keyCount)) {
+      reject('Solana instruction index out of bounds or payer used as program');
+    }
+  }
+  return { version: 0, header, staticAccountKeys, recentBlockhash, instructions, addressTableLookups };
+}
+
+export interface SolanaComputeBudgetCaps {
+  maxComputeUnitLimit: number;
+  maxComputeUnitPriceMicroLamports: string;
+  maxPriorityFeeLamports: string;
+}
+
+/** Ceil micro-lamports to lamports without losing integer precision. */
+export function solanaPriorityFeeLamports(limit: number, price: string | bigint): bigint {
+  integer(limit, 'computeUnitLimit', 1);
+  const value = typeof price === 'bigint' ? price : BigInt(decimal(price, 'computeUnitPriceMicroLamports', true));
+  if (value < 0n || value > U64_MAX) reject('computeUnitPriceMicroLamports exceeds u64');
+  return (BigInt(limit) * value + 999999n) / 1000000n;
+}
+
+/** Additional PR2 binding; PR1 schema-only callers intentionally remain unchanged. */
+export function assertSolanaMessageMatchesIntent(value: unknown, options: { caps?: SolanaComputeBudgetCaps } = {}): ParsedSolanaMessage {
+  const intent = assertSolanaIntentShape(value);
+  const message = parseSolanaMessage(intent.tx.serializedMessage);
+  if ('durableNonce' in intent.tx) reject('Solana durable nonce messages are disabled');
+  if (message.staticAccountKeys[0] !== intent.wallet || intent.wallet === '11111111111111111111111111111111'
+    || message.recentBlockhash !== intent.tx.recentBlockhash) reject('Solana message payer or blockhash mismatch');
+  let limit: number | undefined;
+  let price: bigint | undefined;
+  for (const ix of message.instructions) {
+    if (ix.programId !== 'ComputeBudget111111111111111111111111111111') continue;
+    const data = Buffer.from(ix.data);
+    if (ix.accountIndices.length) reject('ComputeBudget instruction must have no accounts');
+    if (data[0] === 2 && data.length === 5 && limit === undefined) limit = data.readUInt32LE(1);
+    else if (data[0] === 3 && data.length === 9 && price === undefined) price = data.readBigUInt64LE(1);
+    else reject('Unsupported, malformed or duplicate ComputeBudget instruction');
+  }
+  if (limit === undefined || price === undefined || limit === 0
+    || limit !== intent.tx.computeUnitLimit || price !== BigInt(intent.tx.computeUnitPriceMicroLamports)) {
+    reject('Solana ComputeBudget missing or does not match intent');
+  }
+  if (options.caps !== undefined) {
+    const caps = exact(options.caps, ['maxComputeUnitLimit', 'maxComputeUnitPriceMicroLamports', 'maxPriorityFeeLamports'], 'Solana fee caps');
+    const maxLimit = integer(caps.maxComputeUnitLimit, 'maxComputeUnitLimit', 1, 0xffffffff);
+    const maxPrice = BigInt(decimal(caps.maxComputeUnitPriceMicroLamports, 'maxComputeUnitPriceMicroLamports', true));
+    const maxFee = BigInt(decimal(caps.maxPriorityFeeLamports, 'maxPriorityFeeLamports', true));
+    if (limit > maxLimit || price > maxPrice || solanaPriorityFeeLamports(limit, price) > maxFee) reject('Solana ComputeBudget exceeds fee caps');
+  }
+  return message;
 }
 
 function token(value: unknown, label: string): SolanaTokenRef {

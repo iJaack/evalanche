@@ -225,7 +225,7 @@ export interface SignerServerOptions {
    * unless `enabled: true`. Old files omit this and keep their chain list.
    */
   chains?: Record<string, SignerChainConfig>;
-  /** Solana flags are recognized, but effective enablement is refused in PR1. */
+  /** Typed Solana config is validated offline; effective enablement is still refused. */
   solana?: SolanaPolicyInput;
   messageAllowlist?: string[];
   typedDataAllow?: TypedDataAllow[];

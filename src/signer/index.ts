@@ -6,6 +6,9 @@ export {
   assertSolanaIntentShape,
   assertSolanaRequestShape,
   computeSolanaRouteHash,
+  parseSolanaMessage,
+  assertSolanaMessageMatchesIntent,
+  solanaPriorityFeeLamports,
   solanaApprovalSigningBytes,
   signSolanaVerifierApproval,
   verifySolanaApproval,
@@ -24,6 +27,8 @@ export {
   verifyIntentHash,
 } from './intent';
 export type {
+  ParsedSolanaMessage,
+  SolanaComputeBudgetCaps,
   SolanaChainId,
   SolanaTokenRef,
   SolanaTransaction,
@@ -71,5 +76,7 @@ export {
 } from './funding-intent';
 export type { FundingIntentFields, PolymarketKillIntentFields } from './funding-intent';
 
-export { resolveSolanaPolicy } from './chain-policy';
-export type { SolanaPolicyInput, ResolvedSolanaPolicy } from './chain-policy';
+export { resolveSolanaPolicy, resolveSolanaConfig, assertSolanaClusterReady, assertSolanaPoolTransferAllowed,
+  SOLANA_GENESIS_HASHES, SOLANA_PHASE1_PROGRAM_IDS, SOLANA_PHASE1_MAINNET_MINTS } from './chain-policy';
+export type { SolanaPolicyInput, ResolvedSolanaPolicy, SolanaClusterConfig, ResolvedSolanaCluster, ResolvedSolanaConfig,
+  SolanaFeesConfig, SolanaPriceConfig, SolanaMintConfig, SolanaPoolConfig, SolanaPoolTransferInput } from './chain-policy';
