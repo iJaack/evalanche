@@ -355,6 +355,9 @@ function assertEvmIntentShape(value: unknown): SigningIntent {
   if (record.postFrictionEvUsd !== undefined) intent.postFrictionEvUsd = decimal(record.postFrictionEvUsd, 'intent.postFrictionEvUsd');
   if (record.signalRefs !== undefined) {
     if (!Array.isArray(record.signalRefs)) reject('intent.signalRefs must be an array');
+    for (let i = 0; i < record.signalRefs.length; i++) {
+      if (!Object.hasOwn(record.signalRefs, i)) reject('intent.signalRefs must not be sparse');
+    }
     intent.signalRefs = record.signalRefs.map((entry, index) => nfc(entry, `intent.signalRefs[${index}]`));
   }
   if (record.tx !== undefined) {
@@ -412,6 +415,9 @@ function polymarketOrder(value: unknown): NonNullable<SigningIntent['polymarket'
 function clmmOwned(value: unknown): NonNullable<SigningIntent['clmm']> {
   const record = assertExactKeys(value, ['ownedTokenIds'], 'clmm');
   if (!Array.isArray(record.ownedTokenIds)) reject('clmm.ownedTokenIds must be an array');
+  for (let i = 0; i < record.ownedTokenIds.length; i++) {
+    if (!Object.hasOwn(record.ownedTokenIds, i)) reject('clmm.ownedTokenIds must not be sparse');
+  }
   return {
     ownedTokenIds: record.ownedTokenIds.map((entry, index) => decimal(entry, `clmm.ownedTokenIds[${index}]`)),
   };

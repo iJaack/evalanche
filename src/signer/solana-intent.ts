@@ -192,6 +192,9 @@ export function assertSolanaIntentShape(value: unknown): SolanaSigningIntent {
   if (typeof record.routeHash !== 'string' || !/^0x[0-9a-f]{64}$/.test(record.routeHash)
     || record.routeHash !== computeSolanaRouteHash(tx.serializedMessage)) reject('Solana routeHash must equal SHA-256 of message bytes');
   if (!Array.isArray(record.programIds)) reject('programIds must be a sorted duplicate-free array');
+  for (let i = 0; i < record.programIds.length; i++) {
+    if (!Object.hasOwn(record.programIds, i)) reject('programIds must not be sparse');
+  }
   const programIds = record.programIds.map((entry) => pubkey(entry, 'programIds entry'));
   if (programIds.some((entry, i) => i > 0 && programIds[i - 1] >= entry)) reject('programIds must be sorted and duplicate-free');
   const common: SolanaIntentBase = {
