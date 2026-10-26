@@ -32,6 +32,11 @@ export default defineConfig([
     target: 'node20',
     banner: { js: '#!/usr/bin/env node' },
     outDir: 'dist/mcp',
+    // Keeps the published tarball under the 1_000_000-byte cap (the CLI ships without a sourcemap).
+    esbuildOptions(options) {
+      options.minifyWhitespace = true;
+      options.minifySyntax = true;
+    },
     // Don't bundle Avalanche-related deps — require them at runtime from node_modules
     // This avoids Ledger SDK bundling issues while keeping the file small
     external: [
