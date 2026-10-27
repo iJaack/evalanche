@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.17.0
+
+- First npm release after 1.14.0. 1.15.0, 1.16.0, and 1.17.0-rc.1 through 1.17.0-rc.7 were release candidates for the Grok Bot box signer. They were never published to npm or tagged, and their entries below stay as history. See `docs/releases/RELEASE_NOTES_1.17.0.md` for the consolidated notes.
+- Adds the remote signer, the `evalanche-signer` server, keyless and address-only `evalanche-mcp`, per-chain signer policy, pinned Kyber and direct DEX routes, and the Grok Bot box script. Polymarket, Avalanche liquidity, CCTP, revoke-only, and direct DEX venues are off by default.
+- Adds offline Solana schemas, hashes, approvals, v0 message parsing, ComputeBudget binding, and typed config. Solana signing is not implemented. Every Solana request is denied and an enabled cluster fails signer startup.
+- Removes Fantom 250 and zkSync Era 324 from the built-in chains and adds Sonic 146 and HyperEVM 999. Li.Fi quotes send integrator fee 0.
+- Adds the `@solana/addresses` 8.5.0 dependency and ships `npm-shrinkwrap.json`.
+
 ## 1.17.0-rc.7
 
 - Release candidate. Provision `evalanche-1.17.0-rc.7.tgz` as a new pin. Leave `evalanche-1.17.0-rc.1.tgz`, `evalanche-1.17.0-rc.2.tgz`, `evalanche-1.17.0-rc.3.tgz`, `evalanche-1.17.0-rc.4.tgz`, `evalanche-1.17.0-rc.5.tgz`, and `evalanche-1.17.0-rc.6.tgz` in place. Provisioning again under one of those filenames would overwrite a rollback pin.
