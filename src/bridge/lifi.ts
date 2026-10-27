@@ -109,6 +109,15 @@ export interface LiFiTimingStrategy {
   reduceEveryMs: number;
 }
 
+/** Options for every quote this client requests. */
+export interface LiFiClientOptions {
+  /**
+   * Li.Fi exchange keys this client may use when a request does not pass
+   * `allowExchanges`. Example: `['kyberswap']`.
+   */
+  allowExchanges?: readonly string[];
+}
+
 /** Parameters for requesting a bridge quote */
 export interface BridgeQuoteParams {
   /** Source chain ID */
@@ -148,6 +157,11 @@ export interface BridgeQuoteParams {
   swapStepTimingStrategies?: LiFiTimingStrategy[];
   /** Low-level LI.FI timing strategies for route discovery */
   routeTimingStrategies?: LiFiTimingStrategy[];
+  /**
+   * Li.Fi exchange keys allowed for this request. Overrides the client default.
+   * Omit it to use {@link LiFiClientOptions.allowExchanges}.
+   */
+  allowExchanges?: readonly string[];
 }
 
 /** A bridge quote returned by Li.Fi */
@@ -184,7 +198,12 @@ interface LiFiResolvedRouteOptions {
   skipSimulation?: boolean;
   swapStepTimingStrategies?: string[];
   routeTimingStrategies?: string[];
+  allowExchanges?: string[];
 }
+
+/** Integrator tag on every quote. `fee` is always 0 so Li.Fi cannot prepend a FeeForwarder. */
+const LIFI_INTEGRATOR = 'evalanche';
+const LIFI_INTEGRATOR_FEE = 0;
 
 const FAST_RESPONSE_TIMING_STRATEGY: LiFiTimingStrategy = {
   strategy: 'minWaitTime',
@@ -198,9 +217,11 @@ const FAST_RESPONSE_TIMING_STRATEGY: LiFiTimingStrategy = {
  */
 export class LiFiClient {
   private signer: AgentSigner;
+  private readonly allowExchanges?: readonly string[];
 
-  constructor(signer: AgentSigner) {
+  constructor(signer: AgentSigner, options: LiFiClientOptions = {}) {
     this.signer = signer;
+    this.allowExchanges = options.allowExchanges;
   }
 
   /**
@@ -226,8 +247,13 @@ export class LiFiClient {
       fromAddress,
       toAddress,
       slippage: (routeOptions.slippage ?? 0.03).toString(),
-      integrator: 'evalanche',
+      integrator: LIFI_INTEGRATOR,
+      fee: String(LIFI_INTEGRATOR_FEE),
     });
+    if (routeOptions.allowExchanges) {
+      const exchanges = routeOptions.allowExchanges.length === 0 ? ['[]'] : routeOptions.allowExchanges;
+      for (const exchange of exchanges) searchParams.append('allowExchanges', exchange);
+    }
     if (routeOptions.order) searchParams.set('order', routeOptions.order);
     if (routeOptions.preset) searchParams.set('preset', routeOptions.preset);
     if (routeOptions.maxPriceImpact !== undefined) {
@@ -281,7 +307,9 @@ export class LiFiClient {
       toAddress,
       options: {
         slippage: routeOptions.slippage ?? 0.03,
-        integrator: 'evalanche',
+        integrator: LIFI_INTEGRATOR,
+        fee: LIFI_INTEGRATOR_FEE,
+        ...(routeOptions.allowExchanges ? { exchanges: { allow: routeOptions.allowExchanges } } : {}),
         ...(routeOptions.order ? { order: routeOptions.order } : {}),
         ...(routeOptions.preset ? { preset: routeOptions.preset } : {}),
         ...(routeOptions.maxPriceImpact !== undefined ? { maxPriceImpact: routeOptions.maxPriceImpact } : {}),
@@ -729,7 +757,29 @@ export class LiFiClient {
       skipSimulation,
       swapStepTimingStrategies: this.encodeTimingStrategies(swapStepTimingStrategies),
       routeTimingStrategies: this.encodeTimingStrategies(routeTimingStrategies),
+      allowExchanges: this.resolveAllowExchanges(params),
     };
+  }
+
+  private resolveAllowExchanges(params: BridgeQuoteParams): string[] | undefined {
+    const source = params.allowExchanges !== undefined ? params.allowExchanges : this.allowExchanges;
+    if (source === undefined) return undefined;
+    const seen = new Set<string>();
+    const keys: string[] = [];
+    for (const raw of source) {
+      const key = String(raw ?? '').trim().toLowerCase();
+      if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(key)) {
+        throw new EvalancheError(
+          `allowExchanges entry ${JSON.stringify(raw)} is not a Li.Fi exchange key`,
+          EvalancheErrorCode.INVALID_PARAMS,
+        );
+      }
+      if (!seen.has(key)) {
+        seen.add(key);
+        keys.push(key);
+      }
+    }
+    return keys;
   }
 
   private encodeTimingStrategies(strategies?: LiFiTimingStrategy[]): string[] | undefined {

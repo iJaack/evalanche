@@ -11,10 +11,36 @@ import {
 describe('Chain Registry', () => {
   describe('CHAINS', () => {
     it('should contain all required mainnets', () => {
-      const requiredIds = [1, 10, 25, 56, 100, 137, 250, 324, 1284, 4663, 5000, 8453, 42161, 42220, 43114, 59144, 80094, 81457, 534352];
+      const requiredIds = [1, 10, 25, 56, 100, 137, 146, 999, 1284, 4663, 5000, 8453, 42161, 42220, 43114, 59144, 80094, 81457, 534352];
       for (const id of requiredIds) {
         expect(CHAINS[id], `Missing chain ID ${id}`).toBeDefined();
       }
+      expect(getAllChains(false).map((chain) => chain.id).sort((a, b) => a - b)).toEqual(requiredIds);
+      expect(CHAINS[250]).toBeUndefined();
+      expect(CHAINS[324]).toBeUndefined();
+    });
+
+    it('should contain Sonic and HyperEVM with official metadata', () => {
+      expect(CHAINS[146]).toMatchObject({
+        id: 146,
+        name: 'Sonic',
+        shortName: 'sonic',
+        currency: { name: 'Sonic', symbol: 'S', decimals: 18 },
+        explorer: 'https://sonicscan.org',
+        lifiChainKey: 'SON',
+      });
+      expect(CHAINS[146].rpc).toEqual(['https://rpc.soniclabs.com']);
+      expect(CHAINS[146].signerEnabledByDefault).toBeUndefined();
+      expect(CHAINS[999]).toMatchObject({
+        id: 999,
+        name: 'HyperEVM',
+        shortName: 'hyperevm',
+        currency: { name: 'HYPE', symbol: 'HYPE', decimals: 18 },
+        explorer: 'https://hyperevmscan.io',
+        lifiChainKey: 'HYP',
+      });
+      expect(CHAINS[999].rpc).toEqual(['https://rpc.hyperliquid.xyz/evm']);
+      expect(CHAINS[999].signerEnabledByDefault).toBeUndefined();
     });
 
     it('should contain testnets', () => {
@@ -61,7 +87,7 @@ describe('Chain Registry', () => {
 
     it('should include Routescan RPCs for supported chains', () => {
       // Base Routescan RPC currently returns 404/403; keep Base on healthy public endpoints instead.
-      const routescanChains = [10, 25, 56, 137, 250, 42161, 43114, 80094];
+      const routescanChains = [10, 25, 56, 137, 42161, 43114, 80094];
       for (const id of routescanChains) {
         expect(CHAINS[id].rpc.some(url => url.includes('routescan.io')), `Chain ${id} should have Routescan RPC`).toBe(true);
       }
@@ -72,7 +98,7 @@ describe('Chain Registry', () => {
     it('should map all required aliases', () => {
       const requiredAliases = [
         'ethereum', 'base', 'arbitrum', 'optimism', 'polygon', 'bsc',
-        'avalanche', 'fuji', 'fantom', 'gnosis', 'zksync', 'linea',
+        'avalanche', 'fuji', 'sonic', 'gnosis', 'hyperevm', 'linea',
         'scroll', 'blast', 'mantle', 'celo', 'moonbeam', 'cronos',
         'berachain', 'robinhood', 'sepolia', 'base-sepolia',
       ];
@@ -87,6 +113,8 @@ describe('Chain Registry', () => {
       expect(CHAIN_ALIASES.arbitrum).toBe(42161);
       expect(CHAIN_ALIASES.avalanche).toBe(43114);
       expect(CHAIN_ALIASES.fuji).toBe(43113);
+      expect(CHAIN_ALIASES.sonic).toBe(146);
+      expect(CHAIN_ALIASES.hyperevm).toBe(999);
     });
   });
 

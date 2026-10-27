@@ -5,12 +5,12 @@ This is the active roadmap for the repository.
 <!-- GENERATED:roadmap-release:start -->
 ## Latest Shipped Release
 
-- Latest release: [v1.14.0](docs/releases/RELEASE_NOTES_1.14.0.md)
-- Shipped in `v1.14.0`:
-  - Make Avalanche the hardened default with the official `@avalanche-sdk/client`, removing the legacy Core wallet and vulnerable HPKE dependency trees from fresh consumer installs.
-  - Expand Avalanche L1 support with live mainnet and Fuji catalog discovery, RPC chain ID verification, native-token preservation, and public SDK/MCP helpers.
-  - Remove the dYdX SDK, exports, MCP tools, holdings detector, and transitive Cosmos dependencies; Hyperliquid remains the supported perpetuals integration.
-  - Harden X/P/C address routing, offline signing, atomic import/export polling, network switching, HTTP cancellation, response limits, audit parsing, and release automation.
+- Latest release: [v1.17.0](docs/releases/RELEASE_NOTES_1.17.0.md)
+- Shipped in `v1.17.0`:
+  - Add a pluggable signer so an agent can sign without a private key in the Evalanche process. `EvalancheConfig.signer` accepts a local ethers wallet, a `SigningProvider`, or a remote signer config. `EvalancheConfig.address` starts an address-only agent that cannot sign.
+  - Add `evalanche-signer`, a reference signing server. It holds the key, checks a pinned Ed25519 verifier approval, recomputes the intent hash, and enforces a monotonic single-use nonce, expiry, a deny list, SpendingPolicy, token caps, and simulation. It binds to `127.0.0.1` or a unix socket and writes a hash-chained JSONL audit log. Dry-run never signs.
+  - Let `evalanche-mcp` run keyless with `--signer-url` / `EVALANCHE_SIGNER_URL` and `--signer-address` / `EVALANCHE_SIGNER_ADDRESS`, or read-only with `EVALANCHE_ADDRESS`. Polymarket CLI and Avalanche X/P-chain paths fail with `REMOTE_SIGNER_UNSUPPORTED` in those modes and never fall back to an environment private key.
+  - Add a per-chain signer policy for nineteen mainnets. Avalanche C-Chain stays on unless disabled. Every other chain, and every testnet, stays off until config enables it. Each enabled chain prices and caps itself.
 
 ## Current Focus
 

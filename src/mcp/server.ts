@@ -254,6 +254,7 @@ const TOOLS: MCPTool[] = [
         toToken: { type: 'string', description: 'Destination token address (use "native" for native gas token)' },
         fromAmount: { type: 'string', description: 'Amount to send (human-readable, e.g. "0.1")' },
         slippage: { type: 'number', description: 'Slippage tolerance as decimal (default: 0.03 = 3%)' },
+        allowExchanges: { type: 'array', items: { type: 'string' }, description: 'Li.Fi exchange keys allowed for this quote. Defaults to EvalancheConfig.allowExchanges. Use ["kyberswap"] to match a KyberSwap-only signer allowlist.' },
       },
       required: ['fromChainId', 'toChainId', 'fromToken', 'toToken', 'fromAmount'],
     },
@@ -270,6 +271,7 @@ const TOOLS: MCPTool[] = [
         toToken: { type: 'string', description: 'Destination token address (use "native" for native gas token)' },
         fromAmount: { type: 'string', description: 'Amount to send (human-readable, e.g. "0.1")' },
         slippage: { type: 'number', description: 'Slippage tolerance as decimal (default: 0.03 = 3%)' },
+        allowExchanges: { type: 'array', items: { type: 'string' }, description: 'Li.Fi exchange keys allowed for this quote. Defaults to EvalancheConfig.allowExchanges. Use ["kyberswap"] to match a KyberSwap-only signer allowlist.' },
       },
       required: ['fromChainId', 'toChainId', 'fromToken', 'toToken', 'fromAmount'],
     },
@@ -287,6 +289,7 @@ const TOOLS: MCPTool[] = [
         fromAmount: { type: 'string', description: 'Amount to send (human-readable, e.g. "0.1")' },
         toAddress: { type: 'string', description: 'Receiver address (defaults to agent address)' },
         slippage: { type: 'number', description: 'Slippage tolerance as decimal (default: 0.03 = 3%)' },
+        allowExchanges: { type: 'array', items: { type: 'string' }, description: 'Li.Fi exchange keys allowed for this quote. Defaults to EvalancheConfig.allowExchanges. Use ["kyberswap"] to match a KyberSwap-only signer allowlist.' },
       },
       required: ['fromChainId', 'toChainId', 'fromToken', 'toToken', 'fromAmount'],
     },
@@ -542,6 +545,7 @@ const TOOLS: MCPTool[] = [
         preset: { type: 'string', description: 'Optional Li.Fi preset such as stablecoin' },
         maxPriceImpact: { type: 'number', description: 'Optional max price impact filter passed to Li.Fi' },
         skipSimulation: { type: 'boolean', description: 'Skip Li.Fi simulation to reduce quote latency' },
+        allowExchanges: { type: 'array', items: { type: 'string' }, description: 'Li.Fi exchange keys allowed for this quote. Defaults to EvalancheConfig.allowExchanges. Use ["kyberswap"] to match a KyberSwap-only signer allowlist.' },
       },
       required: ['chainId', 'fromToken', 'toToken', 'fromAmount'],
     },
@@ -562,6 +566,7 @@ const TOOLS: MCPTool[] = [
         preset: { type: 'string', description: 'Optional Li.Fi preset such as stablecoin' },
         maxPriceImpact: { type: 'number', description: 'Optional max price impact filter passed to Li.Fi' },
         skipSimulation: { type: 'boolean', description: 'Skip Li.Fi simulation to reduce quote latency' },
+        allowExchanges: { type: 'array', items: { type: 'string' }, description: 'Li.Fi exchange keys allowed for this quote. Defaults to EvalancheConfig.allowExchanges. Use ["kyberswap"] to match a KyberSwap-only signer allowlist.' },
       },
       required: ['chainId', 'fromToken', 'toToken', 'fromAmount'],
     },
@@ -651,6 +656,7 @@ const TOOLS: MCPTool[] = [
         preset: { type: 'string', description: 'Optional Li.Fi preset such as stablecoin' },
         maxPriceImpact: { type: 'number', description: 'Optional max price impact filter passed to Li.Fi' },
         skipSimulation: { type: 'boolean', description: 'Skip Li.Fi simulation to reduce quote latency' },
+        allowExchanges: { type: 'array', items: { type: 'string' }, description: 'Li.Fi exchange keys allowed for this quote. Defaults to EvalancheConfig.allowExchanges. Use ["kyberswap"] to match a KyberSwap-only signer allowlist.' },
       },
       required: ['fromChainId', 'toChainId', 'fromToken', 'toVaultToken', 'fromAmount'],
     },
@@ -1510,7 +1516,20 @@ export class EvalancheMCPServer {
     this.memory = new AgentMemory(); // in-memory by default; can be swapped for file-backed
     this.interopResolver = new InteropIdentityResolver(this.agent.provider);
     this.coingecko = new CoinGeckoClient();
-    this.polymarketCli = new PolymarketCli({ privateKey: this.agent.wallet.privateKey });
+    this.polymarketCli = this.buildPolymarketProcess();
+  }
+
+  private requireWalletPrivateKey(capability: string): string {
+    return this.agent.requireLocalPrivateKey(capability);
+  }
+
+  private buildPolymarketProcess(): PolymarketCli {
+    const mode = this.agent.signerMode;
+    return new PolymarketCli({
+      privateKey: mode === 'local' ? this.agent.getLocalPrivateKey() : undefined,
+      allowEnvPrivateKey: mode === 'local',
+      keylessReason: mode === 'remote' ? 'remote-signer' : mode === 'readonly' ? 'readonly' : undefined,
+    });
   }
 
   private rebindAgentState(): void {
@@ -1518,7 +1537,7 @@ export class EvalancheMCPServer {
     this.settlement = new SettlementClient(this.agent.wallet, this.negotiation);
     this.interopResolver = new InteropIdentityResolver(this.agent.provider);
     this.polymarket = null;
-    this.polymarketCli = new PolymarketCli({ privateKey: this.agent.wallet.privateKey });
+    this.polymarketCli = this.buildPolymarketProcess();
     this.authedClobClient = null;
   }
 
@@ -1786,8 +1805,7 @@ export class EvalancheMCPServer {
     const USDC_CONTRACT = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174';
     const USDC_DECIMALS = 6;
 
-    let pk = this.agent.wallet.privateKey;
-    if (!pk) throw new Error('Agent wallet has no privateKey');
+    let pk = this.requireWalletPrivateKey('Polymarket USDC approval');
     if (!pk.startsWith('0x')) pk = `0x${pk}`;
 
     const account = privateKeyToAccount(pk as `0x${string}`);
@@ -2072,8 +2090,7 @@ export class EvalancheMCPServer {
     const { polygon } = await import('viem/chains');
     const { privateKeyToAccount } = await import('viem/accounts');
 
-    let pk = this.agent.wallet.privateKey;
-    if (!pk) throw new Error('Agent wallet has no privateKey');
+    let pk = this.requireWalletPrivateKey('Polymarket pUSD approval');
     if (!pk.startsWith('0x')) pk = `0x${pk}`;
 
     const account = privateKeyToAccount(pk as `0x${string}`);
@@ -2666,8 +2683,7 @@ export class EvalancheMCPServer {
     const { polygon } = await import('viem/chains');
     const { privateKeyToAccount } = await import('viem/accounts');
 
-    let pk = this.agent.wallet.privateKey;
-    if (!pk) throw new Error('Agent wallet has no privateKey — cannot create authenticated Polymarket client');
+    let pk = this.requireWalletPrivateKey('authenticated Polymarket client');
     if (!pk.startsWith('0x')) pk = `0x${pk}`;
 
     const account = privateKeyToAccount(pk as `0x${string}`);
@@ -2700,7 +2716,7 @@ export class EvalancheMCPServer {
             capabilities: { tools: {} },
             serverInfo: {
               name: 'evalanche',
-              version: '1.14.0',
+              version: '1.17.0',
             },
           });
 
@@ -2726,6 +2742,12 @@ export class EvalancheMCPServer {
   /** Normalize token address — convert "native" shorthand to the zero address */
   private normalizeToken(token: string): string {
     return token.toLowerCase() === 'native' ? NATIVE_TOKEN : token;
+  }
+
+  private allowExchangesFromArgs(args: Record<string, unknown>): string[] | undefined {
+    if (!Object.prototype.hasOwnProperty.call(args, 'allowExchanges')) return undefined;
+    if (!Array.isArray(args.allowExchanges)) return undefined;
+    return args.allowExchanges.map((entry) => String(entry));
   }
 
   /** Handle a tools/call request */
@@ -2885,6 +2907,7 @@ export class EvalancheMCPServer {
             fromAmount: args.fromAmount as string,
             fromAddress: this.agent.address,
             slippage: args.slippage as number | undefined,
+            allowExchanges: this.allowExchangesFromArgs(args),
           });
           result = {
             id: quote.id,
@@ -2908,6 +2931,7 @@ export class EvalancheMCPServer {
             fromAmount: args.fromAmount as string,
             fromAddress: this.agent.address,
             slippage: args.slippage as number | undefined,
+            allowExchanges: this.allowExchangesFromArgs(args),
           });
           result = {
             count: routes.length,
@@ -2933,6 +2957,7 @@ export class EvalancheMCPServer {
             fromAddress: this.agent.address,
             toAddress: args.toAddress as string | undefined,
             slippage: args.slippage as number | undefined,
+            allowExchanges: this.allowExchangesFromArgs(args),
           });
           result = txResult;
           break;
@@ -3231,6 +3256,7 @@ export class EvalancheMCPServer {
             preset: args.preset as string | undefined,
             maxPriceImpact: args.maxPriceImpact as number | undefined,
             skipSimulation: args.skipSimulation as boolean | undefined,
+            allowExchanges: this.allowExchangesFromArgs(args),
           });
           result = {
             id: quote.id,
@@ -3260,6 +3286,7 @@ export class EvalancheMCPServer {
             preset: args.preset as string | undefined,
             maxPriceImpact: args.maxPriceImpact as number | undefined,
             skipSimulation: args.skipSimulation as boolean | undefined,
+            allowExchanges: this.allowExchangesFromArgs(args),
           };
           const submission = await this.agent.swapDetailed(request);
           result = {
@@ -3339,6 +3366,7 @@ export class EvalancheMCPServer {
             preset: args.preset as string | undefined,
             maxPriceImpact: args.maxPriceImpact as number | undefined,
             skipSimulation: args.skipSimulation as boolean | undefined,
+            allowExchanges: this.allowExchangesFromArgs(args),
           };
           const submission = await this.agent.bridgeTokensDetailed(request);
           result = {
@@ -4080,8 +4108,7 @@ export class EvalancheMCPServer {
           const { privateKeyToAccount } = await import('viem/accounts');
           const { Evalanche } = await import('../index.js');
 
-          let pk = this.agent.wallet.privateKey;
-          if (!pk) throw new Error('Agent wallet has no privateKey');
+          let pk = this.requireWalletPrivateKey('Polymarket deposit');
           if (!pk.startsWith('0x')) pk = `0x${pk}`;
 
           const account = privateKeyToAccount(pk as `0x${string}`);

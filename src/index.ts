@@ -5,6 +5,81 @@
 export { Evalanche } from './agent';
 export type { EvalancheConfig } from './agent';
 
+export {
+  RemoteSignerClient,
+  EvalancheSignerServer,
+  startSignerServer,
+  resolveSolanaPolicy,
+  resolveSolanaConfig,
+  assertSolanaClusterReady,
+  assertSolanaPoolTransferAllowed,
+  SOLANA_GENESIS_HASHES,
+  SOLANA_PHASE1_PROGRAM_IDS,
+  SOLANA_PHASE1_MAINNET_MINTS,
+  SOLANA_APPROVAL_DOMAIN,
+  SOLANA_CLUSTERS,
+  isSolanaChainId,
+  assertIntentShape,
+  assertSolanaIntentShape,
+  assertSolanaRequestShape,
+  computeSolanaRouteHash,
+  parseSolanaMessage,
+  assertSolanaMessageMatchesIntent,
+  solanaPriorityFeeLamports,
+  solanaApprovalSigningBytes,
+  signSolanaVerifierApproval,
+  verifySolanaApproval,
+  canonicalIntentJson,
+  canonicalJson,
+  computeApprovedTxHash,
+  computeIntentHash,
+  computeMessageRouteHash,
+  computeRequestRouteHash,
+  computeRouteHash,
+  generateEd25519KeyPair,
+  signIntentHash,
+  signVerifierApproval,
+  verifyIntentHash,
+  isRemoteSignerConfig,
+  isSigningProvider,
+  AUDIT_ROOT,
+  HARD_MAX_GAS_COST_WEI,
+  buildCctpApprove,
+  buildCctpBurn,
+  buildCctpMint,
+  buildPolymarketV1CtfRevoke,
+  buildRevokeApproval,
+  buildRevokeOperator,
+} from './signer';
+export type {
+  SolanaPolicyInput,
+  SolanaClusterConfig,
+  ResolvedSolanaCluster,
+  ResolvedSolanaConfig,
+  SolanaFeesConfig,
+  SolanaPriceConfig,
+  SolanaMintConfig,
+  SolanaPoolConfig,
+  SolanaPoolTransferInput,
+  ResolvedSolanaPolicy,
+  ParsedSolanaMessage,
+  SolanaComputeBudgetCaps,
+  SolanaChainId,
+  SolanaTokenRef,
+  SolanaTransaction,
+  SolanaSigningIntent,
+  SolanaSigningRequest,
+  CanonicalSigningRequest,
+  RemoteSignerConfig,
+  SigningContext,
+  SigningIntent,
+  SigningProvider,
+  SigningResult,
+  TokenRef,
+  VerifierApproval,
+  SignerServerOptions,
+} from './signer';
+
 export { EvalancheError, EvalancheErrorCode } from './utils/errors';
 
 export {
@@ -25,6 +100,10 @@ export { X402Client, X402Facilitator } from './x402';
 export type { PaymentRequirements, PayAndFetchOptions, PayAndFetchResult } from './x402';
 
 export { BridgeClient, LiFiClient, GasZipClient, NATIVE_TOKEN } from './bridge';
+export { KYBER_AGGREGATOR_API, KYBER_ROUTE_CHAIN_IDS, KYBER_ROUTE_CHAINS, assembleLifiV3FromKyber, buildKyberLifiSwap, kyberRouteChain } from './bridge/kyber-route';
+export type { KyberLifiSwap, KyberLifiSwapOptions, KyberLifiSwapRequest, KyberReferenceRequest, KyberRouteChain, KyberSignerPins } from './bridge/kyber-route';
+export { CELO_QUOTER_V2, GNOSIS_QUOTER_V2, buildDirectDexSwap, buildExactRouterApproval, quoteDirectDexSwap } from './bridge/direct-route';
+export type { DirectDexSwap, DirectDexSwapRequest, DirectQuote, DirectQuoteRequest, ExactRouterApproval } from './bridge/direct-route';
 export type {
   BridgeQuoteParams,
   BridgeQuote,
@@ -97,6 +176,7 @@ export type {
 } from './holdings';
 
 export { CoinGeckoClient } from './market/coingecko';
+export { COINGECKO_SIMPLE_PRICE_URL, NATIVE_COINGECKO_IDS, parseCoinGeckoSimplePrice } from './signer/price-feed';
 export { PolymarketCli, PolymarketClient, POLYMARKET_CLOB_HOST, PolymarketSide } from './polymarket';
 export type {
   PolymarketCliOptions,

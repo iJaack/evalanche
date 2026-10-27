@@ -12,7 +12,7 @@ export interface NetworkConfig {
 /** Named chain aliases accepted as network option strings */
 export type ChainName =
   | 'ethereum' | 'base' | 'arbitrum' | 'optimism' | 'polygon' | 'bsc'
-  | 'avalanche' | 'fuji' | 'fantom' | 'gnosis' | 'zksync' | 'linea'
+  | 'avalanche' | 'fuji' | 'sonic' | 'gnosis' | 'hyperevm' | 'linea'
   | 'scroll' | 'blast' | 'mantle' | 'celo' | 'moonbeam' | 'cronos'
   | 'berachain' | 'robinhood' | 'sepolia' | 'base-sepolia';
 

@@ -9,6 +9,16 @@ export default defineConfig([
     sourcemap: true,
     clean: false,
     target: 'node20',
+    shims: true,
+    // The published tarball cap is 1_000_000 bytes. Embedded sources in the
+    // maps push a single helper copy over that cap. Mappings stay relative
+    // to the package so two build directories pack to the same bytes. Do not
+    // turn sourcesContent back on. The shim path is rewritten so a symlinked
+    // node_modules cannot change the bytes.
+    esbuildOptions(options) {
+      options.sourcesContent = false;
+    },
+    onSuccess: 'node scripts/normalize-shim-paths.mjs',
     // Keep Avalanche deps external — they're lazy-loaded at runtime
     external: ['@avalanche-sdk/client', '@avalanche-sdk/client/accounts', '@avalabs/avalanchejs'],
   },
@@ -22,6 +32,11 @@ export default defineConfig([
     target: 'node20',
     banner: { js: '#!/usr/bin/env node' },
     outDir: 'dist/mcp',
+    // Keeps the published tarball under the 1_000_000-byte cap (the CLI ships without a sourcemap).
+    esbuildOptions(options) {
+      options.minifyWhitespace = true;
+      options.minifySyntax = true;
+    },
     // Don't bundle Avalanche-related deps — require them at runtime from node_modules
     // This avoids Ledger SDK bundling issues while keeping the file small
     external: [
@@ -37,5 +52,17 @@ export default defineConfig([
       '@metamask/eth-sig-util',
       'ledger-bitcoin',
     ],
+  },
+  {
+    entry: ['src/signer/cli.ts'],
+    format: ['esm'],
+    dts: false,
+    splitting: false,
+    sourcemap: false,
+    clean: false,
+    target: 'node20',
+    banner: { js: '#!/usr/bin/env node' },
+    outDir: 'dist/signer',
+    onSuccess: 'node scripts/copy-flock-helper.mjs',
   },
 ]);

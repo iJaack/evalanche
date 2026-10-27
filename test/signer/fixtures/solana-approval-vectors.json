@@ -1,0 +1,1461 @@
+{
+  "_provenance": {
+    "purpose": "PR1 offline schema and approval vectors. Synthetic opaque v0-shaped bytes, NOT real Solana transactions; no parsing, decoder or signing-policy evidence.",
+    "derivation": "Test-only keys derived at runtime in memory: seed = sha256(UTF-8(label)); Ed25519 PKCS8 DER prefix + seed. NO private keys or seeds stored in this fixture.",
+    "labels": {
+      "verifier": "evalanche-test-only/solana-vectors/verifier/v1",
+      "treasuryA": "evalanche-test-only/solana-vectors/treasury-a/v1",
+      "treasuryB": "evalanche-test-only/solana-vectors/treasury-b/v1"
+    },
+    "message": "0x80 prefix, header, two static keys, deterministic 32-byte label-derived blockhash, one ComputeBudget CU-limit instruction, zero ALTs.",
+    "negativeCases": "Hashes/JCS/domainBytes describe presented inputs even for invalid schema/domain. Signatures may be retained from a different mode/cluster/treasury/decision/message. expected.error is an independent reference class, not a production error-text contract.",
+    "evm": "base64Message AA== is a carrier placeholder only; EVM routeHash remains keccak256(JCS(approved tx))."
+  },
+  "vectors": [
+    {
+      "id": "valid-mainnet",
+      "description": "Synthetic swap intent; valid approve/live/mainnet approval.",
+      "structuredIntent": {
+        "version": "1",
+        "intentId": "synthetic-pr1",
+        "nonce": "1",
+        "createdAt": 1793012400000,
+        "expiresAt": 1793012490000,
+        "wallet": "2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D",
+        "chainId": "solana:mainnet",
+        "venue": "jupiter-v6",
+        "action": "swap",
+        "routeHash": "0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87",
+        "tx": {
+          "serializedMessage": "gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA",
+          "recentBlockhash": "4JZyj6FpxfY1Qu8tZBQiiGzwyWfmYS7TdnDQvFXNvpAW",
+          "lastValidBlockHeight": 300000100,
+          "computeUnitLimit": 300000,
+          "computeUnitPriceMicroLamports": "1000000"
+        },
+        "tokenIn": {
+          "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "symbol": "USDC",
+          "decimals": 6
+        },
+        "amountIn": "100000000",
+        "programIds": [
+          "ComputeBudget111111111111111111111111111111",
+          "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        ],
+        "tokenOut": {
+          "mint": "So11111111111111111111111111111111111111112",
+          "symbol": "wSOL",
+          "decimals": 9
+        },
+        "minAmountOut": "495000000",
+        "quotedAmountOut": "500000000",
+        "slippageBps": 100,
+        "maxSlippageBps": 100,
+        "quoteId": "synthetic-quote",
+        "quotedAt": 1793012395000
+      },
+      "normalizedJcs": "{\"action\":\"swap\",\"amountIn\":\"100000000\",\"chainId\":\"solana:mainnet\",\"createdAt\":1793012400000,\"expiresAt\":1793012490000,\"intentId\":\"synthetic-pr1\",\"maxSlippageBps\":100,\"minAmountOut\":\"495000000\",\"nonce\":\"1\",\"programIds\":[\"ComputeBudget111111111111111111111111111111\",\"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA\"],\"quoteId\":\"synthetic-quote\",\"quotedAmountOut\":\"500000000\",\"quotedAt\":1793012395000,\"routeHash\":\"0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87\",\"slippageBps\":100,\"tokenIn\":{\"decimals\":6,\"mint\":\"EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v\",\"symbol\":\"USDC\"},\"tokenOut\":{\"decimals\":9,\"mint\":\"So11111111111111111111111111111111111111112\",\"symbol\":\"wSOL\"},\"tx\":{\"computeUnitLimit\":300000,\"computeUnitPriceMicroLamports\":\"1000000\",\"lastValidBlockHeight\":300000100,\"recentBlockhash\":\"4JZyj6FpxfY1Qu8tZBQiiGzwyWfmYS7TdnDQvFXNvpAW\",\"serializedMessage\":\"gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA\"},\"venue\":\"jupiter-v6\",\"version\":\"1\",\"wallet\":\"2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D\"}",
+      "base64Message": "gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA",
+      "routeHash": "0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87",
+      "decision": "approve",
+      "mode": "live",
+      "signerAddress": "2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D",
+      "cluster": "solana:mainnet",
+      "intentHash": "0x6ca20f99bede1a82b018515340230d3f664bff58528d59bb57b52cc0705cf265",
+      "domainBytesHex": "0x6576616c616e6368652d76657269666965722f736f6c616e612f763100617070726f7665006c69766500325564514367624d70376d51503233527250417a48347a6147543775753769774e646738556b63716f78344400736f6c616e613a6d61696e6e6574006ca20f99bede1a82b018515340230d3f664bff58528d59bb57b52cc0705cf265",
+      "verifier": "0x5e2b94d88ebe859546bc508382d115d06bcb650c45be4bcfb21a4a99f5814e82",
+      "signature": "0x321db55eaa00ce6bfe1a970697e83181f0c33638057d3beefc2836a26d5f70d29112fde68b4ebc429e6327ac9db08f101833950acf7636ef5ddcd0cd498c9409",
+      "expected": {
+        "valid": true
+      }
+    },
+    {
+      "id": "valid-devnet",
+      "description": "Synthetic swap intent; valid approve/live/devnet approval.",
+      "structuredIntent": {
+        "version": "1",
+        "intentId": "synthetic-pr1",
+        "nonce": "1",
+        "createdAt": 1793012400000,
+        "expiresAt": 1793012490000,
+        "wallet": "2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D",
+        "chainId": "solana:devnet",
+        "venue": "jupiter-v6",
+        "action": "swap",
+        "routeHash": "0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87",
+        "tx": {
+          "serializedMessage": "gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA",
+          "recentBlockhash": "4JZyj6FpxfY1Qu8tZBQiiGzwyWfmYS7TdnDQvFXNvpAW",
+          "lastValidBlockHeight": 300000100,
+          "computeUnitLimit": 300000,
+          "computeUnitPriceMicroLamports": "1000000"
+        },
+        "tokenIn": {
+          "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "symbol": "USDC",
+          "decimals": 6
+        },
+        "amountIn": "100000000",
+        "programIds": [
+          "ComputeBudget111111111111111111111111111111",
+          "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        ],
+        "tokenOut": {
+          "mint": "So11111111111111111111111111111111111111112",
+          "symbol": "wSOL",
+          "decimals": 9
+        },
+        "minAmountOut": "495000000",
+        "quotedAmountOut": "500000000",
+        "slippageBps": 100,
+        "maxSlippageBps": 100,
+        "quoteId": "synthetic-quote",
+        "quotedAt": 1793012395000
+      },
+      "normalizedJcs": "{\"action\":\"swap\",\"amountIn\":\"100000000\",\"chainId\":\"solana:devnet\",\"createdAt\":1793012400000,\"expiresAt\":1793012490000,\"intentId\":\"synthetic-pr1\",\"maxSlippageBps\":100,\"minAmountOut\":\"495000000\",\"nonce\":\"1\",\"programIds\":[\"ComputeBudget111111111111111111111111111111\",\"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA\"],\"quoteId\":\"synthetic-quote\",\"quotedAmountOut\":\"500000000\",\"quotedAt\":1793012395000,\"routeHash\":\"0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87\",\"slippageBps\":100,\"tokenIn\":{\"decimals\":6,\"mint\":\"EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v\",\"symbol\":\"USDC\"},\"tokenOut\":{\"decimals\":9,\"mint\":\"So11111111111111111111111111111111111111112\",\"symbol\":\"wSOL\"},\"tx\":{\"computeUnitLimit\":300000,\"computeUnitPriceMicroLamports\":\"1000000\",\"lastValidBlockHeight\":300000100,\"recentBlockhash\":\"4JZyj6FpxfY1Qu8tZBQiiGzwyWfmYS7TdnDQvFXNvpAW\",\"serializedMessage\":\"gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA\"},\"venue\":\"jupiter-v6\",\"version\":\"1\",\"wallet\":\"2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D\"}",
+      "base64Message": "gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA",
+      "routeHash": "0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87",
+      "decision": "approve",
+      "mode": "live",
+      "signerAddress": "2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D",
+      "cluster": "solana:devnet",
+      "intentHash": "0x77dd05d20cb055f8ff74438673121c3a2ffa2e84f1f5400086975c084b912f42",
+      "domainBytesHex": "0x6576616c616e6368652d76657269666965722f736f6c616e612f763100617070726f7665006c69766500325564514367624d70376d51503233527250417a48347a6147543775753769774e646738556b63716f78344400736f6c616e613a6465766e65740077dd05d20cb055f8ff74438673121c3a2ffa2e84f1f5400086975c084b912f42",
+      "verifier": "0x5e2b94d88ebe859546bc508382d115d06bcb650c45be4bcfb21a4a99f5814e82",
+      "signature": "0x789b3fad5f3c5d923210586125792e6e7098180428d4c7d0c20d68e8021924bd531dfed991f97c97c85573eac92f3c02b67ef852c60b664db9292ea033172e04",
+      "expected": {
+        "valid": true
+      }
+    },
+    {
+      "id": "valid-spl-approve",
+      "description": "Synthetic opaque message; SPL approve schema only, no decoder claim.",
+      "structuredIntent": {
+        "version": "1",
+        "intentId": "synthetic-pr1",
+        "nonce": "1",
+        "createdAt": 1793012400000,
+        "expiresAt": 1793012490000,
+        "wallet": "2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D",
+        "chainId": "solana:mainnet",
+        "venue": "spl-token",
+        "action": "approve",
+        "routeHash": "0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87",
+        "tx": {
+          "serializedMessage": "gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA",
+          "recentBlockhash": "4JZyj6FpxfY1Qu8tZBQiiGzwyWfmYS7TdnDQvFXNvpAW",
+          "lastValidBlockHeight": 300000100,
+          "computeUnitLimit": 300000,
+          "computeUnitPriceMicroLamports": "1000000"
+        },
+        "tokenIn": {
+          "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "symbol": "USDC",
+          "decimals": 6
+        },
+        "amountIn": "100000000",
+        "programIds": [
+          "ComputeBudget111111111111111111111111111111",
+          "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        ]
+      },
+      "normalizedJcs": "{\"action\":\"approve\",\"amountIn\":\"100000000\",\"chainId\":\"solana:mainnet\",\"createdAt\":1793012400000,\"expiresAt\":1793012490000,\"intentId\":\"synthetic-pr1\",\"nonce\":\"1\",\"programIds\":[\"ComputeBudget111111111111111111111111111111\",\"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA\"],\"routeHash\":\"0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87\",\"tokenIn\":{\"decimals\":6,\"mint\":\"EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v\",\"symbol\":\"USDC\"},\"tx\":{\"computeUnitLimit\":300000,\"computeUnitPriceMicroLamports\":\"1000000\",\"lastValidBlockHeight\":300000100,\"recentBlockhash\":\"4JZyj6FpxfY1Qu8tZBQiiGzwyWfmYS7TdnDQvFXNvpAW\",\"serializedMessage\":\"gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA\"},\"venue\":\"spl-token\",\"version\":\"1\",\"wallet\":\"2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D\"}",
+      "base64Message": "gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA",
+      "routeHash": "0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87",
+      "decision": "approve",
+      "mode": "live",
+      "signerAddress": "2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D",
+      "cluster": "solana:mainnet",
+      "intentHash": "0x9c71b020577e08c60bdf9045588280deac3a3a77ff0c4696dfa24c0c9cb17f9b",
+      "domainBytesHex": "0x6576616c616e6368652d76657269666965722f736f6c616e612f763100617070726f7665006c69766500325564514367624d70376d51503233527250417a48347a6147543775753769774e646738556b63716f78344400736f6c616e613a6d61696e6e6574009c71b020577e08c60bdf9045588280deac3a3a77ff0c4696dfa24c0c9cb17f9b",
+      "verifier": "0x5e2b94d88ebe859546bc508382d115d06bcb650c45be4bcfb21a4a99f5814e82",
+      "signature": "0xd1433892aa5fcb55b4a51e9f452e8323056b7e072092596c53ba62c01d5c6db1df2f9b5e841afb52dbb392e4c528ec7b28bbb6420ab1365927e4e6dd88403100",
+      "expected": {
+        "valid": true
+      }
+    },
+    {
+      "id": "dry-run-as-live",
+      "description": "Signed dry-run, presented live.",
+      "structuredIntent": {
+        "version": "1",
+        "intentId": "synthetic-pr1",
+        "nonce": "1",
+        "createdAt": 1793012400000,
+        "expiresAt": 1793012490000,
+        "wallet": "2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D",
+        "chainId": "solana:mainnet",
+        "venue": "jupiter-v6",
+        "action": "swap",
+        "routeHash": "0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87",
+        "tx": {
+          "serializedMessage": "gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA",
+          "recentBlockhash": "4JZyj6FpxfY1Qu8tZBQiiGzwyWfmYS7TdnDQvFXNvpAW",
+          "lastValidBlockHeight": 300000100,
+          "computeUnitLimit": 300000,
+          "computeUnitPriceMicroLamports": "1000000"
+        },
+        "tokenIn": {
+          "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "symbol": "USDC",
+          "decimals": 6
+        },
+        "amountIn": "100000000",
+        "programIds": [
+          "ComputeBudget111111111111111111111111111111",
+          "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        ],
+        "tokenOut": {
+          "mint": "So11111111111111111111111111111111111111112",
+          "symbol": "wSOL",
+          "decimals": 9
+        },
+        "minAmountOut": "495000000",
+        "quotedAmountOut": "500000000",
+        "slippageBps": 100,
+        "maxSlippageBps": 100,
+        "quoteId": "synthetic-quote",
+        "quotedAt": 1793012395000
+      },
+      "normalizedJcs": "{\"action\":\"swap\",\"amountIn\":\"100000000\",\"chainId\":\"solana:mainnet\",\"createdAt\":1793012400000,\"expiresAt\":1793012490000,\"intentId\":\"synthetic-pr1\",\"maxSlippageBps\":100,\"minAmountOut\":\"495000000\",\"nonce\":\"1\",\"programIds\":[\"ComputeBudget111111111111111111111111111111\",\"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA\"],\"quoteId\":\"synthetic-quote\",\"quotedAmountOut\":\"500000000\",\"quotedAt\":1793012395000,\"routeHash\":\"0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87\",\"slippageBps\":100,\"tokenIn\":{\"decimals\":6,\"mint\":\"EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v\",\"symbol\":\"USDC\"},\"tokenOut\":{\"decimals\":9,\"mint\":\"So11111111111111111111111111111111111111112\",\"symbol\":\"wSOL\"},\"tx\":{\"computeUnitLimit\":300000,\"computeUnitPriceMicroLamports\":\"1000000\",\"lastValidBlockHeight\":300000100,\"recentBlockhash\":\"4JZyj6FpxfY1Qu8tZBQiiGzwyWfmYS7TdnDQvFXNvpAW\",\"serializedMessage\":\"gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA\"},\"venue\":\"jupiter-v6\",\"version\":\"1\",\"wallet\":\"2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D\"}",
+      "base64Message": "gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA",
+      "routeHash": "0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87",
+      "decision": "approve",
+      "mode": "live",
+      "signerAddress": "2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D",
+      "cluster": "solana:mainnet",
+      "intentHash": "0x6ca20f99bede1a82b018515340230d3f664bff58528d59bb57b52cc0705cf265",
+      "domainBytesHex": "0x6576616c616e6368652d76657269666965722f736f6c616e612f763100617070726f7665006c69766500325564514367624d70376d51503233527250417a48347a6147543775753769774e646738556b63716f78344400736f6c616e613a6d61696e6e6574006ca20f99bede1a82b018515340230d3f664bff58528d59bb57b52cc0705cf265",
+      "verifier": "0x5e2b94d88ebe859546bc508382d115d06bcb650c45be4bcfb21a4a99f5814e82",
+      "signature": "0x3f6383159a97031490c9155dbbc5c23f7a5d5c2b13fa43e345a8a737a359b7e4f88be96b95ce62dbcfedaa074a9b258f350ccc0615d7bb146956d45626d38601",
+      "expected": {
+        "valid": false,
+        "error": "signature"
+      }
+    },
+    {
+      "id": "live-as-dry-run",
+      "description": "Signed live, presented dry-run.",
+      "structuredIntent": {
+        "version": "1",
+        "intentId": "synthetic-pr1",
+        "nonce": "1",
+        "createdAt": 1793012400000,
+        "expiresAt": 1793012490000,
+        "wallet": "2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D",
+        "chainId": "solana:mainnet",
+        "venue": "jupiter-v6",
+        "action": "swap",
+        "routeHash": "0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87",
+        "tx": {
+          "serializedMessage": "gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA",
+          "recentBlockhash": "4JZyj6FpxfY1Qu8tZBQiiGzwyWfmYS7TdnDQvFXNvpAW",
+          "lastValidBlockHeight": 300000100,
+          "computeUnitLimit": 300000,
+          "computeUnitPriceMicroLamports": "1000000"
+        },
+        "tokenIn": {
+          "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "symbol": "USDC",
+          "decimals": 6
+        },
+        "amountIn": "100000000",
+        "programIds": [
+          "ComputeBudget111111111111111111111111111111",
+          "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        ],
+        "tokenOut": {
+          "mint": "So11111111111111111111111111111111111111112",
+          "symbol": "wSOL",
+          "decimals": 9
+        },
+        "minAmountOut": "495000000",
+        "quotedAmountOut": "500000000",
+        "slippageBps": 100,
+        "maxSlippageBps": 100,
+        "quoteId": "synthetic-quote",
+        "quotedAt": 1793012395000
+      },
+      "normalizedJcs": "{\"action\":\"swap\",\"amountIn\":\"100000000\",\"chainId\":\"solana:mainnet\",\"createdAt\":1793012400000,\"expiresAt\":1793012490000,\"intentId\":\"synthetic-pr1\",\"maxSlippageBps\":100,\"minAmountOut\":\"495000000\",\"nonce\":\"1\",\"programIds\":[\"ComputeBudget111111111111111111111111111111\",\"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA\"],\"quoteId\":\"synthetic-quote\",\"quotedAmountOut\":\"500000000\",\"quotedAt\":1793012395000,\"routeHash\":\"0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87\",\"slippageBps\":100,\"tokenIn\":{\"decimals\":6,\"mint\":\"EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v\",\"symbol\":\"USDC\"},\"tokenOut\":{\"decimals\":9,\"mint\":\"So11111111111111111111111111111111111111112\",\"symbol\":\"wSOL\"},\"tx\":{\"computeUnitLimit\":300000,\"computeUnitPriceMicroLamports\":\"1000000\",\"lastValidBlockHeight\":300000100,\"recentBlockhash\":\"4JZyj6FpxfY1Qu8tZBQiiGzwyWfmYS7TdnDQvFXNvpAW\",\"serializedMessage\":\"gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA\"},\"venue\":\"jupiter-v6\",\"version\":\"1\",\"wallet\":\"2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D\"}",
+      "base64Message": "gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA",
+      "routeHash": "0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87",
+      "decision": "approve",
+      "mode": "dry-run",
+      "signerAddress": "2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D",
+      "cluster": "solana:mainnet",
+      "intentHash": "0x6ca20f99bede1a82b018515340230d3f664bff58528d59bb57b52cc0705cf265",
+      "domainBytesHex": "0x6576616c616e6368652d76657269666965722f736f6c616e612f763100617070726f7665006472792d72756e00325564514367624d70376d51503233527250417a48347a6147543775753769774e646738556b63716f78344400736f6c616e613a6d61696e6e6574006ca20f99bede1a82b018515340230d3f664bff58528d59bb57b52cc0705cf265",
+      "verifier": "0x5e2b94d88ebe859546bc508382d115d06bcb650c45be4bcfb21a4a99f5814e82",
+      "signature": "0x321db55eaa00ce6bfe1a970697e83181f0c33638057d3beefc2836a26d5f70d29112fde68b4ebc429e6327ac9db08f101833950acf7636ef5ddcd0cd498c9409",
+      "expected": {
+        "valid": false,
+        "error": "signature"
+      }
+    },
+    {
+      "id": "mainnet-as-devnet",
+      "description": "Mainnet approval substituted onto internally consistent devnet intent.",
+      "structuredIntent": {
+        "version": "1",
+        "intentId": "synthetic-pr1",
+        "nonce": "1",
+        "createdAt": 1793012400000,
+        "expiresAt": 1793012490000,
+        "wallet": "2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D",
+        "chainId": "solana:devnet",
+        "venue": "jupiter-v6",
+        "action": "swap",
+        "routeHash": "0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87",
+        "tx": {
+          "serializedMessage": "gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA",
+          "recentBlockhash": "4JZyj6FpxfY1Qu8tZBQiiGzwyWfmYS7TdnDQvFXNvpAW",
+          "lastValidBlockHeight": 300000100,
+          "computeUnitLimit": 300000,
+          "computeUnitPriceMicroLamports": "1000000"
+        },
+        "tokenIn": {
+          "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "symbol": "USDC",
+          "decimals": 6
+        },
+        "amountIn": "100000000",
+        "programIds": [
+          "ComputeBudget111111111111111111111111111111",
+          "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        ],
+        "tokenOut": {
+          "mint": "So11111111111111111111111111111111111111112",
+          "symbol": "wSOL",
+          "decimals": 9
+        },
+        "minAmountOut": "495000000",
+        "quotedAmountOut": "500000000",
+        "slippageBps": 100,
+        "maxSlippageBps": 100,
+        "quoteId": "synthetic-quote",
+        "quotedAt": 1793012395000
+      },
+      "normalizedJcs": "{\"action\":\"swap\",\"amountIn\":\"100000000\",\"chainId\":\"solana:devnet\",\"createdAt\":1793012400000,\"expiresAt\":1793012490000,\"intentId\":\"synthetic-pr1\",\"maxSlippageBps\":100,\"minAmountOut\":\"495000000\",\"nonce\":\"1\",\"programIds\":[\"ComputeBudget111111111111111111111111111111\",\"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA\"],\"quoteId\":\"synthetic-quote\",\"quotedAmountOut\":\"500000000\",\"quotedAt\":1793012395000,\"routeHash\":\"0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87\",\"slippageBps\":100,\"tokenIn\":{\"decimals\":6,\"mint\":\"EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v\",\"symbol\":\"USDC\"},\"tokenOut\":{\"decimals\":9,\"mint\":\"So11111111111111111111111111111111111111112\",\"symbol\":\"wSOL\"},\"tx\":{\"computeUnitLimit\":300000,\"computeUnitPriceMicroLamports\":\"1000000\",\"lastValidBlockHeight\":300000100,\"recentBlockhash\":\"4JZyj6FpxfY1Qu8tZBQiiGzwyWfmYS7TdnDQvFXNvpAW\",\"serializedMessage\":\"gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA\"},\"venue\":\"jupiter-v6\",\"version\":\"1\",\"wallet\":\"2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D\"}",
+      "base64Message": "gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA",
+      "routeHash": "0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87",
+      "decision": "approve",
+      "mode": "live",
+      "signerAddress": "2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D",
+      "cluster": "solana:devnet",
+      "intentHash": "0x77dd05d20cb055f8ff74438673121c3a2ffa2e84f1f5400086975c084b912f42",
+      "domainBytesHex": "0x6576616c616e6368652d76657269666965722f736f6c616e612f763100617070726f7665006c69766500325564514367624d70376d51503233527250417a48347a6147543775753769774e646738556b63716f78344400736f6c616e613a6465766e65740077dd05d20cb055f8ff74438673121c3a2ffa2e84f1f5400086975c084b912f42",
+      "verifier": "0x5e2b94d88ebe859546bc508382d115d06bcb650c45be4bcfb21a4a99f5814e82",
+      "signature": "0x321db55eaa00ce6bfe1a970697e83181f0c33638057d3beefc2836a26d5f70d29112fde68b4ebc429e6327ac9db08f101833950acf7636ef5ddcd0cd498c9409",
+      "expected": {
+        "valid": false,
+        "error": "signature"
+      }
+    },
+    {
+      "id": "devnet-as-mainnet",
+      "description": "Devnet approval substituted onto mainnet intent.",
+      "structuredIntent": {
+        "version": "1",
+        "intentId": "synthetic-pr1",
+        "nonce": "1",
+        "createdAt": 1793012400000,
+        "expiresAt": 1793012490000,
+        "wallet": "2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D",
+        "chainId": "solana:mainnet",
+        "venue": "jupiter-v6",
+        "action": "swap",
+        "routeHash": "0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87",
+        "tx": {
+          "serializedMessage": "gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA",
+          "recentBlockhash": "4JZyj6FpxfY1Qu8tZBQiiGzwyWfmYS7TdnDQvFXNvpAW",
+          "lastValidBlockHeight": 300000100,
+          "computeUnitLimit": 300000,
+          "computeUnitPriceMicroLamports": "1000000"
+        },
+        "tokenIn": {
+          "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "symbol": "USDC",
+          "decimals": 6
+        },
+        "amountIn": "100000000",
+        "programIds": [
+          "ComputeBudget111111111111111111111111111111",
+          "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        ],
+        "tokenOut": {
+          "mint": "So11111111111111111111111111111111111111112",
+          "symbol": "wSOL",
+          "decimals": 9
+        },
+        "minAmountOut": "495000000",
+        "quotedAmountOut": "500000000",
+        "slippageBps": 100,
+        "maxSlippageBps": 100,
+        "quoteId": "synthetic-quote",
+        "quotedAt": 1793012395000
+      },
+      "normalizedJcs": "{\"action\":\"swap\",\"amountIn\":\"100000000\",\"chainId\":\"solana:mainnet\",\"createdAt\":1793012400000,\"expiresAt\":1793012490000,\"intentId\":\"synthetic-pr1\",\"maxSlippageBps\":100,\"minAmountOut\":\"495000000\",\"nonce\":\"1\",\"programIds\":[\"ComputeBudget111111111111111111111111111111\",\"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA\"],\"quoteId\":\"synthetic-quote\",\"quotedAmountOut\":\"500000000\",\"quotedAt\":1793012395000,\"routeHash\":\"0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87\",\"slippageBps\":100,\"tokenIn\":{\"decimals\":6,\"mint\":\"EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v\",\"symbol\":\"USDC\"},\"tokenOut\":{\"decimals\":9,\"mint\":\"So11111111111111111111111111111111111111112\",\"symbol\":\"wSOL\"},\"tx\":{\"computeUnitLimit\":300000,\"computeUnitPriceMicroLamports\":\"1000000\",\"lastValidBlockHeight\":300000100,\"recentBlockhash\":\"4JZyj6FpxfY1Qu8tZBQiiGzwyWfmYS7TdnDQvFXNvpAW\",\"serializedMessage\":\"gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA\"},\"venue\":\"jupiter-v6\",\"version\":\"1\",\"wallet\":\"2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D\"}",
+      "base64Message": "gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA",
+      "routeHash": "0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87",
+      "decision": "approve",
+      "mode": "live",
+      "signerAddress": "2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D",
+      "cluster": "solana:mainnet",
+      "intentHash": "0x6ca20f99bede1a82b018515340230d3f664bff58528d59bb57b52cc0705cf265",
+      "domainBytesHex": "0x6576616c616e6368652d76657269666965722f736f6c616e612f763100617070726f7665006c69766500325564514367624d70376d51503233527250417a48347a6147543775753769774e646738556b63716f78344400736f6c616e613a6d61696e6e6574006ca20f99bede1a82b018515340230d3f664bff58528d59bb57b52cc0705cf265",
+      "verifier": "0x5e2b94d88ebe859546bc508382d115d06bcb650c45be4bcfb21a4a99f5814e82",
+      "signature": "0x789b3fad5f3c5d923210586125792e6e7098180428d4c7d0c20d68e8021924bd531dfed991f97c97c85573eac92f3c02b67ef852c60b664db9292ea033172e04",
+      "expected": {
+        "valid": false,
+        "error": "signature"
+      }
+    },
+    {
+      "id": "treasury-swap",
+      "description": "Treasury A approval presented on treasury B intent.",
+      "structuredIntent": {
+        "version": "1",
+        "intentId": "synthetic-pr1",
+        "nonce": "1",
+        "createdAt": 1793012400000,
+        "expiresAt": 1793012490000,
+        "wallet": "36G5py8k1mGwNBUA3JHGQJQKscJDNbvnCgCcXyXxbyq2",
+        "chainId": "solana:mainnet",
+        "venue": "jupiter-v6",
+        "action": "swap",
+        "routeHash": "0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87",
+        "tx": {
+          "serializedMessage": "gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA",
+          "recentBlockhash": "4JZyj6FpxfY1Qu8tZBQiiGzwyWfmYS7TdnDQvFXNvpAW",
+          "lastValidBlockHeight": 300000100,
+          "computeUnitLimit": 300000,
+          "computeUnitPriceMicroLamports": "1000000"
+        },
+        "tokenIn": {
+          "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "symbol": "USDC",
+          "decimals": 6
+        },
+        "amountIn": "100000000",
+        "programIds": [
+          "ComputeBudget111111111111111111111111111111",
+          "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        ],
+        "tokenOut": {
+          "mint": "So11111111111111111111111111111111111111112",
+          "symbol": "wSOL",
+          "decimals": 9
+        },
+        "minAmountOut": "495000000",
+        "quotedAmountOut": "500000000",
+        "slippageBps": 100,
+        "maxSlippageBps": 100,
+        "quoteId": "synthetic-quote",
+        "quotedAt": 1793012395000
+      },
+      "normalizedJcs": "{\"action\":\"swap\",\"amountIn\":\"100000000\",\"chainId\":\"solana:mainnet\",\"createdAt\":1793012400000,\"expiresAt\":1793012490000,\"intentId\":\"synthetic-pr1\",\"maxSlippageBps\":100,\"minAmountOut\":\"495000000\",\"nonce\":\"1\",\"programIds\":[\"ComputeBudget111111111111111111111111111111\",\"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA\"],\"quoteId\":\"synthetic-quote\",\"quotedAmountOut\":\"500000000\",\"quotedAt\":1793012395000,\"routeHash\":\"0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87\",\"slippageBps\":100,\"tokenIn\":{\"decimals\":6,\"mint\":\"EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v\",\"symbol\":\"USDC\"},\"tokenOut\":{\"decimals\":9,\"mint\":\"So11111111111111111111111111111111111111112\",\"symbol\":\"wSOL\"},\"tx\":{\"computeUnitLimit\":300000,\"computeUnitPriceMicroLamports\":\"1000000\",\"lastValidBlockHeight\":300000100,\"recentBlockhash\":\"4JZyj6FpxfY1Qu8tZBQiiGzwyWfmYS7TdnDQvFXNvpAW\",\"serializedMessage\":\"gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA\"},\"venue\":\"jupiter-v6\",\"version\":\"1\",\"wallet\":\"36G5py8k1mGwNBUA3JHGQJQKscJDNbvnCgCcXyXxbyq2\"}",
+      "base64Message": "gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA",
+      "routeHash": "0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87",
+      "decision": "approve",
+      "mode": "live",
+      "signerAddress": "36G5py8k1mGwNBUA3JHGQJQKscJDNbvnCgCcXyXxbyq2",
+      "cluster": "solana:mainnet",
+      "intentHash": "0x0bbc1a8f99b9d109cd849cac4cbc832b58e02d25e6b70dcc6ab458d5939cf732",
+      "domainBytesHex": "0x6576616c616e6368652d76657269666965722f736f6c616e612f763100617070726f7665006c69766500333647357079386b316d47774e425541334a4847514a514b73634a444e62766e43674363587958786279713200736f6c616e613a6d61696e6e6574000bbc1a8f99b9d109cd849cac4cbc832b58e02d25e6b70dcc6ab458d5939cf732",
+      "verifier": "0x5e2b94d88ebe859546bc508382d115d06bcb650c45be4bcfb21a4a99f5814e82",
+      "signature": "0x321db55eaa00ce6bfe1a970697e83181f0c33638057d3beefc2836a26d5f70d29112fde68b4ebc429e6327ac9db08f101833950acf7636ef5ddcd0cd498c9409",
+      "expected": {
+        "valid": false,
+        "error": "signature"
+      }
+    },
+    {
+      "id": "deny-as-approve",
+      "description": "Signed deny, presented approve; test attack only, Ops never signs denials.",
+      "structuredIntent": {
+        "version": "1",
+        "intentId": "synthetic-pr1",
+        "nonce": "1",
+        "createdAt": 1793012400000,
+        "expiresAt": 1793012490000,
+        "wallet": "2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D",
+        "chainId": "solana:mainnet",
+        "venue": "jupiter-v6",
+        "action": "swap",
+        "routeHash": "0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87",
+        "tx": {
+          "serializedMessage": "gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA",
+          "recentBlockhash": "4JZyj6FpxfY1Qu8tZBQiiGzwyWfmYS7TdnDQvFXNvpAW",
+          "lastValidBlockHeight": 300000100,
+          "computeUnitLimit": 300000,
+          "computeUnitPriceMicroLamports": "1000000"
+        },
+        "tokenIn": {
+          "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "symbol": "USDC",
+          "decimals": 6
+        },
+        "amountIn": "100000000",
+        "programIds": [
+          "ComputeBudget111111111111111111111111111111",
+          "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        ],
+        "tokenOut": {
+          "mint": "So11111111111111111111111111111111111111112",
+          "symbol": "wSOL",
+          "decimals": 9
+        },
+        "minAmountOut": "495000000",
+        "quotedAmountOut": "500000000",
+        "slippageBps": 100,
+        "maxSlippageBps": 100,
+        "quoteId": "synthetic-quote",
+        "quotedAt": 1793012395000
+      },
+      "normalizedJcs": "{\"action\":\"swap\",\"amountIn\":\"100000000\",\"chainId\":\"solana:mainnet\",\"createdAt\":1793012400000,\"expiresAt\":1793012490000,\"intentId\":\"synthetic-pr1\",\"maxSlippageBps\":100,\"minAmountOut\":\"495000000\",\"nonce\":\"1\",\"programIds\":[\"ComputeBudget111111111111111111111111111111\",\"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA\"],\"quoteId\":\"synthetic-quote\",\"quotedAmountOut\":\"500000000\",\"quotedAt\":1793012395000,\"routeHash\":\"0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87\",\"slippageBps\":100,\"tokenIn\":{\"decimals\":6,\"mint\":\"EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v\",\"symbol\":\"USDC\"},\"tokenOut\":{\"decimals\":9,\"mint\":\"So11111111111111111111111111111111111111112\",\"symbol\":\"wSOL\"},\"tx\":{\"computeUnitLimit\":300000,\"computeUnitPriceMicroLamports\":\"1000000\",\"lastValidBlockHeight\":300000100,\"recentBlockhash\":\"4JZyj6FpxfY1Qu8tZBQiiGzwyWfmYS7TdnDQvFXNvpAW\",\"serializedMessage\":\"gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA\"},\"venue\":\"jupiter-v6\",\"version\":\"1\",\"wallet\":\"2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D\"}",
+      "base64Message": "gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA",
+      "routeHash": "0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87",
+      "decision": "approve",
+      "mode": "live",
+      "signerAddress": "2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D",
+      "cluster": "solana:mainnet",
+      "intentHash": "0x6ca20f99bede1a82b018515340230d3f664bff58528d59bb57b52cc0705cf265",
+      "domainBytesHex": "0x6576616c616e6368652d76657269666965722f736f6c616e612f763100617070726f7665006c69766500325564514367624d70376d51503233527250417a48347a6147543775753769774e646738556b63716f78344400736f6c616e613a6d61696e6e6574006ca20f99bede1a82b018515340230d3f664bff58528d59bb57b52cc0705cf265",
+      "verifier": "0x5e2b94d88ebe859546bc508382d115d06bcb650c45be4bcfb21a4a99f5814e82",
+      "signature": "0x1b5275e605655033bcc55aaa0b3da13cad4e8ad7f191392062a3f93af769cc13dcc24ac7c7348f45e9d61b682135a5ddfae5f3a8ab1fe051d8d6d87da0ebab05",
+      "expected": {
+        "valid": false,
+        "error": "signature"
+      }
+    },
+    {
+      "id": "approve-as-deny",
+      "description": "Signed approve, presented deny.",
+      "structuredIntent": {
+        "version": "1",
+        "intentId": "synthetic-pr1",
+        "nonce": "1",
+        "createdAt": 1793012400000,
+        "expiresAt": 1793012490000,
+        "wallet": "2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D",
+        "chainId": "solana:mainnet",
+        "venue": "jupiter-v6",
+        "action": "swap",
+        "routeHash": "0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87",
+        "tx": {
+          "serializedMessage": "gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA",
+          "recentBlockhash": "4JZyj6FpxfY1Qu8tZBQiiGzwyWfmYS7TdnDQvFXNvpAW",
+          "lastValidBlockHeight": 300000100,
+          "computeUnitLimit": 300000,
+          "computeUnitPriceMicroLamports": "1000000"
+        },
+        "tokenIn": {
+          "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "symbol": "USDC",
+          "decimals": 6
+        },
+        "amountIn": "100000000",
+        "programIds": [
+          "ComputeBudget111111111111111111111111111111",
+          "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        ],
+        "tokenOut": {
+          "mint": "So11111111111111111111111111111111111111112",
+          "symbol": "wSOL",
+          "decimals": 9
+        },
+        "minAmountOut": "495000000",
+        "quotedAmountOut": "500000000",
+        "slippageBps": 100,
+        "maxSlippageBps": 100,
+        "quoteId": "synthetic-quote",
+        "quotedAt": 1793012395000
+      },
+      "normalizedJcs": "{\"action\":\"swap\",\"amountIn\":\"100000000\",\"chainId\":\"solana:mainnet\",\"createdAt\":1793012400000,\"expiresAt\":1793012490000,\"intentId\":\"synthetic-pr1\",\"maxSlippageBps\":100,\"minAmountOut\":\"495000000\",\"nonce\":\"1\",\"programIds\":[\"ComputeBudget111111111111111111111111111111\",\"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA\"],\"quoteId\":\"synthetic-quote\",\"quotedAmountOut\":\"500000000\",\"quotedAt\":1793012395000,\"routeHash\":\"0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87\",\"slippageBps\":100,\"tokenIn\":{\"decimals\":6,\"mint\":\"EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v\",\"symbol\":\"USDC\"},\"tokenOut\":{\"decimals\":9,\"mint\":\"So11111111111111111111111111111111111111112\",\"symbol\":\"wSOL\"},\"tx\":{\"computeUnitLimit\":300000,\"computeUnitPriceMicroLamports\":\"1000000\",\"lastValidBlockHeight\":300000100,\"recentBlockhash\":\"4JZyj6FpxfY1Qu8tZBQiiGzwyWfmYS7TdnDQvFXNvpAW\",\"serializedMessage\":\"gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA\"},\"venue\":\"jupiter-v6\",\"version\":\"1\",\"wallet\":\"2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D\"}",
+      "base64Message": "gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA",
+      "routeHash": "0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87",
+      "decision": "deny",
+      "mode": "live",
+      "signerAddress": "2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D",
+      "cluster": "solana:mainnet",
+      "intentHash": "0x6ca20f99bede1a82b018515340230d3f664bff58528d59bb57b52cc0705cf265",
+      "domainBytesHex": "0x6576616c616e6368652d76657269666965722f736f6c616e612f76310064656e79006c69766500325564514367624d70376d51503233527250417a48347a6147543775753769774e646738556b63716f78344400736f6c616e613a6d61696e6e6574006ca20f99bede1a82b018515340230d3f664bff58528d59bb57b52cc0705cf265",
+      "verifier": "0x5e2b94d88ebe859546bc508382d115d06bcb650c45be4bcfb21a4a99f5814e82",
+      "signature": "0x321db55eaa00ce6bfe1a970697e83181f0c33638057d3beefc2836a26d5f70d29112fde68b4ebc429e6327ac9db08f101833950acf7636ef5ddcd0cd498c9409",
+      "expected": {
+        "valid": false,
+        "error": "decision"
+      }
+    },
+    {
+      "id": "mutated-message",
+      "description": "New synthetic message and correct routeHash/intentHash with old signature.",
+      "structuredIntent": {
+        "version": "1",
+        "intentId": "synthetic-pr1",
+        "nonce": "1",
+        "createdAt": 1793012400000,
+        "expiresAt": 1793012490000,
+        "wallet": "2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D",
+        "chainId": "solana:mainnet",
+        "venue": "jupiter-v6",
+        "action": "swap",
+        "routeHash": "0x5f4f6a4b17c1b283ce60b5fdd80aa41868feeae99d5c6cedd82516da8a5da048",
+        "tx": {
+          "serializedMessage": "gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAKoo1LfGXl0MZD6wyrhd5H4/99irf8dWRIe4lQE3wrvIBAQAFAuCTBAAA",
+          "recentBlockhash": "3s4May8pWCktW9N5GsJg8qhMkjk8rRaKP7MwT19ZUtem",
+          "lastValidBlockHeight": 300000100,
+          "computeUnitLimit": 300000,
+          "computeUnitPriceMicroLamports": "1000000"
+        },
+        "tokenIn": {
+          "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "symbol": "USDC",
+          "decimals": 6
+        },
+        "amountIn": "100000000",
+        "programIds": [
+          "ComputeBudget111111111111111111111111111111",
+          "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        ],
+        "tokenOut": {
+          "mint": "So11111111111111111111111111111111111111112",
+          "symbol": "wSOL",
+          "decimals": 9
+        },
+        "minAmountOut": "495000000",
+        "quotedAmountOut": "500000000",
+        "slippageBps": 100,
+        "maxSlippageBps": 100,
+        "quoteId": "synthetic-quote",
+        "quotedAt": 1793012395000
+      },
+      "normalizedJcs": "{\"action\":\"swap\",\"amountIn\":\"100000000\",\"chainId\":\"solana:mainnet\",\"createdAt\":1793012400000,\"expiresAt\":1793012490000,\"intentId\":\"synthetic-pr1\",\"maxSlippageBps\":100,\"minAmountOut\":\"495000000\",\"nonce\":\"1\",\"programIds\":[\"ComputeBudget111111111111111111111111111111\",\"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA\"],\"quoteId\":\"synthetic-quote\",\"quotedAmountOut\":\"500000000\",\"quotedAt\":1793012395000,\"routeHash\":\"0x5f4f6a4b17c1b283ce60b5fdd80aa41868feeae99d5c6cedd82516da8a5da048\",\"slippageBps\":100,\"tokenIn\":{\"decimals\":6,\"mint\":\"EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v\",\"symbol\":\"USDC\"},\"tokenOut\":{\"decimals\":9,\"mint\":\"So11111111111111111111111111111111111111112\",\"symbol\":\"wSOL\"},\"tx\":{\"computeUnitLimit\":300000,\"computeUnitPriceMicroLamports\":\"1000000\",\"lastValidBlockHeight\":300000100,\"recentBlockhash\":\"3s4May8pWCktW9N5GsJg8qhMkjk8rRaKP7MwT19ZUtem\",\"serializedMessage\":\"gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAKoo1LfGXl0MZD6wyrhd5H4/99irf8dWRIe4lQE3wrvIBAQAFAuCTBAAA\"},\"venue\":\"jupiter-v6\",\"version\":\"1\",\"wallet\":\"2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D\"}",
+      "base64Message": "gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAKoo1LfGXl0MZD6wyrhd5H4/99irf8dWRIe4lQE3wrvIBAQAFAuCTBAAA",
+      "routeHash": "0x5f4f6a4b17c1b283ce60b5fdd80aa41868feeae99d5c6cedd82516da8a5da048",
+      "decision": "approve",
+      "mode": "live",
+      "signerAddress": "2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D",
+      "cluster": "solana:mainnet",
+      "intentHash": "0x0fc6bab0b90b2065999d05ee8d3c97f40f43400cc2f1e83068eeeb207333254b",
+      "domainBytesHex": "0x6576616c616e6368652d76657269666965722f736f6c616e612f763100617070726f7665006c69766500325564514367624d70376d51503233527250417a48347a6147543775753769774e646738556b63716f78344400736f6c616e613a6d61696e6e6574000fc6bab0b90b2065999d05ee8d3c97f40f43400cc2f1e83068eeeb207333254b",
+      "verifier": "0x5e2b94d88ebe859546bc508382d115d06bcb650c45be4bcfb21a4a99f5814e82",
+      "signature": "0x321db55eaa00ce6bfe1a970697e83181f0c33638057d3beefc2836a26d5f70d29112fde68b4ebc429e6327ac9db08f101833950acf7636ef5ddcd0cd498c9409",
+      "expected": {
+        "valid": false,
+        "error": "signature"
+      }
+    },
+    {
+      "id": "nul-cluster",
+      "description": "Embedded NUL cluster must fail domain validation.",
+      "structuredIntent": {
+        "version": "1",
+        "intentId": "synthetic-pr1",
+        "nonce": "1",
+        "createdAt": 1793012400000,
+        "expiresAt": 1793012490000,
+        "wallet": "2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D",
+        "chainId": "solana:mainnet",
+        "venue": "jupiter-v6",
+        "action": "swap",
+        "routeHash": "0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87",
+        "tx": {
+          "serializedMessage": "gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA",
+          "recentBlockhash": "4JZyj6FpxfY1Qu8tZBQiiGzwyWfmYS7TdnDQvFXNvpAW",
+          "lastValidBlockHeight": 300000100,
+          "computeUnitLimit": 300000,
+          "computeUnitPriceMicroLamports": "1000000"
+        },
+        "tokenIn": {
+          "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "symbol": "USDC",
+          "decimals": 6
+        },
+        "amountIn": "100000000",
+        "programIds": [
+          "ComputeBudget111111111111111111111111111111",
+          "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        ],
+        "tokenOut": {
+          "mint": "So11111111111111111111111111111111111111112",
+          "symbol": "wSOL",
+          "decimals": 9
+        },
+        "minAmountOut": "495000000",
+        "quotedAmountOut": "500000000",
+        "slippageBps": 100,
+        "maxSlippageBps": 100,
+        "quoteId": "synthetic-quote",
+        "quotedAt": 1793012395000
+      },
+      "normalizedJcs": "{\"action\":\"swap\",\"amountIn\":\"100000000\",\"chainId\":\"solana:mainnet\",\"createdAt\":1793012400000,\"expiresAt\":1793012490000,\"intentId\":\"synthetic-pr1\",\"maxSlippageBps\":100,\"minAmountOut\":\"495000000\",\"nonce\":\"1\",\"programIds\":[\"ComputeBudget111111111111111111111111111111\",\"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA\"],\"quoteId\":\"synthetic-quote\",\"quotedAmountOut\":\"500000000\",\"quotedAt\":1793012395000,\"routeHash\":\"0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87\",\"slippageBps\":100,\"tokenIn\":{\"decimals\":6,\"mint\":\"EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v\",\"symbol\":\"USDC\"},\"tokenOut\":{\"decimals\":9,\"mint\":\"So11111111111111111111111111111111111111112\",\"symbol\":\"wSOL\"},\"tx\":{\"computeUnitLimit\":300000,\"computeUnitPriceMicroLamports\":\"1000000\",\"lastValidBlockHeight\":300000100,\"recentBlockhash\":\"4JZyj6FpxfY1Qu8tZBQiiGzwyWfmYS7TdnDQvFXNvpAW\",\"serializedMessage\":\"gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA\"},\"venue\":\"jupiter-v6\",\"version\":\"1\",\"wallet\":\"2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D\"}",
+      "base64Message": "gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA",
+      "routeHash": "0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87",
+      "decision": "approve",
+      "mode": "live",
+      "signerAddress": "2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D",
+      "cluster": "solana:mainnet\u0000",
+      "intentHash": "0x6ca20f99bede1a82b018515340230d3f664bff58528d59bb57b52cc0705cf265",
+      "domainBytesHex": "0x6576616c616e6368652d76657269666965722f736f6c616e612f763100617070726f7665006c69766500325564514367624d70376d51503233527250417a48347a6147543775753769774e646738556b63716f78344400736f6c616e613a6d61696e6e657400006ca20f99bede1a82b018515340230d3f664bff58528d59bb57b52cc0705cf265",
+      "verifier": "0x5e2b94d88ebe859546bc508382d115d06bcb650c45be4bcfb21a4a99f5814e82",
+      "signature": "0xf73723dec9068ebf22e578703adf092bc1b49f019da52ebcbb74dc144d85e4199a7dcdcdc910b4c2f7453cd1255f6d0e4590baf653f282a58e5b877c3d727205",
+      "expected": {
+        "valid": false,
+        "error": "domain"
+      }
+    },
+    {
+      "id": "nul-pubkey",
+      "description": "Embedded NUL pubkey must fail domain validation.",
+      "structuredIntent": {
+        "version": "1",
+        "intentId": "synthetic-pr1",
+        "nonce": "1",
+        "createdAt": 1793012400000,
+        "expiresAt": 1793012490000,
+        "wallet": "2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D",
+        "chainId": "solana:mainnet",
+        "venue": "jupiter-v6",
+        "action": "swap",
+        "routeHash": "0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87",
+        "tx": {
+          "serializedMessage": "gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA",
+          "recentBlockhash": "4JZyj6FpxfY1Qu8tZBQiiGzwyWfmYS7TdnDQvFXNvpAW",
+          "lastValidBlockHeight": 300000100,
+          "computeUnitLimit": 300000,
+          "computeUnitPriceMicroLamports": "1000000"
+        },
+        "tokenIn": {
+          "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "symbol": "USDC",
+          "decimals": 6
+        },
+        "amountIn": "100000000",
+        "programIds": [
+          "ComputeBudget111111111111111111111111111111",
+          "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        ],
+        "tokenOut": {
+          "mint": "So11111111111111111111111111111111111111112",
+          "symbol": "wSOL",
+          "decimals": 9
+        },
+        "minAmountOut": "495000000",
+        "quotedAmountOut": "500000000",
+        "slippageBps": 100,
+        "maxSlippageBps": 100,
+        "quoteId": "synthetic-quote",
+        "quotedAt": 1793012395000
+      },
+      "normalizedJcs": "{\"action\":\"swap\",\"amountIn\":\"100000000\",\"chainId\":\"solana:mainnet\",\"createdAt\":1793012400000,\"expiresAt\":1793012490000,\"intentId\":\"synthetic-pr1\",\"maxSlippageBps\":100,\"minAmountOut\":\"495000000\",\"nonce\":\"1\",\"programIds\":[\"ComputeBudget111111111111111111111111111111\",\"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA\"],\"quoteId\":\"synthetic-quote\",\"quotedAmountOut\":\"500000000\",\"quotedAt\":1793012395000,\"routeHash\":\"0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87\",\"slippageBps\":100,\"tokenIn\":{\"decimals\":6,\"mint\":\"EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v\",\"symbol\":\"USDC\"},\"tokenOut\":{\"decimals\":9,\"mint\":\"So11111111111111111111111111111111111111112\",\"symbol\":\"wSOL\"},\"tx\":{\"computeUnitLimit\":300000,\"computeUnitPriceMicroLamports\":\"1000000\",\"lastValidBlockHeight\":300000100,\"recentBlockhash\":\"4JZyj6FpxfY1Qu8tZBQiiGzwyWfmYS7TdnDQvFXNvpAW\",\"serializedMessage\":\"gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA\"},\"venue\":\"jupiter-v6\",\"version\":\"1\",\"wallet\":\"2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D\"}",
+      "base64Message": "gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA",
+      "routeHash": "0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87",
+      "decision": "approve",
+      "mode": "live",
+      "signerAddress": "2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D\u0000",
+      "cluster": "solana:mainnet",
+      "intentHash": "0x6ca20f99bede1a82b018515340230d3f664bff58528d59bb57b52cc0705cf265",
+      "domainBytesHex": "0x6576616c616e6368652d76657269666965722f736f6c616e612f763100617070726f7665006c69766500325564514367624d70376d51503233527250417a48347a6147543775753769774e646738556b63716f7834440000736f6c616e613a6d61696e6e6574006ca20f99bede1a82b018515340230d3f664bff58528d59bb57b52cc0705cf265",
+      "verifier": "0x5e2b94d88ebe859546bc508382d115d06bcb650c45be4bcfb21a4a99f5814e82",
+      "signature": "0xf1a10a3c9f8bcb582d2bbbce8e4ad45793afd19c21acab40e0c47a7c6fdcc37f2c3349673deec8e1577507a3b0cfcfcb6c4b11220a8100e62acad973318a6406",
+      "expected": {
+        "valid": false,
+        "error": "domain"
+      }
+    },
+    {
+      "id": "base58-case-variant",
+      "description": "One character case-flipped treasury: different or invalid key, never normalized.",
+      "structuredIntent": {
+        "version": "1",
+        "intentId": "synthetic-pr1",
+        "nonce": "1",
+        "createdAt": 1793012400000,
+        "expiresAt": 1793012490000,
+        "wallet": "2udQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D",
+        "chainId": "solana:mainnet",
+        "venue": "jupiter-v6",
+        "action": "swap",
+        "routeHash": "0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87",
+        "tx": {
+          "serializedMessage": "gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA",
+          "recentBlockhash": "4JZyj6FpxfY1Qu8tZBQiiGzwyWfmYS7TdnDQvFXNvpAW",
+          "lastValidBlockHeight": 300000100,
+          "computeUnitLimit": 300000,
+          "computeUnitPriceMicroLamports": "1000000"
+        },
+        "tokenIn": {
+          "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "symbol": "USDC",
+          "decimals": 6
+        },
+        "amountIn": "100000000",
+        "programIds": [
+          "ComputeBudget111111111111111111111111111111",
+          "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        ],
+        "tokenOut": {
+          "mint": "So11111111111111111111111111111111111111112",
+          "symbol": "wSOL",
+          "decimals": 9
+        },
+        "minAmountOut": "495000000",
+        "quotedAmountOut": "500000000",
+        "slippageBps": 100,
+        "maxSlippageBps": 100,
+        "quoteId": "synthetic-quote",
+        "quotedAt": 1793012395000
+      },
+      "normalizedJcs": "{\"action\":\"swap\",\"amountIn\":\"100000000\",\"chainId\":\"solana:mainnet\",\"createdAt\":1793012400000,\"expiresAt\":1793012490000,\"intentId\":\"synthetic-pr1\",\"maxSlippageBps\":100,\"minAmountOut\":\"495000000\",\"nonce\":\"1\",\"programIds\":[\"ComputeBudget111111111111111111111111111111\",\"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA\"],\"quoteId\":\"synthetic-quote\",\"quotedAmountOut\":\"500000000\",\"quotedAt\":1793012395000,\"routeHash\":\"0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87\",\"slippageBps\":100,\"tokenIn\":{\"decimals\":6,\"mint\":\"EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v\",\"symbol\":\"USDC\"},\"tokenOut\":{\"decimals\":9,\"mint\":\"So11111111111111111111111111111111111111112\",\"symbol\":\"wSOL\"},\"tx\":{\"computeUnitLimit\":300000,\"computeUnitPriceMicroLamports\":\"1000000\",\"lastValidBlockHeight\":300000100,\"recentBlockhash\":\"4JZyj6FpxfY1Qu8tZBQiiGzwyWfmYS7TdnDQvFXNvpAW\",\"serializedMessage\":\"gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA\"},\"venue\":\"jupiter-v6\",\"version\":\"1\",\"wallet\":\"2udQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D\"}",
+      "base64Message": "gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA",
+      "routeHash": "0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87",
+      "decision": "approve",
+      "mode": "live",
+      "signerAddress": "2udQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D",
+      "cluster": "solana:mainnet",
+      "intentHash": "0xaf3cc829e00bf945f9e211ecdc1e118be9371a2b198e0106cad9ae4cd7cd2721",
+      "domainBytesHex": "0x6576616c616e6368652d76657269666965722f736f6c616e612f763100617070726f7665006c69766500327564514367624d70376d51503233527250417a48347a6147543775753769774e646738556b63716f78344400736f6c616e613a6d61696e6e657400af3cc829e00bf945f9e211ecdc1e118be9371a2b198e0106cad9ae4cd7cd2721",
+      "verifier": "0x5e2b94d88ebe859546bc508382d115d06bcb650c45be4bcfb21a4a99f5814e82",
+      "signature": "0x321db55eaa00ce6bfe1a970697e83181f0c33638057d3beefc2836a26d5f70d29112fde68b4ebc429e6327ac9db08f101833950acf7636ef5ddcd0cd498c9409",
+      "expected": {
+        "valid": false,
+        "error": "signature"
+      }
+    },
+    {
+      "id": "slippage-100",
+      "description": "Inclusive 100/100 bps schema boundary.",
+      "structuredIntent": {
+        "version": "1",
+        "intentId": "synthetic-pr1",
+        "nonce": "1",
+        "createdAt": 1793012400000,
+        "expiresAt": 1793012490000,
+        "wallet": "2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D",
+        "chainId": "solana:mainnet",
+        "venue": "jupiter-v6",
+        "action": "swap",
+        "routeHash": "0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87",
+        "tx": {
+          "serializedMessage": "gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA",
+          "recentBlockhash": "4JZyj6FpxfY1Qu8tZBQiiGzwyWfmYS7TdnDQvFXNvpAW",
+          "lastValidBlockHeight": 300000100,
+          "computeUnitLimit": 300000,
+          "computeUnitPriceMicroLamports": "1000000"
+        },
+        "tokenIn": {
+          "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "symbol": "USDC",
+          "decimals": 6
+        },
+        "amountIn": "100000000",
+        "programIds": [
+          "ComputeBudget111111111111111111111111111111",
+          "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        ],
+        "tokenOut": {
+          "mint": "So11111111111111111111111111111111111111112",
+          "symbol": "wSOL",
+          "decimals": 9
+        },
+        "minAmountOut": "495000000",
+        "quotedAmountOut": "500000000",
+        "slippageBps": 100,
+        "maxSlippageBps": 100,
+        "quoteId": "synthetic-quote",
+        "quotedAt": 1793012395000
+      },
+      "normalizedJcs": "{\"action\":\"swap\",\"amountIn\":\"100000000\",\"chainId\":\"solana:mainnet\",\"createdAt\":1793012400000,\"expiresAt\":1793012490000,\"intentId\":\"synthetic-pr1\",\"maxSlippageBps\":100,\"minAmountOut\":\"495000000\",\"nonce\":\"1\",\"programIds\":[\"ComputeBudget111111111111111111111111111111\",\"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA\"],\"quoteId\":\"synthetic-quote\",\"quotedAmountOut\":\"500000000\",\"quotedAt\":1793012395000,\"routeHash\":\"0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87\",\"slippageBps\":100,\"tokenIn\":{\"decimals\":6,\"mint\":\"EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v\",\"symbol\":\"USDC\"},\"tokenOut\":{\"decimals\":9,\"mint\":\"So11111111111111111111111111111111111111112\",\"symbol\":\"wSOL\"},\"tx\":{\"computeUnitLimit\":300000,\"computeUnitPriceMicroLamports\":\"1000000\",\"lastValidBlockHeight\":300000100,\"recentBlockhash\":\"4JZyj6FpxfY1Qu8tZBQiiGzwyWfmYS7TdnDQvFXNvpAW\",\"serializedMessage\":\"gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA\"},\"venue\":\"jupiter-v6\",\"version\":\"1\",\"wallet\":\"2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D\"}",
+      "base64Message": "gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA",
+      "routeHash": "0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87",
+      "decision": "approve",
+      "mode": "live",
+      "signerAddress": "2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D",
+      "cluster": "solana:mainnet",
+      "intentHash": "0x6ca20f99bede1a82b018515340230d3f664bff58528d59bb57b52cc0705cf265",
+      "domainBytesHex": "0x6576616c616e6368652d76657269666965722f736f6c616e612f763100617070726f7665006c69766500325564514367624d70376d51503233527250417a48347a6147543775753769774e646738556b63716f78344400736f6c616e613a6d61696e6e6574006ca20f99bede1a82b018515340230d3f664bff58528d59bb57b52cc0705cf265",
+      "verifier": "0x5e2b94d88ebe859546bc508382d115d06bcb650c45be4bcfb21a4a99f5814e82",
+      "signature": "0x321db55eaa00ce6bfe1a970697e83181f0c33638057d3beefc2836a26d5f70d29112fde68b4ebc429e6327ac9db08f101833950acf7636ef5ddcd0cd498c9409",
+      "expected": {
+        "valid": true
+      }
+    },
+    {
+      "id": "slippage-101",
+      "description": "101 exceeds committed max 100; schema denial.",
+      "structuredIntent": {
+        "version": "1",
+        "intentId": "synthetic-pr1",
+        "nonce": "1",
+        "createdAt": 1793012400000,
+        "expiresAt": 1793012490000,
+        "wallet": "2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D",
+        "chainId": "solana:mainnet",
+        "venue": "jupiter-v6",
+        "action": "swap",
+        "routeHash": "0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87",
+        "tx": {
+          "serializedMessage": "gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA",
+          "recentBlockhash": "4JZyj6FpxfY1Qu8tZBQiiGzwyWfmYS7TdnDQvFXNvpAW",
+          "lastValidBlockHeight": 300000100,
+          "computeUnitLimit": 300000,
+          "computeUnitPriceMicroLamports": "1000000"
+        },
+        "tokenIn": {
+          "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "symbol": "USDC",
+          "decimals": 6
+        },
+        "amountIn": "100000000",
+        "programIds": [
+          "ComputeBudget111111111111111111111111111111",
+          "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        ],
+        "tokenOut": {
+          "mint": "So11111111111111111111111111111111111111112",
+          "symbol": "wSOL",
+          "decimals": 9
+        },
+        "minAmountOut": "495000000",
+        "quotedAmountOut": "500000000",
+        "slippageBps": 101,
+        "maxSlippageBps": 100,
+        "quoteId": "synthetic-quote",
+        "quotedAt": 1793012395000
+      },
+      "normalizedJcs": "{\"action\":\"swap\",\"amountIn\":\"100000000\",\"chainId\":\"solana:mainnet\",\"createdAt\":1793012400000,\"expiresAt\":1793012490000,\"intentId\":\"synthetic-pr1\",\"maxSlippageBps\":100,\"minAmountOut\":\"495000000\",\"nonce\":\"1\",\"programIds\":[\"ComputeBudget111111111111111111111111111111\",\"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA\"],\"quoteId\":\"synthetic-quote\",\"quotedAmountOut\":\"500000000\",\"quotedAt\":1793012395000,\"routeHash\":\"0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87\",\"slippageBps\":101,\"tokenIn\":{\"decimals\":6,\"mint\":\"EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v\",\"symbol\":\"USDC\"},\"tokenOut\":{\"decimals\":9,\"mint\":\"So11111111111111111111111111111111111111112\",\"symbol\":\"wSOL\"},\"tx\":{\"computeUnitLimit\":300000,\"computeUnitPriceMicroLamports\":\"1000000\",\"lastValidBlockHeight\":300000100,\"recentBlockhash\":\"4JZyj6FpxfY1Qu8tZBQiiGzwyWfmYS7TdnDQvFXNvpAW\",\"serializedMessage\":\"gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA\"},\"venue\":\"jupiter-v6\",\"version\":\"1\",\"wallet\":\"2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D\"}",
+      "base64Message": "gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA",
+      "routeHash": "0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87",
+      "decision": "approve",
+      "mode": "live",
+      "signerAddress": "2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D",
+      "cluster": "solana:mainnet",
+      "intentHash": "0xfa61780a5c6fcf33c219e054caad7e9d8e2bfbc51f23b5cec6bf7b3d6fb24b32",
+      "domainBytesHex": "0x6576616c616e6368652d76657269666965722f736f6c616e612f763100617070726f7665006c69766500325564514367624d70376d51503233527250417a48347a6147543775753769774e646738556b63716f78344400736f6c616e613a6d61696e6e657400fa61780a5c6fcf33c219e054caad7e9d8e2bfbc51f23b5cec6bf7b3d6fb24b32",
+      "verifier": "0x5e2b94d88ebe859546bc508382d115d06bcb650c45be4bcfb21a4a99f5814e82",
+      "signature": "0xe87a96f29b60ed1f602b4d09d26c95c9245d1b1b51834a8d0fffaf3d9a218d83ea8ce575eb496cd604f6a76bac42a6f211fdb78f53c5d0f4d5b5a61e9f31a607",
+      "expected": {
+        "valid": false,
+        "error": "schema"
+      }
+    },
+    {
+      "id": "decimals-255",
+      "description": "Token decimal schema boundary.",
+      "structuredIntent": {
+        "version": "1",
+        "intentId": "synthetic-pr1",
+        "nonce": "1",
+        "createdAt": 1793012400000,
+        "expiresAt": 1793012490000,
+        "wallet": "2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D",
+        "chainId": "solana:mainnet",
+        "venue": "jupiter-v6",
+        "action": "swap",
+        "routeHash": "0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87",
+        "tx": {
+          "serializedMessage": "gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA",
+          "recentBlockhash": "4JZyj6FpxfY1Qu8tZBQiiGzwyWfmYS7TdnDQvFXNvpAW",
+          "lastValidBlockHeight": 300000100,
+          "computeUnitLimit": 300000,
+          "computeUnitPriceMicroLamports": "1000000"
+        },
+        "tokenIn": {
+          "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "symbol": "USDC",
+          "decimals": 255
+        },
+        "amountIn": "100000000",
+        "programIds": [
+          "ComputeBudget111111111111111111111111111111",
+          "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        ],
+        "tokenOut": {
+          "mint": "So11111111111111111111111111111111111111112",
+          "symbol": "wSOL",
+          "decimals": 9
+        },
+        "minAmountOut": "495000000",
+        "quotedAmountOut": "500000000",
+        "slippageBps": 100,
+        "maxSlippageBps": 100,
+        "quoteId": "synthetic-quote",
+        "quotedAt": 1793012395000
+      },
+      "normalizedJcs": "{\"action\":\"swap\",\"amountIn\":\"100000000\",\"chainId\":\"solana:mainnet\",\"createdAt\":1793012400000,\"expiresAt\":1793012490000,\"intentId\":\"synthetic-pr1\",\"maxSlippageBps\":100,\"minAmountOut\":\"495000000\",\"nonce\":\"1\",\"programIds\":[\"ComputeBudget111111111111111111111111111111\",\"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA\"],\"quoteId\":\"synthetic-quote\",\"quotedAmountOut\":\"500000000\",\"quotedAt\":1793012395000,\"routeHash\":\"0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87\",\"slippageBps\":100,\"tokenIn\":{\"decimals\":255,\"mint\":\"EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v\",\"symbol\":\"USDC\"},\"tokenOut\":{\"decimals\":9,\"mint\":\"So11111111111111111111111111111111111111112\",\"symbol\":\"wSOL\"},\"tx\":{\"computeUnitLimit\":300000,\"computeUnitPriceMicroLamports\":\"1000000\",\"lastValidBlockHeight\":300000100,\"recentBlockhash\":\"4JZyj6FpxfY1Qu8tZBQiiGzwyWfmYS7TdnDQvFXNvpAW\",\"serializedMessage\":\"gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA\"},\"venue\":\"jupiter-v6\",\"version\":\"1\",\"wallet\":\"2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D\"}",
+      "base64Message": "gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA",
+      "routeHash": "0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87",
+      "decision": "approve",
+      "mode": "live",
+      "signerAddress": "2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D",
+      "cluster": "solana:mainnet",
+      "intentHash": "0x43effcb90a0aa1a5449b0013812e9a26422b2a5b973194a25174e37fef40e64e",
+      "domainBytesHex": "0x6576616c616e6368652d76657269666965722f736f6c616e612f763100617070726f7665006c69766500325564514367624d70376d51503233527250417a48347a6147543775753769774e646738556b63716f78344400736f6c616e613a6d61696e6e65740043effcb90a0aa1a5449b0013812e9a26422b2a5b973194a25174e37fef40e64e",
+      "verifier": "0x5e2b94d88ebe859546bc508382d115d06bcb650c45be4bcfb21a4a99f5814e82",
+      "signature": "0x3421e62782234eee73e8638063594ff5e3cde761ac9538642a29bb52c2008db8e4c9d2aec7e63daf10886712036ea95cac3d373c4f3c481b7166d429b30a460c",
+      "expected": {
+        "valid": true
+      }
+    },
+    {
+      "id": "decimals-256",
+      "description": "Token decimal schema boundary.",
+      "structuredIntent": {
+        "version": "1",
+        "intentId": "synthetic-pr1",
+        "nonce": "1",
+        "createdAt": 1793012400000,
+        "expiresAt": 1793012490000,
+        "wallet": "2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D",
+        "chainId": "solana:mainnet",
+        "venue": "jupiter-v6",
+        "action": "swap",
+        "routeHash": "0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87",
+        "tx": {
+          "serializedMessage": "gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA",
+          "recentBlockhash": "4JZyj6FpxfY1Qu8tZBQiiGzwyWfmYS7TdnDQvFXNvpAW",
+          "lastValidBlockHeight": 300000100,
+          "computeUnitLimit": 300000,
+          "computeUnitPriceMicroLamports": "1000000"
+        },
+        "tokenIn": {
+          "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "symbol": "USDC",
+          "decimals": 256
+        },
+        "amountIn": "100000000",
+        "programIds": [
+          "ComputeBudget111111111111111111111111111111",
+          "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        ],
+        "tokenOut": {
+          "mint": "So11111111111111111111111111111111111111112",
+          "symbol": "wSOL",
+          "decimals": 9
+        },
+        "minAmountOut": "495000000",
+        "quotedAmountOut": "500000000",
+        "slippageBps": 100,
+        "maxSlippageBps": 100,
+        "quoteId": "synthetic-quote",
+        "quotedAt": 1793012395000
+      },
+      "normalizedJcs": "{\"action\":\"swap\",\"amountIn\":\"100000000\",\"chainId\":\"solana:mainnet\",\"createdAt\":1793012400000,\"expiresAt\":1793012490000,\"intentId\":\"synthetic-pr1\",\"maxSlippageBps\":100,\"minAmountOut\":\"495000000\",\"nonce\":\"1\",\"programIds\":[\"ComputeBudget111111111111111111111111111111\",\"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA\"],\"quoteId\":\"synthetic-quote\",\"quotedAmountOut\":\"500000000\",\"quotedAt\":1793012395000,\"routeHash\":\"0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87\",\"slippageBps\":100,\"tokenIn\":{\"decimals\":256,\"mint\":\"EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v\",\"symbol\":\"USDC\"},\"tokenOut\":{\"decimals\":9,\"mint\":\"So11111111111111111111111111111111111111112\",\"symbol\":\"wSOL\"},\"tx\":{\"computeUnitLimit\":300000,\"computeUnitPriceMicroLamports\":\"1000000\",\"lastValidBlockHeight\":300000100,\"recentBlockhash\":\"4JZyj6FpxfY1Qu8tZBQiiGzwyWfmYS7TdnDQvFXNvpAW\",\"serializedMessage\":\"gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA\"},\"venue\":\"jupiter-v6\",\"version\":\"1\",\"wallet\":\"2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D\"}",
+      "base64Message": "gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA",
+      "routeHash": "0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87",
+      "decision": "approve",
+      "mode": "live",
+      "signerAddress": "2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D",
+      "cluster": "solana:mainnet",
+      "intentHash": "0xfd6c863f1abed1db53c126554c1e31225a4985e4ce50b25a1a4f56ea57d9b92a",
+      "domainBytesHex": "0x6576616c616e6368652d76657269666965722f736f6c616e612f763100617070726f7665006c69766500325564514367624d70376d51503233527250417a48347a6147543775753769774e646738556b63716f78344400736f6c616e613a6d61696e6e657400fd6c863f1abed1db53c126554c1e31225a4985e4ce50b25a1a4f56ea57d9b92a",
+      "verifier": "0x5e2b94d88ebe859546bc508382d115d06bcb650c45be4bcfb21a4a99f5814e82",
+      "signature": "0x575451b77e34123a18075503fb460c2b2968f7f65a1159c940ae89fcbdd7f4079aa264e9aabfd3e3fdffa7dd3e9ad50234c160116da5c93272f6b4ec27fb5e0d",
+      "expected": {
+        "valid": false,
+        "error": "schema"
+      }
+    },
+    {
+      "id": "nonce-0",
+      "description": "Canonical decimal nonce boundary.",
+      "structuredIntent": {
+        "version": "1",
+        "intentId": "synthetic-pr1",
+        "nonce": "0",
+        "createdAt": 1793012400000,
+        "expiresAt": 1793012490000,
+        "wallet": "2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D",
+        "chainId": "solana:mainnet",
+        "venue": "jupiter-v6",
+        "action": "swap",
+        "routeHash": "0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87",
+        "tx": {
+          "serializedMessage": "gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA",
+          "recentBlockhash": "4JZyj6FpxfY1Qu8tZBQiiGzwyWfmYS7TdnDQvFXNvpAW",
+          "lastValidBlockHeight": 300000100,
+          "computeUnitLimit": 300000,
+          "computeUnitPriceMicroLamports": "1000000"
+        },
+        "tokenIn": {
+          "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "symbol": "USDC",
+          "decimals": 6
+        },
+        "amountIn": "100000000",
+        "programIds": [
+          "ComputeBudget111111111111111111111111111111",
+          "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        ],
+        "tokenOut": {
+          "mint": "So11111111111111111111111111111111111111112",
+          "symbol": "wSOL",
+          "decimals": 9
+        },
+        "minAmountOut": "495000000",
+        "quotedAmountOut": "500000000",
+        "slippageBps": 100,
+        "maxSlippageBps": 100,
+        "quoteId": "synthetic-quote",
+        "quotedAt": 1793012395000
+      },
+      "normalizedJcs": "{\"action\":\"swap\",\"amountIn\":\"100000000\",\"chainId\":\"solana:mainnet\",\"createdAt\":1793012400000,\"expiresAt\":1793012490000,\"intentId\":\"synthetic-pr1\",\"maxSlippageBps\":100,\"minAmountOut\":\"495000000\",\"nonce\":\"0\",\"programIds\":[\"ComputeBudget111111111111111111111111111111\",\"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA\"],\"quoteId\":\"synthetic-quote\",\"quotedAmountOut\":\"500000000\",\"quotedAt\":1793012395000,\"routeHash\":\"0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87\",\"slippageBps\":100,\"tokenIn\":{\"decimals\":6,\"mint\":\"EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v\",\"symbol\":\"USDC\"},\"tokenOut\":{\"decimals\":9,\"mint\":\"So11111111111111111111111111111111111111112\",\"symbol\":\"wSOL\"},\"tx\":{\"computeUnitLimit\":300000,\"computeUnitPriceMicroLamports\":\"1000000\",\"lastValidBlockHeight\":300000100,\"recentBlockhash\":\"4JZyj6FpxfY1Qu8tZBQiiGzwyWfmYS7TdnDQvFXNvpAW\",\"serializedMessage\":\"gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA\"},\"venue\":\"jupiter-v6\",\"version\":\"1\",\"wallet\":\"2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D\"}",
+      "base64Message": "gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA",
+      "routeHash": "0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87",
+      "decision": "approve",
+      "mode": "live",
+      "signerAddress": "2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D",
+      "cluster": "solana:mainnet",
+      "intentHash": "0x6890def29de3f42b299a5689597eaf663b006be0b1cef6df87cc083fe7153d76",
+      "domainBytesHex": "0x6576616c616e6368652d76657269666965722f736f6c616e612f763100617070726f7665006c69766500325564514367624d70376d51503233527250417a48347a6147543775753769774e646738556b63716f78344400736f6c616e613a6d61696e6e6574006890def29de3f42b299a5689597eaf663b006be0b1cef6df87cc083fe7153d76",
+      "verifier": "0x5e2b94d88ebe859546bc508382d115d06bcb650c45be4bcfb21a4a99f5814e82",
+      "signature": "0x9b65ee9d34e849d2b84a29ed70439d9fb535e4d9ad6e7b6b53779a34b6b53b3860c95abc14e39b30e6a3a9cddc0a33788e15ba631c7781dcba51ae13296a350c",
+      "expected": {
+        "valid": true
+      }
+    },
+    {
+      "id": "nonce-00",
+      "description": "Canonical decimal nonce boundary.",
+      "structuredIntent": {
+        "version": "1",
+        "intentId": "synthetic-pr1",
+        "nonce": "00",
+        "createdAt": 1793012400000,
+        "expiresAt": 1793012490000,
+        "wallet": "2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D",
+        "chainId": "solana:mainnet",
+        "venue": "jupiter-v6",
+        "action": "swap",
+        "routeHash": "0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87",
+        "tx": {
+          "serializedMessage": "gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA",
+          "recentBlockhash": "4JZyj6FpxfY1Qu8tZBQiiGzwyWfmYS7TdnDQvFXNvpAW",
+          "lastValidBlockHeight": 300000100,
+          "computeUnitLimit": 300000,
+          "computeUnitPriceMicroLamports": "1000000"
+        },
+        "tokenIn": {
+          "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "symbol": "USDC",
+          "decimals": 6
+        },
+        "amountIn": "100000000",
+        "programIds": [
+          "ComputeBudget111111111111111111111111111111",
+          "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        ],
+        "tokenOut": {
+          "mint": "So11111111111111111111111111111111111111112",
+          "symbol": "wSOL",
+          "decimals": 9
+        },
+        "minAmountOut": "495000000",
+        "quotedAmountOut": "500000000",
+        "slippageBps": 100,
+        "maxSlippageBps": 100,
+        "quoteId": "synthetic-quote",
+        "quotedAt": 1793012395000
+      },
+      "normalizedJcs": "{\"action\":\"swap\",\"amountIn\":\"100000000\",\"chainId\":\"solana:mainnet\",\"createdAt\":1793012400000,\"expiresAt\":1793012490000,\"intentId\":\"synthetic-pr1\",\"maxSlippageBps\":100,\"minAmountOut\":\"495000000\",\"nonce\":\"00\",\"programIds\":[\"ComputeBudget111111111111111111111111111111\",\"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA\"],\"quoteId\":\"synthetic-quote\",\"quotedAmountOut\":\"500000000\",\"quotedAt\":1793012395000,\"routeHash\":\"0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87\",\"slippageBps\":100,\"tokenIn\":{\"decimals\":6,\"mint\":\"EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v\",\"symbol\":\"USDC\"},\"tokenOut\":{\"decimals\":9,\"mint\":\"So11111111111111111111111111111111111111112\",\"symbol\":\"wSOL\"},\"tx\":{\"computeUnitLimit\":300000,\"computeUnitPriceMicroLamports\":\"1000000\",\"lastValidBlockHeight\":300000100,\"recentBlockhash\":\"4JZyj6FpxfY1Qu8tZBQiiGzwyWfmYS7TdnDQvFXNvpAW\",\"serializedMessage\":\"gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA\"},\"venue\":\"jupiter-v6\",\"version\":\"1\",\"wallet\":\"2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D\"}",
+      "base64Message": "gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA",
+      "routeHash": "0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87",
+      "decision": "approve",
+      "mode": "live",
+      "signerAddress": "2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D",
+      "cluster": "solana:mainnet",
+      "intentHash": "0xd973e3a24a82030d29522d92c5f4d82a9d83111d130838dc88acf97164d1ff80",
+      "domainBytesHex": "0x6576616c616e6368652d76657269666965722f736f6c616e612f763100617070726f7665006c69766500325564514367624d70376d51503233527250417a48347a6147543775753769774e646738556b63716f78344400736f6c616e613a6d61696e6e657400d973e3a24a82030d29522d92c5f4d82a9d83111d130838dc88acf97164d1ff80",
+      "verifier": "0x5e2b94d88ebe859546bc508382d115d06bcb650c45be4bcfb21a4a99f5814e82",
+      "signature": "0xf66a715a9b66b03d888fa820960a47845a81e004a453f64c13267aa6078b33dee0371b8682518d7af112fb1fc8b96c7f95a8065b1d088543924049b0e2488806",
+      "expected": {
+        "valid": false,
+        "error": "schema"
+      }
+    },
+    {
+      "id": "u64-max",
+      "description": "u64 max is valid schema; approve economics is PR3.",
+      "structuredIntent": {
+        "version": "1",
+        "intentId": "synthetic-pr1",
+        "nonce": "1",
+        "createdAt": 1793012400000,
+        "expiresAt": 1793012490000,
+        "wallet": "2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D",
+        "chainId": "solana:mainnet",
+        "venue": "jupiter-v6",
+        "action": "swap",
+        "routeHash": "0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87",
+        "tx": {
+          "serializedMessage": "gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA",
+          "recentBlockhash": "4JZyj6FpxfY1Qu8tZBQiiGzwyWfmYS7TdnDQvFXNvpAW",
+          "lastValidBlockHeight": 300000100,
+          "computeUnitLimit": 300000,
+          "computeUnitPriceMicroLamports": "1000000"
+        },
+        "tokenIn": {
+          "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "symbol": "USDC",
+          "decimals": 6
+        },
+        "amountIn": "18446744073709551615",
+        "programIds": [
+          "ComputeBudget111111111111111111111111111111",
+          "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        ],
+        "tokenOut": {
+          "mint": "So11111111111111111111111111111111111111112",
+          "symbol": "wSOL",
+          "decimals": 9
+        },
+        "minAmountOut": "495000000",
+        "quotedAmountOut": "500000000",
+        "slippageBps": 100,
+        "maxSlippageBps": 100,
+        "quoteId": "synthetic-quote",
+        "quotedAt": 1793012395000
+      },
+      "normalizedJcs": "{\"action\":\"swap\",\"amountIn\":\"18446744073709551615\",\"chainId\":\"solana:mainnet\",\"createdAt\":1793012400000,\"expiresAt\":1793012490000,\"intentId\":\"synthetic-pr1\",\"maxSlippageBps\":100,\"minAmountOut\":\"495000000\",\"nonce\":\"1\",\"programIds\":[\"ComputeBudget111111111111111111111111111111\",\"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA\"],\"quoteId\":\"synthetic-quote\",\"quotedAmountOut\":\"500000000\",\"quotedAt\":1793012395000,\"routeHash\":\"0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87\",\"slippageBps\":100,\"tokenIn\":{\"decimals\":6,\"mint\":\"EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v\",\"symbol\":\"USDC\"},\"tokenOut\":{\"decimals\":9,\"mint\":\"So11111111111111111111111111111111111111112\",\"symbol\":\"wSOL\"},\"tx\":{\"computeUnitLimit\":300000,\"computeUnitPriceMicroLamports\":\"1000000\",\"lastValidBlockHeight\":300000100,\"recentBlockhash\":\"4JZyj6FpxfY1Qu8tZBQiiGzwyWfmYS7TdnDQvFXNvpAW\",\"serializedMessage\":\"gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA\"},\"venue\":\"jupiter-v6\",\"version\":\"1\",\"wallet\":\"2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D\"}",
+      "base64Message": "gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA",
+      "routeHash": "0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87",
+      "decision": "approve",
+      "mode": "live",
+      "signerAddress": "2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D",
+      "cluster": "solana:mainnet",
+      "intentHash": "0x57f53cfe69b0ec3bdb32dabf5a9bf56184bbba188b23e098ce3737ec8232fe90",
+      "domainBytesHex": "0x6576616c616e6368652d76657269666965722f736f6c616e612f763100617070726f7665006c69766500325564514367624d70376d51503233527250417a48347a6147543775753769774e646738556b63716f78344400736f6c616e613a6d61696e6e65740057f53cfe69b0ec3bdb32dabf5a9bf56184bbba188b23e098ce3737ec8232fe90",
+      "verifier": "0x5e2b94d88ebe859546bc508382d115d06bcb650c45be4bcfb21a4a99f5814e82",
+      "signature": "0xe2579110e04bd841cf964ad94f558a3759ea1212244ff82c6b5e9e784ca2639b3d92466e3d304dea288427d88597736a0d6bd239960d93a4bf5b3553006ea20c",
+      "expected": {
+        "valid": true
+      }
+    },
+    {
+      "id": "extra-intent",
+      "description": "Unknown key must be denied recursively.",
+      "structuredIntent": {
+        "version": "1",
+        "intentId": "synthetic-pr1",
+        "nonce": "1",
+        "createdAt": 1793012400000,
+        "expiresAt": 1793012490000,
+        "wallet": "2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D",
+        "chainId": "solana:mainnet",
+        "venue": "jupiter-v6",
+        "action": "swap",
+        "routeHash": "0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87",
+        "tx": {
+          "serializedMessage": "gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA",
+          "recentBlockhash": "4JZyj6FpxfY1Qu8tZBQiiGzwyWfmYS7TdnDQvFXNvpAW",
+          "lastValidBlockHeight": 300000100,
+          "computeUnitLimit": 300000,
+          "computeUnitPriceMicroLamports": "1000000"
+        },
+        "tokenIn": {
+          "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "symbol": "USDC",
+          "decimals": 6
+        },
+        "amountIn": "100000000",
+        "programIds": [
+          "ComputeBudget111111111111111111111111111111",
+          "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        ],
+        "tokenOut": {
+          "mint": "So11111111111111111111111111111111111111112",
+          "symbol": "wSOL",
+          "decimals": 9
+        },
+        "minAmountOut": "495000000",
+        "quotedAmountOut": "500000000",
+        "slippageBps": 100,
+        "maxSlippageBps": 100,
+        "quoteId": "synthetic-quote",
+        "quotedAt": 1793012395000,
+        "unexpected": true
+      },
+      "normalizedJcs": "{\"action\":\"swap\",\"amountIn\":\"100000000\",\"chainId\":\"solana:mainnet\",\"createdAt\":1793012400000,\"expiresAt\":1793012490000,\"intentId\":\"synthetic-pr1\",\"maxSlippageBps\":100,\"minAmountOut\":\"495000000\",\"nonce\":\"1\",\"programIds\":[\"ComputeBudget111111111111111111111111111111\",\"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA\"],\"quoteId\":\"synthetic-quote\",\"quotedAmountOut\":\"500000000\",\"quotedAt\":1793012395000,\"routeHash\":\"0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87\",\"slippageBps\":100,\"tokenIn\":{\"decimals\":6,\"mint\":\"EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v\",\"symbol\":\"USDC\"},\"tokenOut\":{\"decimals\":9,\"mint\":\"So11111111111111111111111111111111111111112\",\"symbol\":\"wSOL\"},\"tx\":{\"computeUnitLimit\":300000,\"computeUnitPriceMicroLamports\":\"1000000\",\"lastValidBlockHeight\":300000100,\"recentBlockhash\":\"4JZyj6FpxfY1Qu8tZBQiiGzwyWfmYS7TdnDQvFXNvpAW\",\"serializedMessage\":\"gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA\"},\"unexpected\":true,\"venue\":\"jupiter-v6\",\"version\":\"1\",\"wallet\":\"2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D\"}",
+      "base64Message": "gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA",
+      "routeHash": "0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87",
+      "decision": "approve",
+      "mode": "live",
+      "signerAddress": "2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D",
+      "cluster": "solana:mainnet",
+      "intentHash": "0x96c9c4df2706fa6388fad701ae52c01051c17afb4b3129636fb9641073cb508d",
+      "domainBytesHex": "0x6576616c616e6368652d76657269666965722f736f6c616e612f763100617070726f7665006c69766500325564514367624d70376d51503233527250417a48347a6147543775753769774e646738556b63716f78344400736f6c616e613a6d61696e6e65740096c9c4df2706fa6388fad701ae52c01051c17afb4b3129636fb9641073cb508d",
+      "verifier": "0x5e2b94d88ebe859546bc508382d115d06bcb650c45be4bcfb21a4a99f5814e82",
+      "signature": "0xd05147832e6f77ff6e3f76189ff3714b8fa7be5df4db9c220d21330fa0b45f16be34d9e2b0046dc2556b04a896be6fd68f951463fa8f96b82fcc786bcef87e08",
+      "expected": {
+        "valid": false,
+        "error": "schema"
+      }
+    },
+    {
+      "id": "extra-tx",
+      "description": "Unknown key must be denied recursively.",
+      "structuredIntent": {
+        "version": "1",
+        "intentId": "synthetic-pr1",
+        "nonce": "1",
+        "createdAt": 1793012400000,
+        "expiresAt": 1793012490000,
+        "wallet": "2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D",
+        "chainId": "solana:mainnet",
+        "venue": "jupiter-v6",
+        "action": "swap",
+        "routeHash": "0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87",
+        "tx": {
+          "serializedMessage": "gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA",
+          "recentBlockhash": "4JZyj6FpxfY1Qu8tZBQiiGzwyWfmYS7TdnDQvFXNvpAW",
+          "lastValidBlockHeight": 300000100,
+          "computeUnitLimit": 300000,
+          "computeUnitPriceMicroLamports": "1000000",
+          "unexpected": true
+        },
+        "tokenIn": {
+          "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "symbol": "USDC",
+          "decimals": 6
+        },
+        "amountIn": "100000000",
+        "programIds": [
+          "ComputeBudget111111111111111111111111111111",
+          "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        ],
+        "tokenOut": {
+          "mint": "So11111111111111111111111111111111111111112",
+          "symbol": "wSOL",
+          "decimals": 9
+        },
+        "minAmountOut": "495000000",
+        "quotedAmountOut": "500000000",
+        "slippageBps": 100,
+        "maxSlippageBps": 100,
+        "quoteId": "synthetic-quote",
+        "quotedAt": 1793012395000
+      },
+      "normalizedJcs": "{\"action\":\"swap\",\"amountIn\":\"100000000\",\"chainId\":\"solana:mainnet\",\"createdAt\":1793012400000,\"expiresAt\":1793012490000,\"intentId\":\"synthetic-pr1\",\"maxSlippageBps\":100,\"minAmountOut\":\"495000000\",\"nonce\":\"1\",\"programIds\":[\"ComputeBudget111111111111111111111111111111\",\"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA\"],\"quoteId\":\"synthetic-quote\",\"quotedAmountOut\":\"500000000\",\"quotedAt\":1793012395000,\"routeHash\":\"0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87\",\"slippageBps\":100,\"tokenIn\":{\"decimals\":6,\"mint\":\"EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v\",\"symbol\":\"USDC\"},\"tokenOut\":{\"decimals\":9,\"mint\":\"So11111111111111111111111111111111111111112\",\"symbol\":\"wSOL\"},\"tx\":{\"computeUnitLimit\":300000,\"computeUnitPriceMicroLamports\":\"1000000\",\"lastValidBlockHeight\":300000100,\"recentBlockhash\":\"4JZyj6FpxfY1Qu8tZBQiiGzwyWfmYS7TdnDQvFXNvpAW\",\"serializedMessage\":\"gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA\",\"unexpected\":true},\"venue\":\"jupiter-v6\",\"version\":\"1\",\"wallet\":\"2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D\"}",
+      "base64Message": "gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA",
+      "routeHash": "0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87",
+      "decision": "approve",
+      "mode": "live",
+      "signerAddress": "2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D",
+      "cluster": "solana:mainnet",
+      "intentHash": "0x280787c8e774efe1d94a0f7feee2558baabda67e7c4654c13dfade10c7e10e41",
+      "domainBytesHex": "0x6576616c616e6368652d76657269666965722f736f6c616e612f763100617070726f7665006c69766500325564514367624d70376d51503233527250417a48347a6147543775753769774e646738556b63716f78344400736f6c616e613a6d61696e6e657400280787c8e774efe1d94a0f7feee2558baabda67e7c4654c13dfade10c7e10e41",
+      "verifier": "0x5e2b94d88ebe859546bc508382d115d06bcb650c45be4bcfb21a4a99f5814e82",
+      "signature": "0x95ffec1585ede2d6248963e621c96494ced113341f00aedff42098dc593842e4133ea12b818ab06e55ca07e47645510f9fc78b4c1506611c36dca88b3c73230a",
+      "expected": {
+        "valid": false,
+        "error": "schema"
+      }
+    },
+    {
+      "id": "extra-tokenIn",
+      "description": "Unknown key must be denied recursively.",
+      "structuredIntent": {
+        "version": "1",
+        "intentId": "synthetic-pr1",
+        "nonce": "1",
+        "createdAt": 1793012400000,
+        "expiresAt": 1793012490000,
+        "wallet": "2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D",
+        "chainId": "solana:mainnet",
+        "venue": "jupiter-v6",
+        "action": "swap",
+        "routeHash": "0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87",
+        "tx": {
+          "serializedMessage": "gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA",
+          "recentBlockhash": "4JZyj6FpxfY1Qu8tZBQiiGzwyWfmYS7TdnDQvFXNvpAW",
+          "lastValidBlockHeight": 300000100,
+          "computeUnitLimit": 300000,
+          "computeUnitPriceMicroLamports": "1000000"
+        },
+        "tokenIn": {
+          "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "symbol": "USDC",
+          "decimals": 6,
+          "unexpected": true
+        },
+        "amountIn": "100000000",
+        "programIds": [
+          "ComputeBudget111111111111111111111111111111",
+          "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        ],
+        "tokenOut": {
+          "mint": "So11111111111111111111111111111111111111112",
+          "symbol": "wSOL",
+          "decimals": 9
+        },
+        "minAmountOut": "495000000",
+        "quotedAmountOut": "500000000",
+        "slippageBps": 100,
+        "maxSlippageBps": 100,
+        "quoteId": "synthetic-quote",
+        "quotedAt": 1793012395000
+      },
+      "normalizedJcs": "{\"action\":\"swap\",\"amountIn\":\"100000000\",\"chainId\":\"solana:mainnet\",\"createdAt\":1793012400000,\"expiresAt\":1793012490000,\"intentId\":\"synthetic-pr1\",\"maxSlippageBps\":100,\"minAmountOut\":\"495000000\",\"nonce\":\"1\",\"programIds\":[\"ComputeBudget111111111111111111111111111111\",\"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA\"],\"quoteId\":\"synthetic-quote\",\"quotedAmountOut\":\"500000000\",\"quotedAt\":1793012395000,\"routeHash\":\"0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87\",\"slippageBps\":100,\"tokenIn\":{\"decimals\":6,\"mint\":\"EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v\",\"symbol\":\"USDC\",\"unexpected\":true},\"tokenOut\":{\"decimals\":9,\"mint\":\"So11111111111111111111111111111111111111112\",\"symbol\":\"wSOL\"},\"tx\":{\"computeUnitLimit\":300000,\"computeUnitPriceMicroLamports\":\"1000000\",\"lastValidBlockHeight\":300000100,\"recentBlockhash\":\"4JZyj6FpxfY1Qu8tZBQiiGzwyWfmYS7TdnDQvFXNvpAW\",\"serializedMessage\":\"gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA\"},\"venue\":\"jupiter-v6\",\"version\":\"1\",\"wallet\":\"2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D\"}",
+      "base64Message": "gAEAAQIV74bC1GCLiuXaiZMU9y5oj9EkCC2vEuXPag9LlZDLxgMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAMRM5EKB7r/zUSFm/NJUuWSbdHBJFkp5Ljk2KtkL62BsBAQAFAuCTBAAA",
+      "routeHash": "0x46a5d5607521b2a66bf41c73592a5e17ec109ea41d88578de2aaa163cfe5ab87",
+      "decision": "approve",
+      "mode": "live",
+      "signerAddress": "2UdQCgbMp7mQP23RrPAzH4zaGT7uu7iwNdg8Ukcqox4D",
+      "cluster": "solana:mainnet",
+      "intentHash": "0x56afe676458f6d7debd3ccacfb3e266564c94d77c6ed4be9f00086d5d12ae8d1",
+      "domainBytesHex": "0x6576616c616e6368652d76657269666965722f736f6c616e612f763100617070726f7665006c69766500325564514367624d70376d51503233527250417a48347a6147543775753769774e646738556b63716f78344400736f6c616e613a6d61696e6e65740056afe676458f6d7debd3ccacfb3e266564c94d77c6ed4be9f00086d5d12ae8d1",
+      "verifier": "0x5e2b94d88ebe859546bc508382d115d06bcb650c45be4bcfb21a4a99f5814e82",
+      "signature": "0xa539aaf8a26db479dbe36456e51878861687f3b2742f1763c05f8a88e5b42b554bc8da18ca07053de12b439718217b2648df222f200ad40983ec0808408c1703",
+      "expected": {
+        "valid": false,
+        "error": "schema"
+      }
+    },
+    {
+      "id": "evm-baseline",
+      "description": "Frozen existing EVM JCS/hash/domain layout; unchanged by PR1.",
+      "family": "evm",
+      "structuredIntent": {
+        "version": "1",
+        "intentId": "evm-pr1-frozen",
+        "nonce": "1",
+        "createdAt": 1793012400000,
+        "expiresAt": 1793012490000,
+        "wallet": "0x1111111111111111111111111111111111111111",
+        "chainId": 43114,
+        "venue": "spot",
+        "action": "send",
+        "amountIn": "0",
+        "routeHash": "0xfb8f1ba2143579d95c0196150bef8653271db5471970275c5aa12d1b97e891b2",
+        "tx": {
+          "to": "0x2222222222222222222222222222222222222222",
+          "value": "0",
+          "data": "0x",
+          "chainId": 43114,
+          "nonce": "0",
+          "gasLimit": "21000",
+          "gasPrice": "1",
+          "maxFeePerGas": "0",
+          "maxPriorityFeePerGas": "0",
+          "type": 0
+        }
+      },
+      "normalizedJcs": "{\"action\":\"send\",\"amountIn\":\"0\",\"chainId\":43114,\"createdAt\":1793012400000,\"expiresAt\":1793012490000,\"intentId\":\"evm-pr1-frozen\",\"nonce\":\"1\",\"routeHash\":\"0xfb8f1ba2143579d95c0196150bef8653271db5471970275c5aa12d1b97e891b2\",\"tx\":{\"chainId\":43114,\"data\":\"0x\",\"gasLimit\":\"21000\",\"gasPrice\":\"1\",\"maxFeePerGas\":\"0\",\"maxPriorityFeePerGas\":\"0\",\"nonce\":\"0\",\"to\":\"0x2222222222222222222222222222222222222222\",\"type\":0,\"value\":\"0\"},\"venue\":\"spot\",\"version\":\"1\",\"wallet\":\"0x1111111111111111111111111111111111111111\"}",
+      "base64Message": "AA==",
+      "routeHash": "0xfb8f1ba2143579d95c0196150bef8653271db5471970275c5aa12d1b97e891b2",
+      "intentHash": "0x91eabb24e67e5743788ce220b7d2250be37bac4b71afb5722e7cda9519b862f4",
+      "domainBytesHex": "0x6576616c616e6368652d76657269666965722f763100617070726f7665006c697665003078313131313131313131313131313131313131313131313131313131313131313131313131313131310034333131340091eabb24e67e5743788ce220b7d2250be37bac4b71afb5722e7cda9519b862f4",
+      "decision": "approve",
+      "mode": "live",
+      "cluster": "43114",
+      "signerAddress": "0x1111111111111111111111111111111111111111",
+      "verifier": "0x5e2b94d88ebe859546bc508382d115d06bcb650c45be4bcfb21a4a99f5814e82",
+      "signature": "0x1120db1b938e276d1e4c3d4454f809db744bba9d84fd18dd50fb78523bf618d922046cc8a4250e340689b9e10c1f8399e0f352e4a50553360bfc4ffab455170b",
+      "expected": {
+        "valid": true
+      }
+    }
+  ]
+}

@@ -177,6 +177,8 @@ export interface AgentProfile {
 export interface PendingTransaction {
   /** Target address */
   to: string;
+  /** Sender. Simulation uses this as eth_call `from`. */
+  from?: string;
   /** Native token value in wei */
   value?: string;
   /** Calldata (hex) */

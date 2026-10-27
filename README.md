@@ -5,13 +5,13 @@ Avalanche-first agent wallet and execution SDK for AI agents, with multi-EVM sup
 <!-- GENERATED:release-summary:start -->
 ## Current Release
 
-- Latest release: [v1.14.0](docs/releases/RELEASE_NOTES_1.14.0.md)
-- Published package: `evalanche@1.14.0`
+- Latest release: [v1.17.0](docs/releases/RELEASE_NOTES_1.17.0.md)
+- Published package: `evalanche@1.17.0`
 - Current package surface:
-  - Make Avalanche the hardened default with the official `@avalanche-sdk/client`, removing the legacy Core wallet and vulnerable HPKE dependency trees from fresh consumer installs.
-  - Expand Avalanche L1 support with live mainnet and Fuji catalog discovery, RPC chain ID verification, native-token preservation, and public SDK/MCP helpers.
-  - Remove the dYdX SDK, exports, MCP tools, holdings detector, and transitive Cosmos dependencies; Hyperliquid remains the supported perpetuals integration.
-  - Harden X/P/C address routing, offline signing, atomic import/export polling, network switching, HTTP cancellation, response limits, audit parsing, and release automation.
+  - Add a pluggable signer so an agent can sign without a private key in the Evalanche process. `EvalancheConfig.signer` accepts a local ethers wallet, a `SigningProvider`, or a remote signer config. `EvalancheConfig.address` starts an address-only agent that cannot sign.
+  - Add `evalanche-signer`, a reference signing server. It holds the key, checks a pinned Ed25519 verifier approval, recomputes the intent hash, and enforces a monotonic single-use nonce, expiry, a deny list, SpendingPolicy, token caps, and simulation. It binds to `127.0.0.1` or a unix socket and writes a hash-chained JSONL audit log. Dry-run never signs.
+  - Let `evalanche-mcp` run keyless with `--signer-url` / `EVALANCHE_SIGNER_URL` and `--signer-address` / `EVALANCHE_SIGNER_ADDRESS`, or read-only with `EVALANCHE_ADDRESS`. Polymarket CLI and Avalanche X/P-chain paths fail with `REMOTE_SIGNER_UNSUPPORTED` in those modes and never fall back to an environment private key.
+  - Add a per-chain signer policy for nineteen mainnets. Avalanche C-Chain stays on unless disabled. Every other chain, and every testnet, stays off until config enables it. Each enabled chain prices and caps itself.
 - Docs:
   - [Release notes](docs/releases/README.md)
   - [Roadmap](ROADMAP.md)
@@ -25,7 +25,7 @@ Avalanche-first agent wallet and execution SDK for AI agents, with multi-EVM sup
 npm install evalanche
 ```
 
-Avalanche remains the default network. Native X/P/C operations use `@avalanche-sdk/client`; the legacy Core wallet tree and dYdX support, exports and tools are removed. Hyperliquid perpetuals remain. v1.14.0 requires Node.js 20 or newer; review its migration notes before upgrading.
+Avalanche remains the default network. Native X/P/C operations use `@avalanche-sdk/client`; the legacy Core wallet tree and dYdX support, exports and tools are removed. Hyperliquid perpetuals remain. v1.15.0 can run the agent with no private key in-process; v1.14.0 requires Node.js 20 or newer. Review both release notes before upgrading.
 
 Fresh consumer installs require zero high/critical findings without consumer overrides. `@scure/bip32@1.7.0` is declared directly because `@avalanche-sdk/client@0.1.3` imports it at runtime without declaring it in its own package manifest.
 
@@ -77,6 +77,57 @@ The default MCP transport is stdio. HTTP mode is available for local automation,
 ```bash
 EVALANCHE_MCP_HTTP_TOKEN="$(openssl rand -hex 32)" npx evalanche-mcp --http --port 3402
 ```
+
+## Remote signer
+
+Use this when the agent shares a machine with other processes that can read its environment. Evalanche sends a canonical signing request. A separate `evalanche-signer` process holds the key and signs only after an Ed25519 approval from a pinned verifier.
+
+```typescript
+import { Evalanche, canonicalIntentJson, computeIntentHash, computeRouteHash } from 'evalanche';
+
+const agent = new Evalanche({
+  network: 'avalanche',
+  signer: {
+    url: process.env.EVALANCHE_SIGNER_URL!, // http://127.0.0.1:7410
+    address: process.env.EVALANCHE_SIGNER_ADDRESS!,
+    tokenEnv: 'EVALANCHE_SIGNER_TOKEN',
+  },
+});
+
+// Read-only, no signer and no key:
+const watcher = new Evalanche({ address: agent.address, network: 'avalanche' });
+```
+
+`privateKey`, `mnemonic`, and `signer` are mutually exclusive. Build a version `"1"` intent with `canonicalIntentJson` and hash it with `computeIntentHash`. Put the exact transaction in `intent.tx` (`to`, `value`, `data`, `chainId`, `nonce`, `gasLimit`, `maxFeePerGas`, `maxPriorityFeePerGas`, `gasPrice`, `type`) and set `routeHash` to `computeApprovedTxHash`. Money and the approval nonce are decimal strings. The verifier signs `signVerifierApproval`, which covers `evalanche-verifier/v1`, the decision, `dry-run` or `live`, the signer address, the chain id, and the intent hash. Only `decision: "approve"` verifies. Swap and bridge intents must set `minAmountOut`. Attach the approval with `agent.setSigningContext({ intent, structuredIntent, approval })` before `send`, `signMessage`, or a venue call.
+
+The Grok Bot box install, Unix socket flow, and dry-run week are in `docs/deploy/grok-bot-box.md`. On that host the signer reads the wallet key only from `EVALANCHE_SIGNER_PRIVATE_KEY` (the verifier agent maps it from `MONY_WALLET_PRIVATE_KEY`) and the bearer token from `EVALANCHE_SIGNER_TOKEN`, then removes both variables from `process.env`. The box start script defaults to dry-run.
+
+```bash
+export EVALANCHE_SIGNER_TOKEN="$(openssl rand -hex 32)"
+export EVALANCHE_SIGNER_PRIVATE_KEY="0x..."
+npx evalanche-signer --config signer.json --init-nonces
+# dry-run verifies policy and approval, consumes the nonce, then returns without a signature
+npx evalanche-signer --config signer.json --init-nonces --dry-run
+```
+
+The signer listens on `127.0.0.1` or `--socket`. The socket directory must be mode `0750`, owned by the signer user, and the socket is mode `0660`. It rejects a non-loopback bind unless configured otherwise. Config, keystore, and verifier pubkey files are opened with `O_NOFOLLOW` and must be root-owned and not group- or world-writable. Every parent of those files, and every parent of the state directories, must be root-owned, not group- or world-writable, and not a symlink. Nonce, audit, budget, and lock directories are owned by the signer user (`uid` equal to the process euid) and mode `0700`. `--allow-insecure-file-permissions` is for tests only. A verifier public key file is read from that same descriptor and pinned. Small-order keys, including the identity point, are rejected.
+
+On macOS, `/tmp`, `/var`, and `/etc` are symlinks into `/private`, so the signer refuses them. Use a real directory such as `/Library/Application Support/evalanche-signer` (root, mode `0755`) for the config, keystore, and verifier key (root, mode `0644`). Put nonce, audit, and budget files in `/Library/Application Support/evalanche-signer/state` (signer user, mode `0700`). The same split works on Linux: `/etc/evalanche-signer` for the root-owned files and `/var/lib/evalanche-signer` for state, with no symlink in either path. On the Grok Bot box a reset wipes `/etc`, `/opt`, and `/var` and restores `/home` as uid 1000. `grok-bot-signer.sh provision` keeps the nonce store, audit log, verifier key, token, and config under `/home/box/agent-data/evalanche-persist`, chowns that tree back, bind-mounts state and log onto `/var/lib/evalanche-signer`, and recreates `/opt` and `/etc` without resetting nonces. It fails closed if a key, nonce, or config file is still owned by uid 1000.
+
+Before it signs, the signer checks the pinned verifier key and accepts only an `approve` decision for the process mode. It matches every transaction field to `intent.tx`, decodes known calldata (ERC-20 transfer and approve, ERC-4626 deposit and redeem, Benqi submit and delayed redeem, Li.Fi `swapTokensGeneric`, the Avalanche V3 selectors `swapTokensSingleV3ERC20ToERC20` and `swapTokensMultipleV3ERC20ToERC20`, and `multicall`), and denies unknown selectors. Inner multicall selectors are allowlisted too. Allow entries carry roles, and roles are additive: one address may be both `dex` and `recipient`. `dex` is required for `callTo`, `spender` for `approveTo` and approve spenders, `recipient` for an ERC-20 transfer recipient, a native send, and a Li.Fi V3 receiver, `token` for an asset, and `vault` for deposit and redeem. A V3 receiver must have that role and must be the signer wallet. A V3 `minAmountOut` of zero is rejected. When the intent carries `quotedAmountOut`, that minOut must cover the quote after slippage, using `maxSlippageBps` or the bought-token class cap (stables 50 bps, top assets 200 bps, other tokens 300 bps). A Kyber `swap` (`0xe21fd0e9`) inside a V3 leg is decoded. Its destination receiver must be the Li.Fi diamond on an intermediate leg, or the diamond or an allowlisted recipient on the last leg. An approve of zero to an allowlisted spender is accepted. A token address is never accepted as `callTo`. The first Li.Fi leg must set `requiresDeposit`, and every later leg must not. A swap's first leg must match `tokenIn` and `amountIn`, the legs must chain, and the last receiving asset must match `tokenOut`. Caps price that sold asset, or a vault's configured underlying, and native value is counted once. A non-empty `allow` map is required. Benqi sAVAX instant unstake and Polymarket contracts cannot be allowlisted back on. Hyperliquid and Polymarket typed data are denied from the payload. Message and typed-data signing are off unless allowlisted. Permit, Permit2, and `increaseAllowance` stay off unless `explicitAllows` names them, and an opted-in permit still checks owner and spender. The nonce file must already exist unless `--init-nonces` is passed. The lock is an exclusive kernel lock. macOS uses `O_EXLOCK` (`0x20`) with `O_NONBLOCK` and `O_NOFOLLOW` on a descriptor this process keeps open. Linux opens the one sha256-pinned helper (`dist/helpers/flock-linux-x64`) with `O_RDONLY|O_NOFOLLOW|O_CLOEXEC`, hashes that descriptor, and execs `/proc/self/fd/N` without opening the path again. The helper file and every parent directory must be root-owned, not group- or world-writable, and not a symlink. If the helper exits after it has reported the lock, the signer stops accepting and signing and exits non-zero. The signer does not compile code or search `PATH` or the process cwd at startup. Rebuild that binary with `docker/flock-helper.Dockerfile` (Ubuntu 24.04 pinned by digest, GCC 13.3.0, the flags in `scripts/build-flock-helper.sh`). The binary is dynamically linked to glibc and runs on glibc 2.41. CI fails when the rebuilt sha256 differs from `LINUX_HELPER_SHA256`. Dry-run consumes the nonce. `tx.type` must be 0 or 2. The default gas-cost cap is about 0.02 native tokens, and it cannot be raised above 1. SpendingPolicy hourly and daily budgets are recorded after a live signature and restored on restart. Prices are by token address, HTTPS only, and fail closed. `/health` returns `{ "ok": true, "mode": "dry-run" }` or `{ "ok": true, "mode": "live" }`. Decisions are appended to a JSONL audit log whose `prevHash` chain starts at the SHA-256 of `evalanche-audit-root/v1`.
+
+A config with a `chains` object is per chain. 43114 is on unless that entry sets `enabled: false` or `killSwitch: true`. The other eighteen mainnets stay off until `enabled: true`. Testnets are refused. A file with no `chains` object keeps the previous single-chain behaviour. Polymarket on Polygon and the Avalanche Uniswap v3 LP module are build-only and off until their own `enabled` flags are set. Direct swap venues for Cronos, Gnosis, Celo, and Mantle stay off until `dex.enabled`, and an enabled venue requires a pool allowlist plus a quote. Mantle stays off because its best pool is about $14k. Sonic and HyperEVM use the Kyber plus Li.Fi path and stay off until `enabled`. Moonbeam, Blast, and Scroll have no signer venue. Fantom and zkSync Era are not in the registry. The shape, the FOK limit, the position rules, and the per-chain venue assessment are in `docs/signer-multichain.md`.
+
+`evalanche-mcp` can start keyless:
+
+```bash
+EVALANCHE_SIGNER_URL=http://127.0.0.1:7410 \
+EVALANCHE_SIGNER_ADDRESS=0x... \
+EVALANCHE_SIGNER_TOKEN=... \
+npx evalanche-mcp --signer-url "$EVALANCHE_SIGNER_URL" --signer-address "$EVALANCHE_SIGNER_ADDRESS"
+```
+
+Polymarket's official CLI and Avalanche X/P-chain or `platform-cli` signing still need a raw key. With a remote signer those calls throw `REMOTE_SIGNER_UNSUPPORTED` instead of reading `POLYMARKET_PRIVATE_KEY` or a mnemonic from the environment. Address-only mode serves reads such as chain info and balance queries.
 
 ## What It Does
 

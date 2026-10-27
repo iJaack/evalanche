@@ -31,6 +31,11 @@ export interface ChainConfig {
   gasZipSupported?: boolean;
   /** Whether this is a testnet */
   isTestnet?: boolean;
+  /**
+   * Signer default. Only Avalanche C-Chain is on. Every other chain, including
+   * testnets, stays off until config enables a mainnet explicitly.
+   */
+  signerEnabledByDefault?: boolean;
 }
 
 function envRpcList(key: string): string[] {
@@ -130,25 +135,24 @@ export const CHAINS: Record<number, ChainConfig> = {
     lifiChainKey: 'POL',
   },
 
-  250: {
-    id: 250,
-    name: 'Fantom',
-    shortName: 'ftm',
-    currency: { name: 'Fantom', symbol: 'FTM', decimals: 18 },
-    rpc: ['https://rpcapi.fantom.network', routescanRpc(250)],
-    explorer: 'https://ftmscan.com',
-    routescanExplorer: 'https://fantom.routescan.io',
-    lifiChainKey: 'FTM',
+  146: {
+    id: 146,
+    name: 'Sonic',
+    shortName: 'sonic',
+    currency: { name: 'Sonic', symbol: 'S', decimals: 18 },
+    rpc: ['https://rpc.soniclabs.com'],
+    explorer: 'https://sonicscan.org',
+    lifiChainKey: 'SON',
   },
 
-  324: {
-    id: 324,
-    name: 'zkSync Era',
-    shortName: 'zksync',
-    currency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-    rpc: ['https://mainnet.era.zksync.io'],
-    explorer: 'https://explorer.zksync.io',
-    lifiChainKey: 'ERA',
+  999: {
+    id: 999,
+    name: 'HyperEVM',
+    shortName: 'hyperevm',
+    currency: { name: 'HYPE', symbol: 'HYPE', decimals: 18 },
+    rpc: ['https://rpc.hyperliquid.xyz/evm'],
+    explorer: 'https://hyperevmscan.io',
+    lifiChainKey: 'HYP',
   },
 
   1284: {
@@ -233,6 +237,7 @@ export const CHAINS: Record<number, ChainConfig> = {
     explorer: 'https://snowtrace.io',
     routescanExplorer: 'https://snowtrace.io',
     lifiChainKey: 'AVA',
+    signerEnabledByDefault: true,
   },
 
   59144: {
@@ -319,9 +324,9 @@ export const CHAIN_ALIASES: Record<string, number> = {
   bsc: 56,
   avalanche: 43114,
   fuji: 43113,
-  fantom: 250,
+  sonic: 146,
   gnosis: 100,
-  zksync: 324,
+  hyperevm: 999,
   linea: 59144,
   scroll: 534352,
   blast: 81457,

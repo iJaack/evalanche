@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { Evalanche } from '../../src/index';
 import { LiFiClient, NATIVE_TOKEN } from '../../src/bridge/lifi';
 import type { BridgeQuoteParams } from '../../src/bridge/lifi';
 
@@ -345,10 +346,91 @@ describe('LiFiClient', () => {
         options: Record<string, unknown>;
       };
 
+      expect(body.options.integrator).toBe('evalanche');
+      expect(body.options.fee).toBe(0);
       expect(body.options.order).toBe('FASTEST');
       expect(body.options.skipSimulation).toBe(true);
       expect(body.options.swapStepTimingStrategies).toEqual(['minWaitTime-200-1-200']);
       expect(body.options.routeTimingStrategies).toEqual(['minWaitTime-200-1-200']);
+    });
+  });
+
+  describe('integrator fee and allowExchanges', () => {
+    const quoteBody = {
+      id: 'fee-quote',
+      tool: 'kyberswap',
+      action: {
+        fromChainId: 1,
+        toChainId: 42161,
+        fromToken: { address: NATIVE_TOKEN },
+        toToken: { address: NATIVE_TOKEN },
+        fromAmount: '100000000000000000',
+      },
+      estimate: {
+        toAmount: '99000000000000000',
+        gasCosts: [{ amountUSD: '1' }],
+        executionDuration: 30,
+      },
+    };
+
+    it('sends integrator evalanche and fee 0, with no exchange filter unless configured', async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, json: async () => quoteBody });
+      await client.getQuote(baseParams);
+      const quoteUrl = new URL(mockFetch.mock.calls[0][0] as string);
+      expect(quoteUrl.searchParams.get('integrator')).toBe('evalanche');
+      expect(quoteUrl.searchParams.get('fee')).toBe('0');
+      expect(quoteUrl.searchParams.getAll('allowExchanges')).toEqual([]);
+
+      mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ routes: [] }) });
+      await client.getRoutes(baseParams);
+      const body = JSON.parse(mockFetch.mock.calls[1][1]?.body as string) as { options: Record<string, unknown> };
+      expect(body.options.integrator).toBe('evalanche');
+      expect(body.options.fee).toBe(0);
+      expect(body.options.exchanges).toBeUndefined();
+    });
+
+    it('defaults allowExchanges from the client and lets one request replace that list', async () => {
+      const limited = new LiFiClient(mockSigner, { allowExchanges: ['KyberSwap'] });
+      mockFetch.mockResolvedValue({ ok: true, json: async () => quoteBody });
+      await limited.getQuote(baseParams);
+      expect(new URL(mockFetch.mock.calls[0][0] as string).searchParams.getAll('allowExchanges')).toEqual(['kyberswap']);
+
+      await limited.getQuote({ ...baseParams, allowExchanges: ['1inch', '1inch'] });
+      expect(new URL(mockFetch.mock.calls[1][0] as string).searchParams.getAll('allowExchanges')).toEqual(['1inch']);
+
+      await limited.getRoutes(baseParams);
+      const body = JSON.parse(mockFetch.mock.calls[2][1]?.body as string) as { options: { fee: number; exchanges: unknown } };
+      expect(body.options.fee).toBe(0);
+      expect(body.options.exchanges).toEqual({ allow: ['kyberswap'] });
+
+      await expect(limited.getQuote({ ...baseParams, allowExchanges: ['not a dex'] })).rejects.toThrow(/allowExchanges/);
+    });
+
+    it('uses EvalancheConfig.allowExchanges when the quote omits the list', async () => {
+      const agent = new Evalanche({
+        privateKey: '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80',
+        network: 'fuji',
+        allowExchanges: ['kyberswap'],
+      });
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ...quoteBody,
+          action: { ...quoteBody.action, fromChainId: 43113, toChainId: 43113 },
+        }),
+      });
+      await agent.getSwapQuote({
+        fromChainId: 43113,
+        toChainId: 43113,
+        fromToken: NATIVE_TOKEN,
+        toToken: NATIVE_TOKEN,
+        fromAmount: '0.1',
+        fromAddress: agent.address,
+      });
+      const quoteUrl = new URL(mockFetch.mock.calls[0][0] as string);
+      expect(quoteUrl.searchParams.get('integrator')).toBe('evalanche');
+      expect(quoteUrl.searchParams.get('fee')).toBe('0');
+      expect(quoteUrl.searchParams.getAll('allowExchanges')).toEqual(['kyberswap']);
     });
   });
 

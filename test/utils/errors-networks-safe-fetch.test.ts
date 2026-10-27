@@ -21,6 +21,8 @@ describe('networks', () => {
     expect(cfg.chainId).toBe(8453);
     expect(cfg.rpcUrl.length).toBeGreaterThan(0);
     expect(NETWORKS.robinhood.chainId).toBe(4663);
+    expect(NETWORKS.sonic.chainId).toBe(146);
+    expect(NETWORKS.hyperevm.chainId).toBe(999);
     expect(getNetworkConfig('robinhood')).toMatchObject({
       chainId: 4663,
       name: 'Robinhood Chain',
@@ -33,10 +35,13 @@ describe('networks', () => {
   });
 
   it('resolves custom configs and chain registry lookups', () => {
-    const cfg = getNetworkConfig({ rpcUrl: 'https://rpc.example', chainId: 999, name: 'CustomNet' });
-    expect(cfg).toEqual({ rpcUrl: 'https://rpc.example', chainId: 999, name: 'CustomNet', explorer: '' });
+    const cfg = getNetworkConfig({ rpcUrl: 'https://rpc.example', chainId: 250, name: 'CustomNet' });
+    expect(cfg).toEqual({ rpcUrl: 'https://rpc.example', chainId: 250, name: 'CustomNet', explorer: '' });
     expect(getChainConfigForNetwork('avalanche')?.id).toBe(43114);
-    expect(getChainConfigForNetwork({ rpcUrl: 'https://rpc.example', chainId: 999 })).toBeUndefined();
+    expect(getChainConfigForNetwork('sonic')?.id).toBe(146);
+    expect(getChainConfigForNetwork('hyperevm')?.id).toBe(999);
+    expect(getChainConfigForNetwork({ rpcUrl: 'https://rpc.example', chainId: 250 })).toBeUndefined();
+    expect(getChainConfigForNetwork({ rpcUrl: 'https://rpc.example', chainId: 324 })).toBeUndefined();
   });
 });
 

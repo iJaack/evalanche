@@ -1,6 +1,6 @@
 {
   "name": "evalanche",
-  "version": "1.14.0",
+  "version": "1.17.0",
   "description": "Multi-EVM agent wallet SDK with unified holdings discovery, onchain identity (ERC-8004), x402 payments, cross-chain liquidity (Li.Fi + Gas.zip), prediction markets, DeFi, and perpetual futures",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
@@ -13,12 +13,15 @@
     }
   },
   "bin": {
-    "evalanche-mcp": "dist/mcp/cli.mjs"
+    "evalanche-mcp": "dist/mcp/cli.mjs",
+    "evalanche-signer": "dist/signer/cli.mjs"
   },
   "files": [
     "dist",
     "skill",
-    "security-overrides.json"
+    "security-overrides.json",
+    "npm-shrinkwrap.json",
+    "scripts/grok-bot-signer.sh"
   ],
   "scripts": {
     "build": "tsup",
@@ -54,6 +57,7 @@
     "@avalanche-sdk/client": "0.1.3",
     "@nktkas/hyperliquid": "^0.33.3",
     "@scure/bip32": "1.7.0",
+    "@solana/addresses": "8.5.0",
     "ethers": "^6.13.0",
     "viem": "^2.47.6"
   },

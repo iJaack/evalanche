@@ -1,10 +1,15 @@
-import { JsonRpcProvider, formatEther, parseEther } from 'ethers';
+import { JsonRpcProvider, Wallet, HDNodeWallet, formatEther, getAddress, parseEther } from 'ethers';
 import { IdentityResolver } from './identity/resolver';
 import { ReputationReporter } from './reputation/reporter';
 import { X402Client } from './x402/client';
 import { TransactionBuilder } from './wallet/transaction';
 import { createWalletFromPrivateKey, createWalletFromMnemonic, generateWallet } from './wallet/signer';
 import type { AgentSigner, GeneratedWallet } from './wallet/signer';
+import { isRemoteSignerConfig, isSigningProvider } from './signer/intent';
+import type { RemoteSignerConfig, SigningContext, SigningProvider } from './signer/intent';
+import { RemoteSignerClient } from './signer/remote-client';
+import { createDelegatedSigner, createReadOnlySigner } from './signer/ethers-adapter';
+import type { DelegatedEthersSigner, SignerMode } from './signer/ethers-adapter';
 import { AgentKeystore } from './wallet/keystore';
 import type { KeystoreOptions, KeystoreInitResult } from './wallet/keystore';
 import { resolveAgentSecrets } from './secrets';
@@ -47,6 +52,22 @@ export interface EvalancheConfig {
   rpcOverride?: string;
   /** Optional spending policy — enforces per-tx limits, budgets, and allowlists */
   policy?: SpendingPolicy;
+  /**
+   * Pluggable signer. Accepts a local ethers wallet (`AgentSigner`), a
+   * `SigningProvider`, or a `RemoteSignerConfig`. Mutually exclusive with
+   * `privateKey` and `mnemonic`.
+   */
+  signer?: AgentSigner | SigningProvider | RemoteSignerConfig;
+  /**
+   * Address for read-only use, with no key in the process. Also accepted
+   * alongside a signer; it must match that signer's address.
+   */
+  address?: string;
+  /**
+   * Default Li.Fi exchange allowlist. A quote can override it with
+   * `allowExchanges`. Quotes always send integrator `evalanche` and `fee` 0.
+   */
+  allowExchanges?: string[];
 }
 
 export interface TransactionAuthorizationIntent {
@@ -63,8 +84,10 @@ export interface TransactionAuthorizationIntent {
  * AI agents on any EVM chain.
  */
 export class Evalanche {
-  /** The underlying ethers signer instance */
+  /** The underlying ethers signer instance. Remote mode has no private key. */
   readonly wallet: AgentSigner;
+  /** Where signatures come from. `readonly` can query chain state and cannot sign. */
+  readonly signerMode: SignerMode;
   /** The JSON-RPC provider connected to the network */
   readonly provider: JsonRpcProvider;
   /** The agent's wallet address */
@@ -98,6 +121,8 @@ export class Evalanche {
   private _polymarketClient?: PolymarketClient;
   private _holdingsClient?: HoldingsClient;
   private readonly _mnemonic?: string;
+  private readonly _switchConfig: Pick<EvalancheConfig, 'privateKey' | 'mnemonic' | 'signer' | 'address'>;
+  private readonly _allowExchanges?: readonly string[];
   private readonly _multiVM: boolean;
   private _multiVMInitialized = false;
 
@@ -211,13 +236,42 @@ export class Evalanche {
     this.provider = new JsonRpcProvider(rpcUrl, networkConfig.chainId, { batchMaxCount: 1 });
     this._chainId = networkConfig.chainId;
 
+    const selected = [config.privateKey, config.mnemonic, config.signer].filter((value) => value !== undefined && value !== '');
+    if (selected.length > 1) {
+      throw new EvalancheError(
+        'privateKey, mnemonic, and signer are mutually exclusive',
+        EvalancheErrorCode.INVALID_CONFIG,
+      );
+    }
+
     if (config.privateKey) {
       this.wallet = createWalletFromPrivateKey(config.privateKey, this.provider);
+      this.signerMode = 'local';
+      this._switchConfig = { privateKey: config.privateKey };
     } else if (config.mnemonic) {
       this.wallet = createWalletFromMnemonic(config.mnemonic, this.provider);
+      this.signerMode = 'local';
+      this._switchConfig = { mnemonic: config.mnemonic };
+    } else if (config.signer) {
+      const resolved = connectConfiguredSigner(config.signer, this.provider, this._chainId);
+      this.wallet = resolved.wallet;
+      this.signerMode = resolved.mode;
+      this._switchConfig = { signer: config.signer };
+    } else if (config.address) {
+      this.wallet = createReadOnlySigner(config.address, this.provider, this._chainId);
+      this.signerMode = 'readonly';
+      this._switchConfig = { address: this.wallet.address };
     } else {
       throw new EvalancheError(
-        'Either privateKey or mnemonic is required',
+        'Either privateKey, mnemonic, signer, or address is required',
+        EvalancheErrorCode.INVALID_CONFIG,
+      );
+    }
+    this._allowExchanges = config.allowExchanges;
+
+    if (config.address && getAddress(config.address) !== getAddress(this.wallet.address)) {
+      throw new EvalancheError(
+        `address ${config.address} does not match signer address ${this.wallet.address}`,
         EvalancheErrorCode.INVALID_CONFIG,
       );
     }
@@ -237,9 +291,37 @@ export class Evalanche {
       this._policyEngine = new PolicyEngine(config.policy);
     }
 
-    // Store mnemonic for multi-VM lazy init
-    this._mnemonic = config.mnemonic;
+    // Store mnemonic for multi-VM lazy init. Remote signers never receive it.
+    this._mnemonic = this.signerMode === 'local' ? config.mnemonic : undefined;
     this._multiVM = config.multiVM ?? false;
+  }
+
+  /** Local private key, when this process holds one. */
+  getLocalPrivateKey(): string | undefined {
+    if (this.signerMode !== 'local') return undefined;
+    const value = (this.wallet as { privateKey?: string }).privateKey;
+    return typeof value === 'string' && value.length > 0 ? value : undefined;
+  }
+
+  /**
+   * Throw a typed error when a path needs raw key material. Remote signers
+   * and address-only wallets never fall through to an env private key.
+   */
+  requireLocalPrivateKey(capability: string): string {
+    const key = this.getLocalPrivateKey();
+    if (!key) {
+      throw new EvalancheError(
+        `${capability} requires a local private key in the Evalanche process. A remote signer or address-only wallet cannot provide one.`,
+        EvalancheErrorCode.REMOTE_SIGNER_UNSUPPORTED,
+      );
+    }
+    return key;
+  }
+
+  /** Attach the verifier approval and intent used by the next remote signature. */
+  setSigningContext(context: SigningContext | null): void {
+    const delegated = this.wallet as DelegatedEthersSigner;
+    if (typeof delegated.setSigningContext === 'function') delegated.setSigningContext(context);
   }
 
   /**
@@ -248,6 +330,13 @@ export class Evalanche {
    */
   private async initMultiVM(): Promise<void> {
     if (this._multiVMInitialized) return;
+
+    if (this.signerMode !== 'local') {
+      throw new EvalancheError(
+        'Multi-VM X/P-chain signing requires a local mnemonic. A remote signer or address-only wallet cannot sign X/P-chain transactions.',
+        EvalancheErrorCode.REMOTE_SIGNER_UNSUPPORTED,
+      );
+    }
 
     if (!this._mnemonic) {
       throw new EvalancheError(
@@ -367,8 +456,17 @@ export class Evalanche {
    * @param message - Message to sign
    * @returns Hex-encoded signature
    */
-  async signMessage(message: string): Promise<string> {
-    return this.wallet.signMessage(message);
+  async signMessage(message: string, context?: SigningContext): Promise<string> {
+    const delegated = this.wallet as DelegatedEthersSigner;
+    const previous = typeof delegated.getSigningContext === 'function' ? delegated.getSigningContext() : null;
+    if (context && typeof delegated.setSigningContext === 'function') {
+      delegated.setSigningContext({ ...previous, ...context });
+    }
+    try {
+      return await this.wallet.signMessage(message);
+    } finally {
+      if (context && typeof delegated.setSigningContext === 'function') delegated.setSigningContext(previous);
+    }
   }
 
   // ── Policy & Simulation (v1.0.0) ─────────────────────────
@@ -491,7 +589,7 @@ export class Evalanche {
   /** Get or create the bridge client (lazy-initialized) */
   private getBridgeClient(): BridgeClient {
     if (!this._bridgeClient) {
-      this._bridgeClient = new BridgeClient(this.wallet);
+      this._bridgeClient = new BridgeClient(this.wallet, { allowExchanges: this._allowExchanges });
     }
     return this._bridgeClient;
   }
@@ -774,7 +872,7 @@ export class Evalanche {
    */
   switchNetwork(network: NetworkOption): Evalanche {
     const next = new Evalanche({
-      ...(this._mnemonic ? { mnemonic: this._mnemonic } : { privateKey: this.wallet.privateKey }),
+      ...this._switchConfig,
       network,
       multiVM: this._multiVM,
     });
@@ -867,13 +965,19 @@ export class Evalanche {
     rpcUrl?: string;
   }): Promise<PlatformCLIType> {
     if (!this._platformCLI) {
+      if (this.signerMode !== 'local') {
+        throw new EvalancheError(
+          'platform-cli requires a local private key (AVALANCHE_PRIVATE_KEY). A remote signer cannot supply it.',
+          EvalancheErrorCode.REMOTE_SIGNER_UNSUPPORTED,
+        );
+      }
       const { PlatformCLI } = await import('./avalanche/platform-cli');
       const network = typeof this._networkOption === 'string'
         ? (this._networkOption === 'fuji' ? 'fuji' : 'mainnet')
         : 'mainnet';
       this._platformCLI = new PlatformCLI({
         network,
-        privateKey: this.wallet.privateKey,
+        privateKey: this.requireLocalPrivateKey('platform-cli'),
         ...opts,
       });
     }
@@ -917,4 +1021,43 @@ export class Evalanche {
       P: this._pChain!.getAddress(),
     };
   }
+}
+
+function isLocalWallet(value: unknown): value is Wallet | HDNodeWallet {
+  if (!value || typeof value !== 'object') return false;
+  const wallet = value as Partial<Wallet>;
+  return typeof wallet.privateKey === 'string'
+    && wallet.privateKey.length > 0
+    && typeof wallet.connect === 'function';
+}
+
+function connectConfiguredSigner(
+  signer: NonNullable<EvalancheConfig['signer']>,
+  provider: JsonRpcProvider,
+  chainId: number,
+): { wallet: AgentSigner; mode: SignerMode } {
+  if (isSigningProvider(signer)) {
+    return {
+      wallet: createDelegatedSigner({ backend: signer, provider, chainId, mode: 'remote' }),
+      mode: 'remote',
+    };
+  }
+  if (isRemoteSignerConfig(signer)) {
+    return {
+      wallet: createDelegatedSigner({
+        backend: new RemoteSignerClient(signer),
+        provider,
+        chainId,
+        mode: 'remote',
+      }),
+      mode: 'remote',
+    };
+  }
+  if (isLocalWallet(signer)) {
+    return { wallet: signer.connect(provider), mode: 'local' };
+  }
+  throw new EvalancheError(
+    'signer must be an ethers wallet, a SigningProvider, or a RemoteSignerConfig',
+    EvalancheErrorCode.INVALID_CONFIG,
+  );
 }

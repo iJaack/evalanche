@@ -42,7 +42,7 @@ function parseArgs(argv) {
 
 function normalizeVersion(version) {
   const value = String(version ?? '').trim();
-  if (!/^\d+\.\d+\.\d+$/.test(value)) {
+  if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?$/.test(value)) {
     throw new Error(`Invalid release version: ${value}`);
   }
   return value;

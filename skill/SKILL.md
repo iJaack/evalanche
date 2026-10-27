@@ -99,7 +99,7 @@ Headless wallet SDK with ERC-8004 identity, x402 payments, Li.Fi cross-chain liq
 
 ## Supported Chains
 
-Ethereum, Base, Arbitrum, Optimism, Polygon, BSC, Avalanche, Robinhood Chain, Fantom, Gnosis, zkSync Era, Linea, Scroll, Blast, Mantle, Celo, Moonbeam, Cronos, Berachain, + testnets (Fuji, Sepolia, Base Sepolia).
+Ethereum, Base, Arbitrum, Optimism, Polygon, BSC, Avalanche, Robinhood Chain, Sonic, Gnosis, HyperEVM, Linea, Scroll, Blast, Mantle, Celo, Moonbeam, Cronos, Berachain, + testnets (Fuji, Sepolia, Base Sepolia).
 
 Routescan RPCs preferred where available, with public fallback RPCs.
 
@@ -452,3 +452,9 @@ Avalanche is the default. Native X/P/C operations use `@avalanche-sdk/client`, a
 - `avalanche_get_l1_network`: verify an L1 RPC chain ID and return its custom network configuration, including its actual native token. Does not switch the active MCP wallet.
 - SDK helpers: `listAvalancheL1s`, `getAvalancheL1Network`; pass the returned configuration to Evalanche or switchNetwork.
 - Discovery covers the official public catalog. Non-EVM chains, non-18-decimal native tokens and unavailable/private RPCs are not supported by this path. Bridge/DeFi/identity availability is separate from wallet connectivity.
+
+## v1.15.0 remote signer
+
+Run the agent with no private key in the process. Pass `signer: { url, address, tokenEnv: 'EVALANCHE_SIGNER_TOKEN' }` instead of `privateKey` or `mnemonic`. Start `evalanche-signer` on `127.0.0.1` or a unix socket. It holds the key, requires a non-empty allow map, and signs only an Ed25519 `approve` decision bound to the exact transaction, the mode, and the intent hash. Unknown calldata is denied. Pass `--init-nonces` the first time the nonce file is created. MCP: `--signer-url` and `--signer-address`, or `EVALANCHE_SIGNER_URL` and `EVALANCHE_SIGNER_ADDRESS`. A `chains` object enables chains other than Avalanche; Polymarket and the Avalanche Uniswap v3 LP module stay off until their own flags are set (`docs/signer-multichain.md`). v1.16.0 prices and caps each enabled chain on its own and requires a positive USD gas cap. An old file with no `chains` object stays on the shared Avalanche caps and the wei gas cap.
+
+Polymarket CLI and Avalanche X/P-chain signing throw `REMOTE_SIGNER_UNSUPPORTED` in this mode. They do not fall back to `POLYMARKET_PRIVATE_KEY`. Address-only mode is `new Evalanche({ address })` or `EVALANCHE_ADDRESS`. That mode does not resolve a local key.
