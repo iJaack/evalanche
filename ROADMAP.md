@@ -5,12 +5,12 @@ This is the active roadmap for the repository.
 <!-- GENERATED:roadmap-release:start -->
 ## Latest Shipped Release
 
-- Latest release: [v1.17.0](docs/releases/RELEASE_NOTES_1.17.0.md)
-- Shipped in `v1.17.0`:
-  - Add a pluggable signer so an agent can sign without a private key in the Evalanche process. `EvalancheConfig.signer` accepts a local ethers wallet, a `SigningProvider`, or a remote signer config. `EvalancheConfig.address` starts an address-only agent that cannot sign.
-  - Add `evalanche-signer`, a reference signing server. It holds the key, checks a pinned Ed25519 verifier approval, recomputes the intent hash, and enforces a monotonic single-use nonce, expiry, a deny list, SpendingPolicy, token caps, and simulation. It binds to `127.0.0.1` or a unix socket and writes a hash-chained JSONL audit log. Dry-run never signs.
-  - Let `evalanche-mcp` run keyless with `--signer-url` / `EVALANCHE_SIGNER_URL` and `--signer-address` / `EVALANCHE_SIGNER_ADDRESS`, or read-only with `EVALANCHE_ADDRESS`. Polymarket CLI and Avalanche X/P-chain paths fail with `REMOTE_SIGNER_UNSUPPORTED` in those modes and never fall back to an environment private key.
-  - Add a per-chain signer policy for nineteen mainnets. Avalanche C-Chain stays on unless disabled. Every other chain, and every testnet, stays off until config enables it. Each enabled chain prices and caps itself.
+- Latest release: [v1.17.0-rc.8](docs/releases/RELEASE_NOTES_1.17.0-rc.8.md)
+- Shipped in `v1.17.0-rc.8`:
+  - Provision `evalanche-1.17.0-rc.8.tgz` as a new pin. Leave `evalanche-1.17.0-rc.1.tgz`, `evalanche-1.17.0-rc.2.tgz`, `evalanche-1.17.0-rc.3.tgz`, `evalanche-1.17.0-rc.4.tgz`, `evalanche-1.17.0-rc.5.tgz`, `evalanche-1.17.0-rc.6.tgz`, and `evalanche-1.17.0-rc.7.tgz` in place. Provisioning again under one of those filenames would overwrite a rollback pin.
+  - CCTP V2 adds Base 8453 (domain 6), treasury to treasury. Avalanche and Base may burn their native USDC with an exact approval to TokenMessengerV2, and Avalanche, Base and Polygon may receive. `mintRecipient` and the burn caller must be the treasury, `destinationCaller` is zero unless pinned, finality is 2000, `maxFee` defaults to 0, and hooks are denied. Base native USDC is `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`.
+  - Chains and domains are the `CCTP_CHAINS` table. Arbitrum 42161 (domain 3) is listed but disabled. Each burning chain has a code-level `allowedDestinationDomains`: Base burns only to Avalanche 1, and Avalanche keeps 6 and 7. A config outside that ceiling fails startup, and such a burn is denied at request time.
+  - `sourceDomains` must list enabled chains that can burn (Avalanche 1, Base 6). Polygon 7 can no longer be a source. A domain on Circle's list but not in the table, such as 0, now fails startup.
 
 ## Current Focus
 
