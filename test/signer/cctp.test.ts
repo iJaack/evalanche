@@ -346,7 +346,7 @@ describe('CCTP V2', () => {
     await expect(boot({
       43114: base,
       1: { enabled: false, cctp: { enabled: true, destinationDomains: [7], minFinalityThreshold: 2000 } },
-    })).rejects.toThrow(/only supported on Avalanche 43114 and Polygon 137/);
+    })).rejects.toThrow(/only supported on Avalanche 43114, Base 8453 and Polygon 137/);
     await expect(boot({
       43114: { ...base, cctp: { enabled: true, sourceDomains: [7], minFinalityThreshold: 2000 } },
     })).rejects.toThrow(/destinationDomains is required/);

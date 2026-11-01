@@ -1,9 +1,12 @@
 /**
  * Narrow CCTP V2. Off unless `chains[id].cctp.enabled` is true.
  *
- * Avalanche 43114 may `depositForBurn` on TokenMessengerV2 and may approve
- * the pinned native USDC to that messenger for the exact burn amount.
- * Polygon 137 may `receiveMessage` on MessageTransmitterV2. The mint
+ * Which chains may burn and receive is the `CCTP_CHAINS` table below.
+ * Avalanche 43114 and Base 8453 may `depositForBurn` on TokenMessengerV2
+ * and may approve their pinned native USDC to that messenger for the exact
+ * burn amount. Avalanche, Base and Polygon 137 may `receiveMessage` on
+ * MessageTransmitterV2. Arbitrum 42161 is listed but disabled, so it is
+ * neither a local chain nor a remote domain. The mint
  * recipient in the burn body must be the treasury. The header sender and
  * the header recipient must both be TokenMessengerV2. MessageTransmitterV2
  * calls that recipient, and Circle's burn sets it to the remote messenger.
@@ -16,7 +19,19 @@
  * (https://developers.circle.com/cctp/references/technical-guide).
  * `depositForBurn` is `0x8e0250ee`. `receiveMessage` is `0x57ecfd28`.
  * Standard finality is 2000 and is fee-free. Fast finality is 1000 and is
- * denied. `localDomain()` is 1 on Avalanche and 7 on Polygon.
+ * denied. `localDomain()` is 1 on Avalanche, 6 on Base and 7 on Polygon.
+ * Base was re-checked on 1 November 2026 against the same contract list and
+ * Circle's USDC list (https://developers.circle.com/stablecoins/usdc-contract-addresses):
+ * TokenMessengerV2, MessageTransmitterV2 and TokenMinterV2 are the same
+ * addresses on Base, and Base native USDC is
+ * `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`.
+ *
+ * Expiry: Circle's technical guide says an `expirationBlock` 24 hours ahead
+ * is encoded before attestation. Attested mainnet Standard messages read
+ * from Iris on 1 November 2026 (1->6 `0x07fabfb0...`, 6->1 `0x27e1c525...`,
+ * plus the 1->7 rc.4 fixture) all carry `expirationBlock` 0, which matches
+ * the whitepaper (Standard transfers do not expire; Fast ones do). So 0 is
+ * the accepted value and a nonzero one still needs `maxExpirationBlock`.
  * `localMinter()` on both messengers is TokenMinterV2
  * `0xfd78ee919681417d192449715b2594ab58f5d002`.
  */
@@ -32,7 +47,13 @@ export const CCTP_TOKEN_MINTER_V2 = '0xfd78ee919681417d192449715b2594ab58f5d002'
 /** Circle Standard Transfer. Fast Transfer is 1000 and is denied. */
 export const CCTP_STANDARD_FINALITY = 2000;
 export const CCTP_AVALANCHE_DOMAIN = 1;
+export const CCTP_ARBITRUM_DOMAIN = 3;
+export const CCTP_BASE_DOMAIN = 6;
 export const CCTP_POLYGON_DOMAIN = 7;
+/** Circle native USDC on Base 8453. */
+export const BASE_NATIVE_USDC = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
+/** Circle native USDC on Arbitrum 42161. Pinned for the disabled table entry only. */
+export const ARBITRUM_NATIVE_USDC = '0xaf88d065e77c8cC2239327C5EDb3A432268e5831';
 
 /**
  * Domain ids from Circle's domain table on 19 October 2026, plus X Layer 37
@@ -43,21 +64,57 @@ const CIRCLE_DOMAINS = new Set([
   0, 1, 2, 3, 5, 6, 7, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 21, 22, 25, 26, 27, 28, 29, 30, 31, 32, 37,
 ]);
 
-const LOCAL_DOMAIN: Readonly<Record<number, number>> = {
-  43114: CCTP_AVALANCHE_DOMAIN,
-  137: CCTP_POLYGON_DOMAIN,
-};
+/** One CCTP V2 chain. Adding a route is a new row here, then config. */
+export interface CctpChainEntry {
+  chainId: number;
+  /** Circle domain id. */
+  domain: number;
+  name: string;
+  /** Circle native USDC on this chain, the only burn token and the minted asset. */
+  usdc: string;
+  /** May sign `depositForBurn` and the exact messenger approval here. */
+  burn: boolean;
+  /** May sign `receiveMessage` here. */
+  receive: boolean;
+  /**
+   * A disabled row is neither a local chain nor a remote domain: config that
+   * enables it or lists its domain fails startup, and calldata naming it is
+   * denied.
+   */
+  enabled: boolean;
+  /**
+   * Which chain's block numbers `expirationBlock` counts when this chain is
+   * the destination. Arbitrum stack counts Ethereum L1 blocks.
+   */
+  expirationClock: 'local' | 'ethereum';
+}
 
-/** Source-domain burn token the receive path can check. Other domains fail closed. */
-const BURN_TOKEN_BY_DOMAIN: Readonly<Record<number, string>> = {
-  [CCTP_AVALANCHE_DOMAIN]: AVALANCHE_NATIVE_USDC,
-  [CCTP_POLYGON_DOMAIN]: POLYGON_NATIVE_USDC,
-};
+export const CCTP_CHAINS: readonly CctpChainEntry[] = Object.freeze([
+  { chainId: 43114, domain: CCTP_AVALANCHE_DOMAIN, name: 'Avalanche', usdc: getAddress(AVALANCHE_NATIVE_USDC), burn: true, receive: true, enabled: true, expirationClock: 'local' },
+  { chainId: 8453, domain: CCTP_BASE_DOMAIN, name: 'Base', usdc: getAddress(BASE_NATIVE_USDC), burn: true, receive: true, enabled: true, expirationClock: 'local' },
+  // Polygon is receive-only, as in rc.7.
+  { chainId: 137, domain: CCTP_POLYGON_DOMAIN, name: 'Polygon', usdc: getAddress(POLYGON_NATIVE_USDC), burn: false, receive: true, enabled: true, expirationClock: 'local' },
+  // Not enabled. Flip `enabled` in a reviewed signer change, after the Base
+  // round trip, then add config. Its expirationBlock is an L1 block number.
+  { chainId: 42161, domain: CCTP_ARBITRUM_DOMAIN, name: 'Arbitrum', usdc: getAddress(ARBITRUM_NATIVE_USDC), burn: true, receive: true, enabled: false, expirationClock: 'ethereum' },
+].map((entry) => Object.freeze(entry as CctpChainEntry)));
+
+function enabledEntries(table: readonly CctpChainEntry[]): CctpChainEntry[] {
+  return table.filter((entry) => entry.enabled);
+}
+
+/** Enabled CCTP row for a chain id, or undefined. */
+export function cctpChain(chainId: number, table: readonly CctpChainEntry[] = CCTP_CHAINS): CctpChainEntry | undefined {
+  return enabledEntries(table).find((entry) => entry.chainId === chainId);
+}
+
+/** Enabled CCTP row for a Circle domain, or undefined. */
+export function cctpDomain(domain: number, table: readonly CctpChainEntry[] = CCTP_CHAINS): CctpChainEntry | undefined {
+  return enabledEntries(table).find((entry) => entry.domain === domain);
+}
 
 const MESSENGER = getAddress(CCTP_TOKEN_MESSENGER_V2);
 const TRANSMITTER = getAddress(CCTP_MESSAGE_TRANSMITTER_V2);
-const AVALANCHE_USDC = getAddress(AVALANCHE_NATIVE_USDC);
-const POLYGON_USDC = getAddress(POLYGON_NATIVE_USDC);
 
 const HEADER_BYTES = 148;
 const BODY_PREFIX_BYTES = 228;
@@ -90,14 +147,17 @@ export interface CctpConfig {
   /** Default false. */
   enabled?: boolean;
   /**
-   * Circle domain ids `depositForBurn` may name as destinationDomain.
-   * Required when the module is enabled on Avalanche. Not used on receive.
+   * Circle domain ids `depositForBurn` may name as destinationDomain. Each
+   * must be an enabled `CCTP_CHAINS` row that can receive. Required when the
+   * module is enabled on a chain that can burn (Avalanche, Base). Not used
+   * on receive.
    */
   destinationDomains?: number[];
   /**
-   * Circle domain ids a `receiveMessage` may name as its source domain.
-   * Required when the module is enabled on Polygon. Omitted on Avalanche
-   * means this chain does not receive.
+   * Circle domain ids a `receiveMessage` may name as its source domain. Each
+   * must be an enabled `CCTP_CHAINS` row. Required when the module is
+   * enabled on a receive-only chain (Polygon). Omitted on a chain that can
+   * burn means this chain does not receive.
    */
   sourceDomains?: number[];
   /** Max `maxFee` in burn-token units. Omitted means 0, so the transfer is fee-free. */
@@ -150,20 +210,32 @@ export function assertCctpConfig(
     }
   }
   if (record.enabled !== true) return;
-  const domain = LOCAL_DOMAIN[chainId];
-  if (domain === undefined) {
-    throw new EvalancheError(`${label} is only supported on Avalanche 43114 and Polygon 137`, EvalancheErrorCode.INVALID_CONFIG);
+  const entry = cctpChain(chainId);
+  if (entry === undefined) {
+    throw new EvalancheError(`${label} is only supported on ${supportedChains()}`, EvalancheErrorCode.INVALID_CONFIG);
   }
-  if (chainId === 43114 && record.destinationDomains === undefined) {
+  if (entry.burn && record.destinationDomains === undefined) {
     throw new EvalancheError(`${label}.destinationDomains is required`, EvalancheErrorCode.INVALID_CONFIG);
   }
-  if (chainId === 137 && record.sourceDomains === undefined) {
+  if (!entry.burn && record.sourceDomains === undefined) {
     throw new EvalancheError(`${label}.sourceDomains is required`, EvalancheErrorCode.INVALID_CONFIG);
+  }
+  if (record.destinationDomains !== undefined) {
+    if (!entry.burn) {
+      throw new EvalancheError(`${label}.destinationDomains is set but ${entry.name} ${chainId} does not burn`, EvalancheErrorCode.INVALID_CONFIG);
+    }
+    assertRouteDomains(record.destinationDomains as number[], 'receive', `${label}.destinationDomains`);
+  }
+  if (record.sourceDomains !== undefined) {
+    if (!entry.receive) {
+      throw new EvalancheError(`${label}.sourceDomains is set but ${entry.name} ${chainId} does not receive`, EvalancheErrorCode.INVALID_CONFIG);
+    }
+    assertRouteDomains(record.sourceDomains as number[], 'any', `${label}.sourceDomains`);
   }
   if (record.minFinalityThreshold === undefined) {
     throw new EvalancheError(`${label}.minFinalityThreshold must be ${CCTP_STANDARD_FINALITY}`, EvalancheErrorCode.INVALID_CONFIG);
   }
-  const token = chainId === 43114 ? AVALANCHE_USDC : POLYGON_USDC;
+  const token = entry.usdc;
   if (tokenCaps[token] === undefined) {
     throw new EvalancheError(`${label} requires a token cap for ${token}`, EvalancheErrorCode.INVALID_CONFIG);
   }
@@ -183,7 +255,8 @@ export function cctpModuleHandles(chainId: number, to: string, data: string, con
     return false;
   }
   if (address === MESSENGER || address === TRANSMITTER) return true;
-  if (chainId !== 43114 || address !== AVALANCHE_USDC || selectorOf(data) !== APPROVE) return false;
+  const entry = cctpChain(chainId);
+  if (!entry?.burn || address !== entry.usdc || selectorOf(data) !== APPROVE) return false;
   try {
     const decoded = ERC20.decodeFunctionData('approve', data);
     return getAddress(String(decoded[0])) === MESSENGER && BigInt(decoded[1]) > 0n;
@@ -213,14 +286,16 @@ export function takeCctp(input: {
   }
   if (target === MESSENGER) return decodeBurn(input.chainId, input.data, input.value, input.config!, input.wallet);
   if (target === TRANSMITTER) return decodeReceive(input.chainId, input.data, input.value, input.config!, input.wallet);
-  if (input.chainId === 43114 && target === AVALANCHE_USDC && selectorOf(input.data) === APPROVE) {
-    return decodeApproval(input.data, input.value);
+  const entry = cctpChain(input.chainId);
+  if (entry?.burn && target === entry.usdc && selectorOf(input.data) === APPROVE) {
+    return decodeApproval(input.data, input.value, entry.usdc);
   }
   return null;
 }
 
 function decodeBurn(chainId: number, data: string, value: bigint, config: CctpConfig, wallet: string): DecodedCall {
-  if (chainId !== 43114) fail('CCTP burn is only signed on Avalanche');
+  const local = cctpChain(chainId);
+  if (!local?.burn) fail(`CCTP burn is only signed on ${burnChains()}`);
   if (selectorOf(data) !== DEPOSIT) fail('CCTP selector is not depositForBurn');
   assertValue(value);
   const decoded = decodeExact(MESSENGER_IFACE, 'depositForBurn', data);
@@ -233,15 +308,17 @@ function decodeBurn(chainId: number, data: string, value: bigint, config: CctpCo
   const minFinality = Number(decoded[6]);
   if (amount <= 0n) fail('CCTP burn amount must be greater than zero');
   if (!listed(config.destinationDomains, destinationDomain)) fail('CCTP destination domain is not allowlisted');
+  const remote = cctpDomain(destinationDomain);
+  if (!remote?.receive || remote.domain === local.domain) fail('CCTP destination domain is not an enabled CCTP route');
   if (mintRecipient !== addressToBytes32(wallet)) fail('CCTP mint recipient must be the treasury');
-  if (burnToken !== AVALANCHE_USDC) fail('CCTP burn token must be Avalanche native USDC');
+  if (burnToken !== local.usdc) fail(`CCTP burn token must be ${local.name} native USDC`);
   if (destinationCaller !== callerWord(config)) fail('CCTP destinationCaller does not match the pin');
   if (maxFee > feeCap(config)) fail('CCTP maxFee exceeds the configured cap');
   if (minFinality !== CCTP_STANDARD_FINALITY) fail(`CCTP minFinalityThreshold must be ${CCTP_STANDARD_FINALITY}`);
-  return { kind: 'cctp-burn', selector: DEPOSIT, amount, asset: AVALANCHE_USDC, receiver: getAddress(wallet) };
+  return { kind: 'cctp-burn', selector: DEPOSIT, amount, asset: local.usdc, receiver: getAddress(wallet) };
 }
 
-function decodeApproval(data: string, value: bigint): DecodedCall | null {
+function decodeApproval(data: string, value: bigint, usdc: string): DecodedCall | null {
   let decoded: ReturnType<Interface['decodeFunctionData']>;
   try {
     decoded = ERC20.decodeFunctionData('approve', data);
@@ -266,14 +343,15 @@ function decodeApproval(data: string, value: bigint): DecodedCall | null {
     selector: APPROVE,
     amount,
     spender: MESSENGER,
-    asset: AVALANCHE_USDC,
+    asset: usdc,
     moduleOp: 'cctp-approve',
   };
 }
 
 function decodeReceive(chainId: number, data: string, value: bigint, config: CctpConfig, wallet: string): DecodedCall {
-  const local = LOCAL_DOMAIN[chainId];
-  if (local === undefined) fail('CCTP receive is only signed on Avalanche or Polygon');
+  const entry = cctpChain(chainId);
+  if (!entry?.receive) fail(`CCTP receive is only signed on ${receiveChains()}`);
+  const local = entry.domain;
   if (selectorOf(data) !== RECEIVE) fail('CCTP selector is not receiveMessage');
   assertValue(value);
   const decoded = decodeExact(TRANSMITTER_IFACE, 'receiveMessage', data);
@@ -303,8 +381,8 @@ function decodeReceive(chainId: number, data: string, value: bigint, config: Cct
   if (version !== MESSAGE_VERSION || bodyVersion !== MESSAGE_VERSION) fail('CCTP message version is not 1');
   if (destinationDomain !== local) fail('CCTP message destination domain is not this chain');
   if (!listed(config.sourceDomains, sourceDomain)) fail('CCTP source domain is not allowlisted');
-  const pinnedBurn = BURN_TOKEN_BY_DOMAIN[sourceDomain];
-  if (!pinnedBurn || burnToken !== getAddress(pinnedBurn)) fail('CCTP burn token is not the pinned USDC for that domain');
+  const pinnedBurn = cctpDomain(sourceDomain)?.usdc;
+  if (!pinnedBurn || burnToken !== pinnedBurn) fail('CCTP burn token is not the pinned USDC for that domain');
   if (sender !== addressToBytes32(MESSENGER)) fail('CCTP message sender is not TokenMessengerV2');
   if (recipient !== addressToBytes32(MESSENGER)) fail('CCTP message recipient is not TokenMessengerV2');
   if (mintRecipient !== addressToBytes32(wallet)) fail('CCTP mint recipient must be the treasury');
@@ -316,8 +394,7 @@ function decodeReceive(chainId: number, data: string, value: bigint, config: Cct
   if (amount <= 0n) fail('CCTP mint amount must be greater than zero');
   if (maxFee > feeCap(config) || feeExecuted > maxFee) fail('CCTP fee exceeds the configured cap');
   if (feeExecuted >= amount) fail('CCTP fee leaves no USDC for the treasury');
-  const asset = chainId === 137 ? POLYGON_USDC : AVALANCHE_USDC;
-  return { kind: 'cctp-mint', selector: RECEIVE, amount, asset, receiver: getAddress(wallet) };
+  return { kind: 'cctp-mint', selector: RECEIVE, amount, asset: entry.usdc, receiver: getAddress(wallet) };
 }
 
 function listed(domains: number[] | undefined, domain: number): boolean {
@@ -340,7 +417,38 @@ function callerWord(config: CctpConfig): string {
 }
 
 function localDomain(chainId: number): number | undefined {
-  return LOCAL_DOMAIN[chainId];
+  return cctpChain(chainId)?.domain;
+}
+
+function describeChains(entries: CctpChainEntry[]): string {
+  const names = entries.map((entry) => `${entry.name} ${entry.chainId}`);
+  return names.length <= 1 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
+
+function supportedChains(): string {
+  return describeChains(enabledEntries(CCTP_CHAINS));
+}
+
+function burnChains(): string {
+  return describeChains(enabledEntries(CCTP_CHAINS).filter((entry) => entry.burn));
+}
+
+function receiveChains(): string {
+  return describeChains(enabledEntries(CCTP_CHAINS).filter((entry) => entry.receive));
+}
+
+/**
+ * Every listed domain must be an enabled table row. `receive` also requires
+ * that the row can receive, so a burn never targets a chain the signer
+ * cannot mint on.
+ */
+function assertRouteDomains(domains: number[], need: 'receive' | 'any', label: string): void {
+  for (const domain of domains) {
+    const remote = cctpDomain(domain);
+    if (!remote || (need === 'receive' && !remote.receive)) {
+      throw new EvalancheError(`${label} has domain ${domain}, which is not an enabled CCTP route`, EvalancheErrorCode.INVALID_CONFIG);
+    }
+  }
 }
 
 function parseDomains(value: unknown, local: number | undefined, label: string): void {

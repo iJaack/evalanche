@@ -15,10 +15,12 @@ import {
   CCTP_MESSAGE_TRANSMITTER_V2,
   CCTP_STANDARD_FINALITY,
   CCTP_TOKEN_MESSENGER_V2,
+  cctpChain,
+  cctpDomain,
   takeCctp,
+  type CctpChainEntry,
   type CctpConfig,
 } from './cctp';
-import { AVALANCHE_NATIVE_USDC } from './revoke-only';
 import { PM_CTF, PM_CTF_EXCHANGE_V1, PM_NEG_RISK_EXCHANGE_V1 } from './polymarket-addresses';
 import { POLYMARKET_KILL_ACTION, POLYMARKET_KILL_VENUE } from './polymarket-module';
 
@@ -97,17 +99,32 @@ export function buildRevokeOperator(input: {
   };
 }
 
-/** Exact USDC approve to TokenMessengerV2. amountIn is that amount. */
-export function buildCctpApprove(amount: bigint): FundingIntentFields {
+function burnChain(chainId: number): CctpChainEntry {
+  const entry = cctpChain(chainId);
+  if (!entry?.burn) fail(`CCTP burn is not enabled on chain ${chainId}`);
+  return entry;
+}
+
+/** Default burn destination: Polygon from Avalanche (rc.7 behavior), Avalanche from elsewhere. */
+function defaultDestination(entry: CctpChainEntry): number {
+  return entry.chainId === 43114 ? 7 : 1;
+}
+
+/**
+ * Exact USDC approve to TokenMessengerV2 on a chain that can burn
+ * (Avalanche by default, or Base). amountIn is that amount.
+ */
+export function buildCctpApprove(amount: bigint, chainId = 43114): FundingIntentFields {
   if (typeof amount !== 'bigint' || amount <= 0n) fail('CCTP approval amount must be greater than zero');
-  const token = getAddress(AVALANCHE_NATIVE_USDC);
+  const entry = burnChain(chainId);
+  const token = entry.usdc;
   const data = ERC20.encodeFunctionData('approve', [CCTP_TOKEN_MESSENGER_V2, amount]);
   const decoded = takeCctp({
-    chainId: 43114,
+    chainId,
     to: token,
     data,
     value: 0n,
-    config: { enabled: true, destinationDomains: [7], minFinalityThreshold: CCTP_STANDARD_FINALITY },
+    config: { enabled: true, destinationDomains: [defaultDestination(entry)], minFinalityThreshold: CCTP_STANDARD_FINALITY },
     wallet: '0x0000000000000000000000000000000000000001',
   });
   if (!decoded || decoded.moduleOp !== 'cctp-approve' || decoded.amount !== amount) fail('CCTP approval did not decode');
@@ -122,24 +139,32 @@ export function buildCctpApprove(amount: bigint): FundingIntentFields {
   };
 }
 
-/** Avalanche `depositForBurn`. amountIn is the burn amount. tokenIn is Avalanche USDC. */
+/**
+ * `depositForBurn` on Avalanche (default) or Base. amountIn is the burn
+ * amount. tokenIn is that chain's native USDC. The default destination is
+ * Polygon 7 from Avalanche and Avalanche 1 from Base.
+ */
 export function buildCctpBurn(input: {
   wallet: string;
   amount: bigint;
+  chainId?: number;
   destinationDomain?: number;
   destinationCaller?: string;
   maxFee?: bigint;
 }): FundingIntentFields {
   if (typeof input.amount !== 'bigint' || input.amount <= 0n) fail('CCTP burn amount must be greater than zero');
+  const chainId = input.chainId ?? 43114;
+  const entry = burnChain(chainId);
   const wallet = getAddress(input.wallet);
-  const domain = input.destinationDomain ?? 7;
+  const domain = input.destinationDomain ?? defaultDestination(entry);
+  if (!cctpDomain(domain)?.receive) fail(`CCTP destination domain ${domain} is not an enabled CCTP route`);
   const caller = input.destinationCaller ?? '0x0000000000000000000000000000000000000000';
   const maxFee = input.maxFee ?? 0n;
   const data = MESSENGER_IFACE.encodeFunctionData('depositForBurn', [
     input.amount,
     domain,
     word(wallet),
-    getAddress(AVALANCHE_NATIVE_USDC),
+    entry.usdc,
     word(caller),
     maxFee,
     CCTP_STANDARD_FINALITY,
@@ -152,7 +177,7 @@ export function buildCctpBurn(input: {
   };
   if (input.destinationCaller) config.destinationCaller = getAddress(input.destinationCaller);
   const decoded = takeCctp({
-    chainId: 43114,
+    chainId,
     to: CCTP_TOKEN_MESSENGER_V2,
     data,
     value: 0n,
@@ -166,7 +191,7 @@ export function buildCctpBurn(input: {
     to: getAddress(CCTP_TOKEN_MESSENGER_V2),
     data,
     value: '0',
-    tokenIn: tokenRef(AVALANCHE_NATIVE_USDC),
+    tokenIn: tokenRef(entry.usdc),
     amountIn: input.amount.toString(),
   };
 }
