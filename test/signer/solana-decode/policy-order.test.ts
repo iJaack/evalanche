@@ -1,4 +1,4 @@
-import { describe, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import vectorsJson from '../fixtures/solana-decode/policy-vectors.json';
 import { assertIntent, boundIntent, budget, checkedData, decode, expectDeny, ix, key, meta, mod, policyContext,
   requireFn, rewrap, TOKEN, USDC, USDT, WSOL } from './helpers';
@@ -44,14 +44,28 @@ describe('fixed policy steps 2–9: earlier fault wins',()=>{
     expectDeny(()=>check(b.actions,b.context,b.intent),'SOL_DENY_MINT_NOT_ALLOWED',2);
   });
   it('recipient on an earlier action beats authority on a later action',async()=>{
-    const check=requireFn(mod,'assertSolanaActionsAllowed');const b=await baseline('close-wrong-destination');
-    const later={...b.actions[2],instructionIndex:3,destination:b.context.treasury,owner:key('other-owner')};
-    // Defense in depth over supplied decoded actions; later owner cannot be a valid phase-1 signer.
-    expectDeny(()=>check([...b.actions,later],b.context,b.intent),'SOL_DENY_RECIPIENT_NOT_TREASURY',2);
+    const check=requireFn(mod,'assertSolanaActionsAllowed');const context=await policyContext();
+    const close=ix(TOKEN,Buffer.from([9]),[meta(context.treasuryAtas.get(WSOL).ata,true),meta(key('other-owner'),true),meta(context.treasury,false,true)]);
+    // A foreign transferChecked source reaches the source-not-treasury-ATA authority check.
+    const transfer=ix(TOKEN,checkedData(12,'100',6),[meta(key('foreign-source'),true),meta(USDC),meta(context.treasuryAtas.get(USDC).ata,true),meta(context.treasury,false,true)]);
+    const bytes=rewrap(...budget(),close,transfer);
+    const intent=boundIntent(bytes,{action:'transfer',venue:'spl-token',tokenIn:{mint:USDC,symbol:'USDC',decimals:6},amountIn:'0'});assertIntent(intent);
+    expectDeny(()=>check(decode(bytes),context,intent),'SOL_DENY_RECIPIENT_NOT_TREASURY',2);
   });
   it('authority on an earlier action beats recipient on a later action',async()=>{
-    const check=requireFn(mod,'assertSolanaActionsAllowed');const b=await baseline('usdc-close');
-    b.actions[2].owner=key('other-owner');const later={...b.actions[2],instructionIndex:3,owner:b.context.treasury,destination:key('other-owner')};
-    expectDeny(()=>check([...b.actions,later],b.context,b.intent),'SOL_DENY_AUTHORITY_NOT_TREASURY',2);
+    const check=requireFn(mod,'assertSolanaActionsAllowed');const context=await policyContext();
+    const close=ix(TOKEN,Buffer.from([9]),[meta(context.treasuryAtas.get(WSOL).ata,true),meta(key('other-owner'),true),meta(context.treasury,false,true)]);
+    // A foreign transferChecked source reaches the source-not-treasury-ATA authority check.
+    const transfer=ix(TOKEN,checkedData(12,'100',6),[meta(key('foreign-source'),true),meta(USDC),meta(context.treasuryAtas.get(USDC).ata,true),meta(context.treasury,false,true)]);
+    const bytes=rewrap(...budget(),transfer,close);
+    const intent=boundIntent(bytes,{action:'transfer',venue:'spl-token',tokenIn:{mint:USDC,symbol:'USDC',decimals:6},amountIn:'0'});assertIntent(intent);
+    expectDeny(()=>check(decode(bytes),context,intent),'SOL_DENY_AUTHORITY_NOT_TREASURY',2);
+  });
+  it('payer binding (2) uses the message payer: payer != treasury beats wrong programIds (3)',async()=>{
+    const check=requireFn(mod,'assertSolanaActionsAllowed');const b=await baseline('approve');
+    b.context.treasury=key('other-owner');b.intent.wallet=key('other-owner');b.intent.programIds=[];assertIntent(b.intent);
+    let caught:any;
+    expectDeny(()=>{try{return check(b.actions,b.context,b.intent);}catch(error){caught=error;throw error;}},'SOL_DENY_AUTHORITY_NOT_TREASURY');
+    expect(caught.instructionIndex).toBeUndefined();
   });
 });
