@@ -2,7 +2,7 @@ import { parseSolanaMessage, solanaPriorityFeeLamports, type SolanaChainId, type
 import type { ResolvedSolanaCluster } from '../solana-policy';
 import { type TreasuryAtaMap, treasuryAtaOwnerOf } from './ata';
 import { ATA, COMPUTE, SYSTEM, TOKEN, WSOL, SOLANA_PHASE1_CEILINGS } from './constants';
-import { assertComputeBudgetCardinality, assertProgramNotHardDenied, derivedProgramIds } from './decode';
+import { assertComputeBudgetCardinality, assertProgramNotHardDenied, decodeSolanaMessage, derivedProgramIds } from './decode';
 import { deny, type SolanaDenyReason } from './errors';
 import type { Base58, DecodedSolanaAction, TokenProgramId } from './types';
 export interface SolanaPolicyContext {
@@ -20,44 +20,65 @@ function rawAmount(value: unknown, index?: number): bigint {
   }
   return BigInt(value);
 }
+/** Compare every own key and value without coercion, preserving array order. */
+function structurallyEqual(left: unknown, right: unknown): boolean {
+  if (typeof left !== typeof right) return false;
+  if (left === null || right === null || typeof left !== 'object' || typeof right !== 'object') {
+    return left === right;
+  }
+  if (Array.isArray(left) !== Array.isArray(right)) return false;
+  const leftKeys = Reflect.ownKeys(left);
+  const rightKeys = Reflect.ownKeys(right);
+  const leftRecord = left as Record<PropertyKey, unknown>;
+  const rightRecord = right as Record<PropertyKey, unknown>;
+  return leftKeys.length === rightKeys.length && leftKeys.every(key =>
+    Object.hasOwn(right, key) && structurallyEqual(leftRecord[key], rightRecord[key]));
+}
 /** Pure offline policy; USD valuation, rent and account balances require PR4 evidence. */
 export function assertSolanaActionsAllowed(
   actions: readonly DecodedSolanaAction[], context: SolanaPolicyContext, intent: SolanaSigningIntent,
 ): SolanaDebitSummary {
   const { config: c, treasury, treasuryAtas: atas } = context;
-  const ordered = [...actions].sort((a, b) => a.instructionIndex - b.instructionIndex);
   // 1. Hard denials, including the actual message even for supplied decoded evidence.
   const message = parseSolanaMessage(intent.tx.serializedMessage);
   for (const [index, ix] of message.instructions.entries()) assertProgramNotHardDenied(ix.programId, index);
-  for (const a of ordered) {
+  for (const a of actions) {
     assertProgramNotHardDenied(a.programId, a.instructionIndex);
     if (a.kind === 'ata.create') for (const p of a.impliedCpiPrograms) assertProgramNotHardDenied(p, a.instructionIndex);
+  }
+  // Bind supplied evidence and cluster before steps 2–9.
+  const decoded = decodeSolanaMessage(message);
+  if (!structurallyEqual(actions, decoded)) {
+    deny('SOL_DENY_ACTIONS_MISMATCH', 'supplied actions differ from the signed message');
+  }
+  if (intent.chainId !== context.cluster) {
+    deny('SOL_DENY_ACTION_MISMATCH', 'intent cluster differs from policy context');
   }
   // 2–4. Bind payer, program commitment and explicit phase admission.
   if (intent.wallet !== treasury || message.staticAccountKeys[0] !== treasury) {
     deny('SOL_DENY_AUTHORITY_NOT_TREASURY', 'wallet and payer must be treasury');
   }
-  const programs = derivedProgramIds(message, ordered);
+  const programs = derivedProgramIds(message, decoded);
   if (programs.length !== intent.programIds.length || programs.some((p, i) => p !== intent.programIds[i])) {
     deny('SOL_DENY_PROGRAM_IDS_MISMATCH', 'program commitment differs from derived programs');
   }
   // Admission covers the whole operation; attribute a missing dependency to its start.
-  const operationIndex = ordered.find(a => !a.kind.startsWith('computeBudget.'))?.instructionIndex;
+  const operationIndex = decoded.find(a => !a.kind.startsWith('computeBudget.'))?.instructionIndex;
   const enabled = (p: string, index = operationIndex) => {
     if (![SYSTEM, TOKEN, ATA, COMPUTE].includes(p) || !c.programs?.includes(p)) {
       deny('SOL_DENY_PROGRAM_NOT_ENABLED', `program ${p} is not enabled`, index);
     }
   };
-  for (const a of ordered) {
+  for (const a of decoded) {
     enabled(a.programId);
     if (a.kind === 'ata.create') for (const p of a.impliedCpiPrograms) enabled(p);
   }
   for (const p of programs) enabled(p);
   if (intent.action === 'swap') deny('SOL_DENY_PROGRAM_NOT_ENABLED', 'Jupiter swaps are disabled');
   // 5. Exactly one of each budget instruction, matching the intent and explicit caps.
-  assertComputeBudgetCardinality(ordered);
-  const limit = ordered.find((a): a is Extract<DecodedSolanaAction, {kind: 'computeBudget.setComputeUnitLimit'}> => a.kind === 'computeBudget.setComputeUnitLimit')!;
-  const price = ordered.find((a): a is Extract<DecodedSolanaAction, {kind: 'computeBudget.setComputeUnitPrice'}> => a.kind === 'computeBudget.setComputeUnitPrice')!;
+  assertComputeBudgetCardinality(decoded);
+  const limit = decoded.find((a): a is Extract<DecodedSolanaAction, {kind: 'computeBudget.setComputeUnitLimit'}> => a.kind === 'computeBudget.setComputeUnitLimit')!;
+  const price = decoded.find((a): a is Extract<DecodedSolanaAction, {kind: 'computeBudget.setComputeUnitPrice'}> => a.kind === 'computeBudget.setComputeUnitPrice')!;
   if (limit.units < 1 || limit.units !== intent.tx.computeUnitLimit || price.microLamports.toString() !== intent.tx.computeUnitPriceMicroLamports) {
     deny('SOL_DENY_COMPUTE_BUDGET_MISMATCH', 'compute budget differs from intent');
   }
@@ -80,7 +101,7 @@ export function assertSolanaActionsAllowed(
   const authority = (address: string, a: DecodedSolanaAction) => requireParty(address === treasury, 'SOL_DENY_AUTHORITY_NOT_TREASURY', a);
   const recipient = (ok: boolean, a: DecodedSolanaAction) => requireParty(ok, 'SOL_DENY_RECIPIENT_NOT_TREASURY', a);
   // 6. Per-action party checks in instruction order, before matching any action shape.
-  for (const a of ordered) {
+  for (const a of decoded) {
     switch (a.kind) {
       case 'system.transfer': authority(a.from, a); recipient(a.to === treasury || ownAta(a.to), a); break;
       case 'token.transferChecked':
@@ -93,7 +114,7 @@ export function assertSolanaActionsAllowed(
     }
   }
   // 7. Closed action shapes. Unexpected extras report their own instruction index.
-  const business = ordered.filter(a => !a.kind.startsWith('computeBudget.'));
+  const business = decoded.filter(a => !a.kind.startsWith('computeBudget.'));
   const mismatch = (a?: DecodedSolanaAction): never => deny('SOL_DENY_ACTION_MISMATCH', 'actions differ from intent', a?.instructionIndex);
   const amountMismatch = (a: DecodedSolanaAction): never => deny('SOL_DENY_AMOUNT_MISMATCH', 'amount differs from intent', a.instructionIndex);
   for (const a of business) {
@@ -154,7 +175,8 @@ export function assertSolanaActionsAllowed(
     touched.add(mint);
     const tokenProgram = 'tokenProgram' in a ? a.tokenProgram : TOKEN;
     if (tokenProgram !== metadata.tokenProgram) deny('SOL_DENY_TOKEN_PROGRAM_MISMATCH', 'token program differs from mint registry', a.instructionIndex);
-    if (metadata.decimals !== intent.tokenIn.decimals || ('decimals' in a && a.decimals !== metadata.decimals)) {
+    if ((mint === WSOL && (metadata.decimals !== 9 || intent.tokenIn.decimals !== 9))
+      || metadata.decimals !== intent.tokenIn.decimals || ('decimals' in a && a.decimals !== metadata.decimals)) {
       deny('SOL_DENY_DECIMALS_MISMATCH', 'decimals differ from mint registry', a.instructionIndex);
     }
     const account = a.kind === 'ata.create' ? a.ata : a.kind === 'token.approveChecked' || a.kind === 'token.revoke' ? a.source : undefined;
