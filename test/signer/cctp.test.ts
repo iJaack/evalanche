@@ -29,6 +29,7 @@ import {
 } from '../../src/signer/cctp';
 import { computeApprovedTxHash, signVerifierApproval, type ApprovedTransaction, type SigningIntent } from '../../src/signer/intent';
 import { AVALANCHE_NATIVE_USDC, POLYGON_NATIVE_USDC } from '../../src/signer/revoke-only';
+import { BASE_NATIVE_USDC } from '../../src/signer/cctp';
 import type { EvalancheSignerServer } from '../../src/signer/server';
 
 const KEY = '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80';
@@ -370,7 +371,7 @@ describe('CCTP V2', () => {
         gas: { maxFeeUsd: 1 },
         tokenCaps: { native: '0', [AVAX_USDC]: '1000000' },
         price: { prices: { native: 1 } },
-        cctp: { ...avaxCctp, sourceDomains: [7] },
+        cctp: { ...avaxCctp, sourceDomains: [6] },
       },
       137: {
         enabled: true,
@@ -383,12 +384,22 @@ describe('CCTP V2', () => {
     const atBound = await submit(bounded, 137, TRANSMITTER, receive(message({ expiration: 50n })), { nonce: '1', action: 'cctp-mint' });
     expect(atBound.signedTransaction).toMatch(/^0x/);
     await expect(submit(bounded, 137, TRANSMITTER, receive(message({ expiration: 51n })), { nonce: '2', action: 'cctp-mint' })).rejects.toThrow(/expiration/);
-    const home = message({ source: 7, dest: 1, burnToken: POLY_USDC });
+    // Sources must be chains that can burn, so Avalanche receives from Base 6, not Polygon 7.
+    const home = message({ source: 6, dest: 1, burnToken: getAddress(BASE_NATIVE_USDC) });
     await expect(submit(bounded, 43114, TRANSMITTER, receive(home), { nonce: '3', action: 'cctp-mint' })).resolves.toMatchObject({ signedTransaction: expect.stringMatching(/^0x/) });
     await bounded.server.close();
 
     const burnOnly = await boot();
     await expect(submit(burnOnly, 43114, TRANSMITTER, receive(home), { nonce: '4', action: 'cctp-mint' })).rejects.toThrow(/source domain/);
+    await burnOnly.server.close();
+    await expect(boot({
+      43114: {
+        gas: { maxFeeUsd: 1 },
+        tokenCaps: { native: '0', [AVAX_USDC]: '1000000' },
+        price: { prices: { native: 1 } },
+        cctp: { ...avaxCctp, sourceDomains: [7] },
+      },
+    })).rejects.toThrow(/sourceDomains has domain 7, which is not an enabled CCTP chain that can burn/);
   });
 
   it('denies a revoke or CCTP label or amount that does not match the calldata', async () => {
@@ -427,7 +438,7 @@ describe('CCTP V2', () => {
 
   it('proposer helpers emit the venue and action the signer accepts', async () => {
     const h = await boot();
-    const burned = buildCctpBurn({ wallet: WALLET, amount: AMOUNT });
+    const burned = buildCctpBurn({ wallet: WALLET, amount: AMOUNT, destinationDomain: 7 });
     expect(burned).toMatchObject({ venue: 'cctp', action: 'cctp-burn', amountIn: AMOUNT.toString(), tokenIn: { address: AVAX_USDC } });
     expect((await submit(h, 43114, burned.to, burned.data, { nonce: '1', venue: burned.venue, action: burned.action, amountIn: burned.amountIn, tokenIn: burned.tokenIn })).signedTransaction).toMatch(/^0x/);
     const approved = buildCctpApprove(AMOUNT);

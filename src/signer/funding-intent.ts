@@ -105,11 +105,6 @@ function burnChain(chainId: number): CctpChainEntry {
   return entry;
 }
 
-/** Default burn destination: Polygon from Avalanche (rc.7 behavior), Avalanche from elsewhere. */
-function defaultDestination(entry: CctpChainEntry): number {
-  return entry.chainId === 43114 ? 7 : 1;
-}
-
 /**
  * Exact USDC approve to TokenMessengerV2 on a chain that can burn
  * (Avalanche by default, or Base). amountIn is that amount.
@@ -124,7 +119,8 @@ export function buildCctpApprove(amount: bigint, chainId = 43114): FundingIntent
     to: token,
     data,
     value: 0n,
-    config: { enabled: true, destinationDomains: [defaultDestination(entry)], minFinalityThreshold: CCTP_STANDARD_FINALITY },
+    // Local decode check only; the approve does not name a destination.
+    config: { enabled: true, destinationDomains: [entry.allowedDestinationDomains[0]!], minFinalityThreshold: CCTP_STANDARD_FINALITY },
     wallet: '0x0000000000000000000000000000000000000001',
   });
   if (!decoded || decoded.moduleOp !== 'cctp-approve' || decoded.amount !== amount) fail('CCTP approval did not decode');
@@ -141,14 +137,14 @@ export function buildCctpApprove(amount: bigint, chainId = 43114): FundingIntent
 
 /**
  * `depositForBurn` on Avalanche (default) or Base. amountIn is the burn
- * amount. tokenIn is that chain's native USDC. The default destination is
- * Polygon 7 from Avalanche and Avalanche 1 from Base.
+ * amount. tokenIn is that chain's native USDC. `destinationDomain` is
+ * required; there is no default.
  */
 export function buildCctpBurn(input: {
   wallet: string;
   amount: bigint;
   chainId?: number;
-  destinationDomain?: number;
+  destinationDomain: number;
   destinationCaller?: string;
   maxFee?: bigint;
 }): FundingIntentFields {
@@ -156,7 +152,8 @@ export function buildCctpBurn(input: {
   const chainId = input.chainId ?? 43114;
   const entry = burnChain(chainId);
   const wallet = getAddress(input.wallet);
-  const domain = input.destinationDomain ?? defaultDestination(entry);
+  if (!Number.isSafeInteger(input.destinationDomain)) fail('CCTP burn destinationDomain is required');
+  const domain = input.destinationDomain;
   if (!cctpDomain(domain)?.receive) fail(`CCTP destination domain ${domain} is not an enabled CCTP route`);
   if (!entry.allowedDestinationDomains.includes(domain)) fail(`CCTP burn from ${entry.name} may not target domain ${domain}`);
   const caller = input.destinationCaller ?? '0x0000000000000000000000000000000000000000';

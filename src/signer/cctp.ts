@@ -91,7 +91,9 @@ export interface CctpChainEntry {
   enabled: boolean;
   /**
    * Which chain's block numbers `expirationBlock` counts when this chain is
-   * the destination. Arbitrum stack counts Ethereum L1 blocks.
+   * the destination. Arbitrum stack counts Ethereum L1 blocks. Metadata
+   * only: no code reads it yet. Enabling a row with 'ethereum' must
+   * implement it first.
    */
   expirationClock: 'local' | 'ethereum';
 }
@@ -165,7 +167,7 @@ export interface CctpConfig {
   destinationDomains?: number[];
   /**
    * Circle domain ids a `receiveMessage` may name as its source domain. Each
-   * must be an enabled `CCTP_CHAINS` row. Required when the module is
+   * must be an enabled `CCTP_CHAINS` row that can burn. Required when the module is
    * enabled on a receive-only chain (Polygon). Omitted on a chain that can
    * burn means this chain does not receive.
    */
@@ -248,7 +250,7 @@ export function assertCctpConfig(
     if (!entry.receive) {
       throw new EvalancheError(`${label}.sourceDomains is set but ${entry.name} ${chainId} does not receive`, EvalancheErrorCode.INVALID_CONFIG);
     }
-    assertRouteDomains(record.sourceDomains as number[], 'any', `${label}.sourceDomains`);
+    assertRouteDomains(record.sourceDomains as number[], 'burn', `${label}.sourceDomains`);
   }
   if (record.minFinalityThreshold === undefined) {
     throw new EvalancheError(`${label}.minFinalityThreshold must be ${CCTP_STANDARD_FINALITY}`, EvalancheErrorCode.INVALID_CONFIG);
@@ -402,8 +404,10 @@ function decodeReceive(chainId: number, data: string, value: bigint, config: Cct
   if (version !== MESSAGE_VERSION || bodyVersion !== MESSAGE_VERSION) fail('CCTP message version is not 1');
   if (destinationDomain !== local) fail('CCTP message destination domain is not this chain');
   if (!listed(config.sourceDomains, sourceDomain)) fail('CCTP source domain is not allowlisted');
-  const pinnedBurn = cctpDomain(sourceDomain)?.usdc;
-  if (!pinnedBurn || burnToken !== pinnedBurn) fail('CCTP burn token is not the pinned USDC for that domain');
+  // Same rule as startup: a source must be an enabled row that can burn.
+  const source = cctpDomain(sourceDomain);
+  if (!source?.burn) fail('CCTP source domain is not an enabled CCTP burn route');
+  if (burnToken !== source.usdc) fail('CCTP burn token is not the pinned USDC for that domain');
   if (sender !== addressToBytes32(MESSENGER)) fail('CCTP message sender is not TokenMessengerV2');
   if (recipient !== addressToBytes32(MESSENGER)) fail('CCTP message recipient is not TokenMessengerV2');
   if (mintRecipient !== addressToBytes32(wallet)) fail('CCTP mint recipient must be the treasury');
@@ -459,15 +463,18 @@ function receiveChains(): string {
 }
 
 /**
- * Every listed domain must be an enabled table row. `receive` also requires
- * that the row can receive, so a burn never targets a chain the signer
- * cannot mint on.
+ * Every listed domain must be an enabled table row. `receive` (burn
+ * destinations) also requires that the row can receive, so a burn never
+ * targets a chain the signer cannot mint on. `burn` (receive sources) also
+ * requires that the row can burn, so no source can be listed that the
+ * treasury could never have burned from.
  */
-function assertRouteDomains(domains: number[], need: 'receive' | 'any', label: string): void {
+function assertRouteDomains(domains: number[], need: 'receive' | 'burn', label: string): void {
   for (const domain of domains) {
     const remote = cctpDomain(domain);
-    if (!remote || (need === 'receive' && !remote.receive)) {
-      throw new EvalancheError(`${label} has domain ${domain}, which is not an enabled CCTP route`, EvalancheErrorCode.INVALID_CONFIG);
+    if (!remote || (need === 'receive' && !remote.receive) || (need === 'burn' && !remote.burn)) {
+      const what = need === 'burn' ? 'an enabled CCTP chain that can burn' : 'an enabled CCTP route';
+      throw new EvalancheError(`${label} has domain ${domain}, which is not ${what}`, EvalancheErrorCode.INVALID_CONFIG);
     }
   }
 }

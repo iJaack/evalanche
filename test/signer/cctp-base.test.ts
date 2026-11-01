@@ -357,7 +357,7 @@ describe('CCTP V2 Avalanche <-> Base: accept', () => {
 
   it('proposer helpers build Base burns and approvals the signer accepts', async () => {
     const h = await boot();
-    const burned = buildCctpBurn({ wallet: WALLET, amount: AMOUNT, chainId: 8453 });
+    const burned = buildCctpBurn({ wallet: WALLET, amount: AMOUNT, chainId: 8453, destinationDomain: 1 });
     expect(burned).toMatchObject({ venue: 'cctp', action: 'cctp-burn', tokenIn: { address: BASE_USDC }, amountIn: AMOUNT.toString() });
     expect(MESSENGER_IFACE.decodeFunctionData('depositForBurn', burned.data)[1]).toBe(1n);
     expect((await submit(h, 8453, burned.to, burned.data, { nonce: '1', tokenIn: burned.tokenIn })).signedTransaction).toMatch(/^0x/);
@@ -450,7 +450,7 @@ describe('CCTP V2 Avalanche <-> Base: deny', () => {
     const loose = { enabled: true, destinationDomains: [3, 0], sourceDomains: [3], minFinalityThreshold: CCTP_STANDARD_FINALITY } as CctpConfig;
     expect(() => takeCctp({ chainId: 43114, to: MESSENGER, data: burn({ domain: 3 }), value: 0n, config: loose, wallet: WALLET })).toThrow(/not an enabled CCTP route/);
     expect(() => takeCctp({ chainId: 43114, to: MESSENGER, data: burn({ domain: 0 }), value: 0n, config: loose, wallet: WALLET })).toThrow(/not an enabled CCTP route/);
-    expect(() => takeCctp({ chainId: 43114, to: TRANSMITTER, data: receive(message({ source: 3, dest: 1, burnToken: ARB_USDC })), value: 0n, config: loose, wallet: WALLET })).toThrow(/pinned USDC/);
+    expect(() => takeCctp({ chainId: 43114, to: TRANSMITTER, data: receive(message({ source: 3, dest: 1, burnToken: ARB_USDC })), value: 0n, config: loose, wallet: WALLET })).toThrow(/not an enabled CCTP burn route/);
     const self = { enabled: true, destinationDomains: [6], minFinalityThreshold: CCTP_STANDARD_FINALITY } as CctpConfig;
     expect(() => takeCctp({ chainId: 8453, to: MESSENGER, data: burn({ domain: 6 }, 8453), value: 0n, config: self, wallet: WALLET })).toThrow(/not an enabled CCTP route/);
   });
@@ -468,7 +468,7 @@ describe('CCTP V2 Avalanche <-> Base: deny', () => {
   it('fails startup for Arbitrum, unknown domains, Polygon burns and a missing USDC cap', async () => {
     await expect(boot({ 42161: chainBlock(42161, baseCctp) })).rejects.toThrow(/only supported on Avalanche 43114, Base 8453 and Polygon 137/);
     await expect(boot({ 43114: chainBlock(43114, { ...avaxCctp, destinationDomains: [3] }) })).rejects.toThrow(/domain 3, which is not an enabled CCTP route/);
-    await expect(boot({ 43114: chainBlock(43114, { ...avaxCctp, sourceDomains: [3] }) })).rejects.toThrow(/domain 3, which is not an enabled CCTP route/);
+    await expect(boot({ 43114: chainBlock(43114, { ...avaxCctp, sourceDomains: [3] }) })).rejects.toThrow(/domain 3, which is not an enabled CCTP chain that can burn/);
     await expect(boot({ 8453: chainBlock(8453, { ...baseCctp, destinationDomains: [0] }) })).rejects.toThrow(/domain 0, which is not an enabled CCTP route/);
     await expect(boot({ 8453: chainBlock(8453, { ...baseCctp, destinationDomains: [4] }) })).rejects.toThrow(/not a Circle domain/);
     await expect(boot({ 8453: chainBlock(8453, { ...baseCctp, destinationDomains: [6] }) })).rejects.toThrow(/own domain/);
@@ -509,6 +509,42 @@ describe('CCTP V2 Base burns only to Avalanche', () => {
     const h = await boot({ 43114: chainBlock(43114, { ...avaxCctp, destinationDomains: [6, 7] }) });
     expect((await submit(h, 43114, MESSENGER, burn({ domain: 7 }), { nonce: '1' })).signedTransaction).toMatch(/^0x/);
     expect((await submit(h, 43114, MESSENGER, burn({ domain: 6 }), { nonce: '2' })).signedTransaction).toMatch(/^0x/);
+  });
+});
+
+describe('CCTP V2 receive sources must be chains that can burn', () => {
+  it('fails startup when sourceDomains lists receive-only Polygon 7', async () => {
+    await expect(boot({ 43114: chainBlock(43114, { ...avaxCctp, sourceDomains: [7] }) })).rejects.toThrow(/43114\.cctp\.sourceDomains has domain 7, which is not an enabled CCTP chain that can burn/);
+    await expect(boot({ 8453: chainBlock(8453, { ...baseCctp, sourceDomains: [1, 7] }) })).rejects.toThrow(/8453\.cctp\.sourceDomains has domain 7, which is not an enabled CCTP chain that can burn/);
+    await expect(boot({ 137: chainBlock(137, { enabled: true, sourceDomains: [7], minFinalityThreshold: 2000 }) })).rejects.toThrow(/own domain/);
+    const ok = await boot({ 43114: chainBlock(43114, avaxCctp), 8453: chainBlock(8453, baseCctp) });
+    expect(ok.server).toBeTruthy();
+  });
+
+  it('denies a receive from Polygon 7 at request time even when a hand-built config lists it', () => {
+    const loose = { ...avaxCctp, sourceDomains: [6, 7] } as CctpConfig;
+    const fromPolygon = message({ source: 7, dest: 1, burnToken: POLY_USDC });
+    expect(() => takeCctp({ chainId: 43114, to: TRANSMITTER, data: receive(fromPolygon), value: 0n, config: loose, wallet: WALLET })).toThrow(/source domain is not an enabled CCTP burn route/);
+    const toBase = message({ source: 7, dest: 6, burnToken: POLY_USDC });
+    expect(() => takeCctp({ chainId: 8453, to: TRANSMITTER, data: receive(toBase), value: 0n, config: { ...baseCctp, sourceDomains: [1, 7] }, wallet: WALLET })).toThrow(/source domain is not an enabled CCTP burn route/);
+    expect(takeCctp({ chainId: 43114, to: TRANSMITTER, data: receive(message({ source: 6, dest: 1 })), value: 0n, config: loose, wallet: WALLET })).toMatchObject({ kind: 'cctp-mint', asset: AVAX_USDC });
+  });
+});
+
+describe('CCTP V2 buildCctpBurn requires an explicit destination', () => {
+  it('throws when destinationDomain is missing, on Avalanche and Base', () => {
+    expect(() => buildCctpBurn({ wallet: WALLET, amount: AMOUNT } as never)).toThrow(/destinationDomain is required/);
+    expect(() => buildCctpBurn({ wallet: WALLET, amount: AMOUNT, chainId: 8453 } as never)).toThrow(/destinationDomain is required/);
+    expect(() => buildCctpBurn({ wallet: WALLET, amount: AMOUNT, destinationDomain: undefined } as never)).toThrow(/destinationDomain is required/);
+    expect(() => buildCctpBurn({ wallet: WALLET, amount: AMOUNT, destinationDomain: '6' } as never)).toThrow(/destinationDomain is required/);
+    expect(() => buildCctpBurn({ wallet: WALLET, amount: AMOUNT, destinationDomain: 1.5 } as never)).toThrow(/destinationDomain is required/);
+  });
+
+  it('encodes exactly the domain it was given', () => {
+    for (const [chainId, domain] of [[43114, 6], [43114, 7], [8453, 1]] as const) {
+      const built = buildCctpBurn({ wallet: WALLET, amount: AMOUNT, chainId, destinationDomain: domain });
+      expect(MESSENGER_IFACE.decodeFunctionData('depositForBurn', built.data)[1]).toBe(BigInt(domain));
+    }
   });
 });
 
