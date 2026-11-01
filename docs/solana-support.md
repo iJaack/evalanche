@@ -497,7 +497,7 @@ Prefer Kit's narrow public-data packages and `node:crypto` signing. Checked on 2
 
 Extend `test/signer/shrinkwrap.test.ts` to cover each selected Solana runtime package and integrity, while retaining byte-for-byte equality with `package-lock.json` and existing EVM pins. Review resolved URLs and transitive imports. Run `scripts/check-audit-regressions.mjs` with complete production audit input; no new ignored finding by default. The existing `reproducible-pack` job must still produce identical tarball SHA-256s from two clean trees.
 
-Measure tsup output for SDK ESM/CJS, MCP, and signer entries before/after. Keep Node 20 target and the current 1,000,000 byte tarball cap. Prefer narrow imports and native crypto over bundling secret-handling adapters. Any externalization must remain installable from the shipped shrinkwrap. PR2 supplies consumer, signer-bin, Linux/macOS, audit, and bundle-size evidence. No build, install, or audit network request runs for this design-only change.
+Measure tsup output for SDK ESM/CJS, MCP, and signer entries before/after. Keep the Node 20 target and the 1,500,000-byte tarball cap (raised from 1,000,000 on `feat/solana-1.18`; see `docs/releases/RELEASE_NOTES_1.18.0-rc.1.md`). Prefer narrow imports and native crypto over bundling secret-handling adapters. Any externalization must remain installable from the shipped shrinkwrap. PR2 supplies consumer, signer-bin, Linux/macOS, audit, and bundle-size evidence. No build, install, or audit network request runs for this design-only change.
 
 ## E2E plan
 
@@ -534,7 +534,7 @@ Every PR is TDD-first: failing tests commit, implementation commit, then opt-in 
 - Durable-nonce rejection at the message level (PR3): decode System instructions and deny a message with `AdvanceNonceAccount`, before any signing.
 - Pool rule (PR5): `assertSolanaPoolTransferAllowed` does not yet require Jupiter v6 at `stack[0]` of the CPI stack; PR5 must check it.
 - Compare `intent.programIds` with the program set derived from the message; PR2 does not do this yet.
-- Tarball margin: after PR2 the npm tarball is 985,630 bytes, 14,370 bytes under the 1,000,000-byte cap, so later PRs need a size plan.
+- Tarball margin: after PR2 the npm tarball was 985,630 bytes, and 994,531 bytes at 1.17.0-rc.8. The cap is now 1,500,000 bytes on `feat/solana-1.18`; each later PR reports its size delta.
 
 Phase 1b, after PR7: on-chain ALT resolution behind `alt.enabled`, with the verifier and signer each fetching the tables, fully expanding the accounts, and running the same owner and program checks. Unresolvable routes are denied. The flag stays false until phase 1b passes its own TDD and E2E.
 
