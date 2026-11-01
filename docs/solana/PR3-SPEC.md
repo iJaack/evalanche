@@ -20,7 +20,7 @@ In PR3:
 - The `programIds` derivation and equality check.
 - Mint allowlist and treasury-only recipient rules.
 - Token and native caps, and the `maxPerTxUsd` shape (raw-unit checks here; USD valuation is wired in PR4).
-- Hard prediction-market denials (IDs TO VERIFY).
+- Hard prediction-market denials: the table only. The IDs are TO VERIFY (`null`), so these entries are not enforced yet.
 - Message-level `AdvanceNonceAccount` rejection. This is the doc's open PR2 item.
 - Token-2022 is denied as a whole program in phase 1 (`SOL_DENY_PROGRAM_NOT_ENABLED`, v1.1). There is no extension checker and there are no extension checks in PR3.
 
@@ -233,11 +233,11 @@ Inside `decodeSolanaMessage` (standalone, or as step 1a of the policy) checks fa
 1. Hard denials again (defense in depth, same reason): first over the parsed signed message, then over the handed actions (each `programId` and every `ata.create` implied CPI program).
    - **Malformed input rule (v1.1):** the handed list is validated and snapshotted up front, inside one try/catch, before it is used at all.
    - **Handed-actions object form:**
-     - The list and every nested array (such as `impliedCpiPrograms`) is a real array with no holes, and has no own keys other than its canonical indices and `length` (symbol keys, `Symbol.iterator` included, are rejected).
+     - The list and every nested array (such as `impliedCpiPrograms`) is a real array: `Array.isArray`, and the prototype is exactly this realm's `Array.prototype`, checked explicitly. Subclasses, null-prototype arrays, arrays re-prototyped to `Object.prototype`, and cross-realm (`vm`) arrays are rejected. It has no holes, and no own keys other than its canonical indices and `length` (symbol keys, `Symbol.iterator` included, are rejected).
      - Every action is a plain object whose prototype is exactly `Object.prototype`, with only own data properties and no symbol keys. Values are primitives, except `impliedCpiPrograms`.
      - Accessors (getters or setters) are rejected without being called.
      - Proxies are rejected outright (`util.types.isProxy`), both for the list and for each action. A Proxy trap is therefore never trusted for descriptors.
-     - Arrays are walked with index loops over own property descriptors, never with iteration protocols.
+     - Arrays are walked with index loops over own property descriptors, never with iteration protocols. No iterator, Proxy trap or getter supplied by the caller ever runs.
    - Any exception while reading the list, or any failed check, becomes `SolanaPolicyDenial` `SOL_DENY_ACTIONS_MISMATCH` with no `instructionIndex`. That includes a throwing Proxy trap, a throwing getter, a sparse array, `{}`, `null` and `42`. A raw `TypeError` never escapes.
    - The policy never falls back to the handed list. Everything after this point works only from the snapshot (for the comparison) and from the policy's own decode.
    - **Malformed handed actions win over decoder errors.** The copy runs before the own decode (1a). For example, `null` actions with a durable-nonce message give `SOL_DENY_ACTIONS_MISMATCH`, not `SOL_DENY_DURABLE_NONCE`.
@@ -462,6 +462,10 @@ Shared vectors go in `test/signer/fixtures/solana-decode/policy-vectors.json`. E
   - §6.6: ceilings with no defaults, as implemented in #40 (`maxFeeUsd` required, 2.00 ceiling).
   - §7: `SOL_DENY_ACTIONS_MISMATCH` and `SOL_DENY_CLUSTER_MISMATCH` added, for 38 reasons. `SOL_DENY_ACTION_MISMATCH` is now step 7 only.
   - The AUTHORITY-before-RECIPIENT ordering minor was reachable only with forged actions, and the actions binding now covers it.
+- v1.1 doc corrections (2), 2026-11-01, approved by Builder under the same rule (tightening and consistency only, no new reason):
+  - Handed arrays must have exactly this realm's `Array.prototype` (checked explicitly; no iteration, traps or getters).
+  - Drift BET and Hedgehog are TO VERIFY, not enforced: their ids are `null`, and only `verified` entries deny.
+  - DECODER-INTERFACES step numbering is aligned with §6.1.
 - v1.1 doc corrections, 2026-11-01, approved by Builder under the same rule (tightening and consistency only, no new reason):
   - Token-2022 is denied as a whole program (`SOL_DENY_PROGRAM_NOT_ENABLED`), with no extension checks. `token2022.ts`, the TLV vectors and the extension tag row are removed, R9/R10/L3/L4 match the fixtures, and `SOL_DENY_TOKEN2022_EXTENSION` is reserved.
   - Every default is removed (priority fee, and `maxFeeUsd` 0.50). Caps are required, the code values are hard ceilings, and `maxFeeUsd` has a 2.00 ceiling. Q2 is closed.

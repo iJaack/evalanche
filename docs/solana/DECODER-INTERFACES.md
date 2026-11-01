@@ -66,7 +66,7 @@ Every other instruction denies.
   - rent ≤ 3,000,000 lamports;
   - `maxFeeUsd` ≤ 2.00 (required; there is no 0.50 default);
   - `tokenCaps` per mint and `native`, plus `maxPerTxUsd`, required with no default.
-- Jupiter is `SOL_DENY_PROGRAM_UNKNOWN` at decode until PR5. Drift BET and Hedgehog are hard-denied, with their IDs **TO VERIFY**.
+- Jupiter is `SOL_DENY_PROGRAM_UNKNOWN` at decode until PR5. Drift BET and Hedgehog are **TO VERIFY, not enforced**. Their program ids are `null` in `SOLANA_HARD_DENIED_PROGRAMS`, so nothing matches them yet. Only `verified` entries deny with `SOL_DENY_PROGRAM_HARD_DENIED`. Today both are excluded anyway by the closed program allowlist (`SOL_DENY_PROGRAM_UNKNOWN`).
 
 ## Deny reasons
 
@@ -93,21 +93,37 @@ PR4 adds the following reasons: `SOL_DENY_FEE_USD_CAP`, `SOL_DENY_FEE_UNAVAILABL
 
 The order of checks is fixed:
 
-1. In `decodeSolanaMessage` (in the policy this runs as step 0's own decode, after hard denials and the handed-actions copy):
+1. In `decodeSolanaMessage` (in the policy this is step 1a, after hard denials and the handed-actions copy):
    1. hard-denied programs;
    2. `AdvanceNonceAccount` anywhere;
    3. per instruction, in index order;
    4. ComputeBudget cardinality.
-2. In `assertSolanaActionsAllowed`, which decodes the message itself (decoder errors keep their own reason):
-   0. hard denials (message, then handed actions); own decode (its errors keep their reason); handed actions must equal the decode exactly (order, JS types, exact field set; no sorting), else `SOL_DENY_ACTIONS_MISMATCH`. Malformed handed input is also `SOL_DENY_ACTIONS_MISMATCH`, with no index and never a fallback, and it **wins over decoder errors**: `null` actions with a nonce message give `ACTIONS_MISMATCH`. Malformed means any exception while reading the input (Proxy, getters, holes, non-arrays), or any break from the object form. The object form is: plain `Object.prototype` objects with own data properties only; arrays (including `impliedCpiPrograms`) with no own keys besides indices and `length`, symbols included; accessors rejected without being called; Proxies rejected. An invalid base64 message (a plain parser `Error`) is deferred to PR4. Then `intent.chainId` must equal the context cluster, else `SOL_DENY_CLUSTER_MISMATCH`. Steps 1–8 below use only the own decode;
-   1. payer and wallet;
-   2. `programIds`;
-   3. program enablement;
-   4. ComputeBudget caps;
-   5. recipients and authorities;
-   6. action shape;
-   7. mints (wSOL decimals must be 9 in registry and intent, else `SOL_DENY_DECIMALS_MISMATCH`);
-   8. caps.
+2. In `assertSolanaActionsAllowed`, numbered as in `PR3-SPEC.md` §6.1:
+   1. Hard denials: first over the signed message, then the handed-actions copy, then over the copy. Malformed handed input gives `SOL_DENY_ACTIONS_MISMATCH` with no index and never a fallback. It **wins over decoder errors**: `null` actions with a nonce message give `ACTIONS_MISMATCH`.
+   - 1a. Own decode of `intent.tx.serializedMessage`. Its errors keep their own reason and index.
+   - 1b. The handed actions must equal the own decode exactly (order, JS types, exact field set; no sorting). Otherwise `SOL_DENY_ACTIONS_MISMATCH`, with no index.
+   - 1c. `intent.chainId` must equal the context cluster. Otherwise `SOL_DENY_CLUSTER_MISMATCH`, with no index.
+   2. payer and wallet;
+   3. `programIds`;
+   4. program enablement;
+   5. ComputeBudget values and caps;
+   6. recipients and authorities;
+   7. action shape;
+   8. mints (wSOL decimals must be 9 in registry and intent, else `SOL_DENY_DECIMALS_MISMATCH`);
+   9. caps.
+
+   Steps 2–9 use only the own decode. An invalid base64 message, which makes the parser throw a plain `Error`, is deferred to PR4.
+
+**Handed-actions object form** (any break, or any exception while reading it, gives `SOL_DENY_ACTIONS_MISMATCH` with no index, and no user code runs):
+
+- **Arrays** (the outer list and every nested array, such as `impliedCpiPrograms`):
+  - `Array.isArray`, and the prototype is exactly this realm's `Array.prototype`. Subclasses, null-prototype arrays, arrays re-prototyped to `Object.prototype`, and cross-realm (`vm`) arrays are rejected.
+  - No own keys besides canonical indices and `length`. Symbols, `Symbol.iterator` included, are rejected.
+  - No holes.
+  - Elements are read only through own data descriptors with index loops. The array is never iterated.
+- **Actions:** plain objects whose prototype is exactly `Object.prototype`, with own string-keyed data properties only. Values are primitives, except `impliedCpiPrograms`.
+- **Accessors** (on arrays or actions) are rejected without being called.
+- **Proxies** (list, nested arrays or actions) are rejected before any trap can run.
 
 The verifier must report the same first reason.
 
@@ -128,4 +144,9 @@ The verifier must report the same first reason.
   - The handed-actions object form is spelled out, and malformed input wins over decoder errors.
   - wSOL unwrap is the exact balance (format checked in PR3, balance in PR4).
   - Jupiter is `PROGRAM_UNKNOWN` in PR3.
+- v1.1 doc corrections (2), 2026-11-01, approved by Builder under the same rule (tightening and consistency only, no new reason):
+  - Handed arrays must have exactly this realm's `Array.prototype`.
+  - The array shape is documented.
+  - The step numbering is aligned with PR3-SPEC §6.1 (1, 1a–1c, 2–9).
+  - Drift BET and Hedgehog are TO VERIFY, not enforced (ids are `null`).
   - Invalid base64 is deferred to PR4.

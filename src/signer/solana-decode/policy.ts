@@ -55,6 +55,7 @@ function snapshotPrimitive(value: unknown): unknown {
 }
 function snapshotArray<T>(value: unknown, element: (value: unknown) => T): T[] {
   if (isProxy(value) || !Array.isArray(value)) throw new Error('actions must use real arrays');
+  if (Object.getPrototypeOf(value) !== Array.prototype) throw new Error('actions must use plain arrays');
   const descriptor = Object.getOwnPropertyDescriptor(value, 'length');
   const length: unknown = descriptor && 'value' in descriptor ? descriptor.value : undefined;
   if (typeof length !== 'number' || !Number.isInteger(length) || length < 0 || length > 0xffffffff) {
