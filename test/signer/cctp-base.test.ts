@@ -307,8 +307,15 @@ describe('CCTP V2 chain table', () => {
     expect(cctpChain(42161)).toBeUndefined();
     expect(cctpDomain(3)).toBeUndefined();
     expect(CCTP_CHAINS.find((entry) => entry.chainId === 42161)?.expirationClock).toBe('ethereum');
+    expect(CCTP_CHAINS.map((entry) => [entry.chainId, [...entry.allowedDestinationDomains]])).toEqual([
+      [43114, [6, 7]],
+      [8453, [1]],
+      [137, []],
+      [42161, [1]],
+    ]);
     expect(Object.isFrozen(CCTP_CHAINS)).toBe(true);
     expect(Object.isFrozen(CCTP_CHAINS[0])).toBe(true);
+    expect(Object.isFrozen(CCTP_CHAINS[1]!.allowedDestinationDomains)).toBe(true);
   });
 
   it('adds a route as data: an enabled Arbitrum row resolves without code changes', () => {
@@ -477,6 +484,31 @@ describe('CCTP V2 Avalanche <-> Base: deny', () => {
   it('stays off on Base until enabled', async () => {
     const off = await boot({ 8453: chainBlock(8453, undefined) });
     await expect(submit(off, 8453, MESSENGER, burn({}, 8453), { nonce: '1' })).rejects.toThrow(/not allowlisted/);
+  });
+});
+
+describe('CCTP V2 Base burns only to Avalanche', () => {
+  it('denies Base -> Polygon at request time, even when a hand-built config lists 7', async () => {
+    const loose = { ...baseCctp, destinationDomains: [1, 7] } as CctpConfig;
+    expect(() => takeCctp({ chainId: 8453, to: MESSENGER, data: burn({ domain: 7 }, 8453), value: 0n, config: loose, wallet: WALLET })).toThrow(/burn from Base may not target domain 7/);
+    expect(takeCctp({ chainId: 8453, to: MESSENGER, data: burn({ domain: 1 }, 8453), value: 0n, config: loose, wallet: WALLET })).toMatchObject({ kind: 'cctp-burn', asset: BASE_USDC });
+    const h = await boot();
+    await expect(submit(h, 8453, MESSENGER, burn({ domain: 7 }, 8453), { nonce: '1' })).rejects.toThrow(/destination domain is not allowlisted/);
+    expect((await submit(h, 8453, MESSENGER, burn({ domain: 1 }, 8453), { nonce: '2' })).signedTransaction).toMatch(/^0x/);
+    expect(() => buildCctpBurn({ wallet: WALLET, amount: AMOUNT, chainId: 8453, destinationDomain: 7 })).toThrow(/burn from Base may not target domain 7/);
+  });
+
+  it('fails startup when Base destinationDomains lists anything but 1', async () => {
+    await expect(boot({ 8453: chainBlock(8453, { ...baseCctp, destinationDomains: [7] }) })).rejects.toThrow(/destinationDomains has domain 7, which Base 8453 may not burn to \(allowed: 1\)/);
+    await expect(boot({ 8453: chainBlock(8453, { ...baseCctp, destinationDomains: [1, 7] }) })).rejects.toThrow(/domain 7, which Base 8453 may not burn to/);
+    const ok = await boot({ 8453: chainBlock(8453, { ...baseCctp, destinationDomains: [1] }) });
+    expect(ok.server).toBeTruthy();
+  });
+
+  it('keeps Avalanche -> Polygon (rc.7) and Avalanche -> Base', async () => {
+    const h = await boot({ 43114: chainBlock(43114, { ...avaxCctp, destinationDomains: [6, 7] }) });
+    expect((await submit(h, 43114, MESSENGER, burn({ domain: 7 }), { nonce: '1' })).signedTransaction).toMatch(/^0x/);
+    expect((await submit(h, 43114, MESSENGER, burn({ domain: 6 }), { nonce: '2' })).signedTransaction).toMatch(/^0x/);
   });
 });
 

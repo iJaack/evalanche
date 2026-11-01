@@ -74,6 +74,13 @@ export interface CctpChainEntry {
   usdc: string;
   /** May sign `depositForBurn` and the exact messenger approval here. */
   burn: boolean;
+  /**
+   * Destination domains a burn from this chain may ever name. Config
+   * `destinationDomains` must be a subset (startup fails otherwise), and a
+   * burn to any other domain is denied even if config lists it. Each entry
+   * must also be an enabled row that can receive. Empty when `burn` is false.
+   */
+  allowedDestinationDomains: readonly number[];
   /** May sign `receiveMessage` here. */
   receive: boolean;
   /**
@@ -90,14 +97,17 @@ export interface CctpChainEntry {
 }
 
 export const CCTP_CHAINS: readonly CctpChainEntry[] = Object.freeze([
-  { chainId: 43114, domain: CCTP_AVALANCHE_DOMAIN, name: 'Avalanche', usdc: getAddress(AVALANCHE_NATIVE_USDC), burn: true, receive: true, enabled: true, expirationClock: 'local' },
-  { chainId: 8453, domain: CCTP_BASE_DOMAIN, name: 'Base', usdc: getAddress(BASE_NATIVE_USDC), burn: true, receive: true, enabled: true, expirationClock: 'local' },
+  // Avalanche keeps rc.7's Polygon route (7) and adds Base (6).
+  { chainId: 43114, domain: CCTP_AVALANCHE_DOMAIN, name: 'Avalanche', usdc: getAddress(AVALANCHE_NATIVE_USDC), burn: true, allowedDestinationDomains: [CCTP_BASE_DOMAIN, CCTP_POLYGON_DOMAIN], receive: true, enabled: true, expirationClock: 'local' },
+  // Base burns only back to Avalanche (1).
+  { chainId: 8453, domain: CCTP_BASE_DOMAIN, name: 'Base', usdc: getAddress(BASE_NATIVE_USDC), burn: true, allowedDestinationDomains: [CCTP_AVALANCHE_DOMAIN], receive: true, enabled: true, expirationClock: 'local' },
   // Polygon is receive-only, as in rc.7.
-  { chainId: 137, domain: CCTP_POLYGON_DOMAIN, name: 'Polygon', usdc: getAddress(POLYGON_NATIVE_USDC), burn: false, receive: true, enabled: true, expirationClock: 'local' },
+  { chainId: 137, domain: CCTP_POLYGON_DOMAIN, name: 'Polygon', usdc: getAddress(POLYGON_NATIVE_USDC), burn: false, allowedDestinationDomains: [], receive: true, enabled: true, expirationClock: 'local' },
   // Not enabled. Flip `enabled` in a reviewed signer change, after the Base
   // round trip, then add config. Its expirationBlock is an L1 block number.
-  { chainId: 42161, domain: CCTP_ARBITRUM_DOMAIN, name: 'Arbitrum', usdc: getAddress(ARBITRUM_NATIVE_USDC), burn: true, receive: true, enabled: false, expirationClock: 'ethereum' },
-].map((entry) => Object.freeze(entry as CctpChainEntry)));
+  // Avalanche would also need 3 in its allowedDestinationDomains.
+  { chainId: 42161, domain: CCTP_ARBITRUM_DOMAIN, name: 'Arbitrum', usdc: getAddress(ARBITRUM_NATIVE_USDC), burn: true, allowedDestinationDomains: [CCTP_AVALANCHE_DOMAIN], receive: true, enabled: false, expirationClock: 'ethereum' },
+].map((entry) => Object.freeze({ ...entry, allowedDestinationDomains: Object.freeze([...entry.allowedDestinationDomains]) } as CctpChainEntry)));
 
 function enabledEntries(table: readonly CctpChainEntry[]): CctpChainEntry[] {
   return table.filter((entry) => entry.enabled);
@@ -225,6 +235,14 @@ export function assertCctpConfig(
       throw new EvalancheError(`${label}.destinationDomains is set but ${entry.name} ${chainId} does not burn`, EvalancheErrorCode.INVALID_CONFIG);
     }
     assertRouteDomains(record.destinationDomains as number[], 'receive', `${label}.destinationDomains`);
+    for (const domain of record.destinationDomains as number[]) {
+      if (!entry.allowedDestinationDomains.includes(domain)) {
+        throw new EvalancheError(
+          `${label}.destinationDomains has domain ${domain}, which ${entry.name} ${chainId} may not burn to (allowed: ${entry.allowedDestinationDomains.join(', ')})`,
+          EvalancheErrorCode.INVALID_CONFIG,
+        );
+      }
+    }
   }
   if (record.sourceDomains !== undefined) {
     if (!entry.receive) {
@@ -310,6 +328,9 @@ function decodeBurn(chainId: number, data: string, value: bigint, config: CctpCo
   if (!listed(config.destinationDomains, destinationDomain)) fail('CCTP destination domain is not allowlisted');
   const remote = cctpDomain(destinationDomain);
   if (!remote?.receive || remote.domain === local.domain) fail('CCTP destination domain is not an enabled CCTP route');
+  if (!local.allowedDestinationDomains.includes(destinationDomain)) {
+    fail(`CCTP burn from ${local.name} may not target domain ${destinationDomain}`);
+  }
   if (mintRecipient !== addressToBytes32(wallet)) fail('CCTP mint recipient must be the treasury');
   if (burnToken !== local.usdc) fail(`CCTP burn token must be ${local.name} native USDC`);
   if (destinationCaller !== callerWord(config)) fail('CCTP destinationCaller does not match the pin');

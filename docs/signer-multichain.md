@@ -125,18 +125,20 @@ An approve selector on the pUSD entry does not permit `approve`. A call whose `t
 
 `chains[id].cctp` is off unless `enabled` is true. Which chains can turn it on is the `CCTP_CHAINS` table in `src/signer/cctp.ts`:
 
-| Chain | Domain | Native USDC | Burn + approve | Receive | Row |
-| --- | --- | --- | --- | --- | --- |
-| Avalanche 43114 | 1 | `0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E` | yes | yes | enabled |
-| Base 8453 | 6 | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` | yes | yes | enabled |
-| Polygon 137 | 7 | `0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359` | no | yes | enabled |
-| Arbitrum 42161 | 3 | `0xaf88d065e77c8cC2239327C5EDb3A432268e5831` | yes | yes | **disabled** |
+| Chain | Domain | Native USDC | Burn + approve | Allowed burn destinations | Receive | Row |
+| --- | --- | --- | --- | --- | --- | --- |
+| Avalanche 43114 | 1 | `0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E` | yes | 6, 7 | yes | enabled |
+| Base 8453 | 6 | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` | yes | 1 | yes | enabled |
+| Polygon 137 | 7 | `0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359` | no | none | yes | enabled |
+| Arbitrum 42161 | 3 | `0xaf88d065e77c8cC2239327C5EDb3A432268e5831` | yes | 1 | yes | **disabled** |
+
+`allowedDestinationDomains` is a hard ceiling in code. Config `destinationDomains` must be a subset of it, or startup fails, and a burn to a domain outside it is denied even if config lists it. Base can only burn back to Avalanche. Avalanche keeps rc.7's Polygon route and adds Base.
 
 A disabled row is neither a local chain nor a remote domain. Enabling `cctp` on its chain, or listing its domain in `destinationDomains` or `sourceDomains`, fails startup, and calldata that names it is denied. Turning Arbitrum on later is a one-field change to that row in a reviewed signer release, then config. On Arbitrum `expirationBlock` counts Ethereum L1 blocks (`expirationClock: 'ethereum'`).
 
-Any other key, a non-boolean `enabled`, a domain that is not on Circle's list, a domain that is not an enabled row, this chain's own domain, a repeated domain, a `minFinalityThreshold` other than 2000, or a `maxExpirationBlock` that is not a decimal string fails startup. Fast Transfer finality 1000 is rejected. A chain that can burn (Avalanche, Base) requires `destinationDomains`, and each listed domain must be an enabled row that can receive. A receive-only chain (Polygon) requires `sourceDomains` and fails startup if `destinationDomains` is set. Every enabled chain requires a token cap entry for its native USDC; under the no-caps config that entry is present and set to 2^256-1. `destinationDomains` is only the burn destination list. `sourceDomains` is only the receive source list.
+Any other key, a non-boolean `enabled`, a domain that is not on Circle's list, a domain that is not an enabled row, this chain's own domain, a repeated domain, a `minFinalityThreshold` other than 2000, or a `maxExpirationBlock` that is not a decimal string fails startup. Fast Transfer finality 1000 is rejected. A chain that can burn (Avalanche, Base) requires `destinationDomains`, and each listed domain must be an enabled row that can receive and be in that chain's `allowedDestinationDomains`. A receive-only chain (Polygon) requires `sourceDomains` and fails startup if `destinationDomains` is set. Every enabled chain requires a token cap entry for its native USDC; under the no-caps config that entry is present and set to 2^256-1. `destinationDomains` is only the burn destination list. `sourceDomains` is only the receive source list.
 
-On Avalanche and Base the signer accepts `depositForBurn` on TokenMessengerV2 `0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d`. The burn token must be that chain's native USDC. `mintRecipient` must be `bytes32` of the treasury. `destinationDomain` must be in `destinationDomains` and an enabled row that can receive. `destinationCaller` must be `bytes32(0)` unless `destinationCaller` pins an address. `maxFee` must be within `maxFee`, which defaults to 0. `minFinalityThreshold` must be 2000. `depositForBurnWithHook` is denied. Value must be 0. The intent is venue `cctp`, action `cctp-burn`. `tokenIn` is that chain's USDC. `amountIn` is the `depositForBurn` amount.
+On Avalanche and Base the signer accepts `depositForBurn` on TokenMessengerV2 `0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d`. The burn token must be that chain's native USDC. `mintRecipient` must be `bytes32` of the treasury. `destinationDomain` must be in `destinationDomains`, an enabled row that can receive, and in that chain's `allowedDestinationDomains` (Base: only 1). `destinationCaller` must be `bytes32(0)` unless `destinationCaller` pins an address. `maxFee` must be within `maxFee`, which defaults to 0. `minFinalityThreshold` must be 2000. `depositForBurnWithHook` is denied. Value must be 0. The intent is venue `cctp`, action `cctp-burn`. `tokenIn` is that chain's USDC. `amountIn` is the `depositForBurn` amount.
 
 The same config accepts `approve(TokenMessengerV2, amount)` of that chain's USDC when `amount` is positive and equals the intent `amountIn`. `MaxUint256` is denied. Any other spender, including MessageTransmitterV2, is not a CCTP call and falls to the normal allowlist. The intent is venue `cctp`, action `cctp-approve`. The signer signs one transaction at a time, so pairing the approve amount with the following burn amount is the verifier's job. A zero approve stays on `revokeOnly` when that module is on.
 

@@ -158,6 +158,7 @@ export function buildCctpBurn(input: {
   const wallet = getAddress(input.wallet);
   const domain = input.destinationDomain ?? defaultDestination(entry);
   if (!cctpDomain(domain)?.receive) fail(`CCTP destination domain ${domain} is not an enabled CCTP route`);
+  if (!entry.allowedDestinationDomains.includes(domain)) fail(`CCTP burn from ${entry.name} may not target domain ${domain}`);
   const caller = input.destinationCaller ?? '0x0000000000000000000000000000000000000000';
   const maxFee = input.maxFee ?? 0n;
   const data = MESSENGER_IFACE.encodeFunctionData('depositForBurn', [
