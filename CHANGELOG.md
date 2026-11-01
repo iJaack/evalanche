@@ -1,14 +1,15 @@
 # Changelog
 
-## Unreleased
+## 1.17.0-rc.8
 
+- Release candidate, 1 November 2026. Provision `evalanche-1.17.0-rc.8.tgz` as a new pin. Leave `evalanche-1.17.0-rc.1.tgz` through `evalanche-1.17.0-rc.7.tgz` in place. Provisioning again under one of those filenames would overwrite a rollback pin. npm 1.17.0 is unaffected.
 - CCTP V2 adds Base 8453 (domain 6). Avalanche and Base may burn their native USDC with an exact approval to TokenMessengerV2, and Avalanche, Base and Polygon may receive. Treasury to treasury only: `mintRecipient` and the burn caller are the treasury, `destinationCaller` is zero unless pinned, finality is 2000, `maxFee` defaults to 0, and hooks are denied. Base native USDC is `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`.
 - Each burning chain has a code-level `allowedDestinationDomains`: Base 8453 may burn only to Avalanche 1, and Avalanche keeps 6 and 7. A config `destinationDomains` outside that list fails startup, and such a burn is denied at request time. `destinationCaller` stays unset by default and can still be pinned.
 - Chains and domains are a `CCTP_CHAINS` table. Arbitrum 42161 (domain 3) is listed but disabled. A burn destination or receive source must be an enabled row, so a domain that is on Circle's list but not in the table (for example 0) now fails startup. Polygon stays receive-only and now fails startup if `destinationDomains` is set.
 - `buildCctpApprove(amount, chainId?)` and `buildCctpBurn({ chainId? })` default to Avalanche, as before. **Breaking:** `buildCctpBurn` now requires `destinationDomain` and throws when it is missing; the old default to Polygon 7 is gone.
 - `sourceDomains` entries must be enabled chains that can burn (Avalanche 1, Base 6). Listing receive-only Polygon 7 as a source, which rc.7 allowed, now fails startup, and a receive from a non-burning source is denied at request time.
 - Live Standard messages from Iris (1 November 2026) carry `expirationBlock` 0 in both directions; they are new test vectors. The expiry rule is unchanged.
-- Not released. Enabling it needs a new signer version and config, each with its own OK.
+- CCTP stays off until config enables it. Enabling Avalanche ↔ Base needs a separate config change and verifier update.
 
 ## 1.17.0
 
