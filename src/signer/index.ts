@@ -80,3 +80,5 @@ export { resolveSolanaPolicy, resolveSolanaConfig, assertSolanaClusterReady, ass
   SOLANA_GENESIS_HASHES, SOLANA_PHASE1_PROGRAM_IDS, SOLANA_PHASE1_MAINNET_MINTS } from './chain-policy';
 export type { SolanaPolicyInput, ResolvedSolanaPolicy, SolanaClusterConfig, ResolvedSolanaCluster, ResolvedSolanaConfig,
   SolanaFeesConfig, SolanaPriceConfig, SolanaMintConfig, SolanaPoolConfig, SolanaPoolTransferInput } from './chain-policy';
+
+export * from './solana-decode';

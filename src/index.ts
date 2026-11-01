@@ -196,3 +196,5 @@ export { EvalancheMCPServer } from './mcp/server';
 
 export { listAvalancheL1s, getAvalancheL1Network } from './avalanche/l1';
 export type { AvalancheL1, AvalancheL1Options } from './avalanche/l1';
+
+export * from './signer/solana-decode';
