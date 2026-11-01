@@ -504,17 +504,25 @@ describe('direct venue quote and pool allowlist', () => {
   const gnosis = DEX_VENUES.find((item) => item.chainId === 100)!;
   const cronos = DEX_VENUES.find((item) => item.chainId === 25)!;
 
+  const wholeSecondAhead = () => (Math.floor(Date.now() / 1000) + 10) * 1000;
+
   it('refuses a deadline in the past and a deadline more than 600 seconds ahead', async () => {
     const h = await bootVenue(gnosis);
-    const past = BigInt(Math.floor(Date.now() / 1000) - 30);
-    await expect(send(h, gnosis, happyCall(gnosis, { deadline: past }), '1')).rejects.toThrow(/not in the future/);
-    await expect(send(h, gnosis, happyCall(gnosis, { deadline: deadline(601) }), '2')).rejects.toThrow(/10 minutes/);
+    const X_MS = wholeSecondAhead();
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(X_MS + 500);
+      const past = BigInt(Math.floor(Date.now() / 1000) - 30);
+      await expect(send(h, gnosis, happyCall(gnosis, { deadline: past }), '1')).rejects.toThrow(/not in the future/);
+      await expect(send(h, gnosis, happyCall(gnosis, { deadline: deadline(601) }), '2')).rejects.toThrow(/10 minutes/);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   // Deterministic pin of the dex-venue.ts:529 window. Only Date is faked; h.server.handle runs in-process.
   // X is a whole second shortly after boot (the signer refuses approvals older than its state start),
   // so X.999 sits 1 ms before a second boundary.
-  const wholeSecondAhead = () => (Math.floor(Date.now() / 1000) + 10) * 1000;
   it('frozen clock: a deadline exactly 600 seconds ahead is signed and 601 seconds ahead is refused', async () => {
     const h = await bootVenue(gnosis);
     const X_MS = wholeSecondAhead();
@@ -528,12 +536,9 @@ describe('direct venue quote and pool allowlist', () => {
     }
   });
 
-  // RED reproduction of the CI flake (run 41323564213 attempt 1, signer-linux-clean node 20.19.2):
-  // the test derives deadline(601) from Date.now() at X.999, the signer reads Date.now() again at
-  // server.ts:975 (nowSec) after the clock has crossed into X+1, so deadline - nowSec = 600 and
-  // dex-venue.ts:529 (deadline > now + 600) correctly accepts and signs. The refusal expected by the
-  // test above therefore only holds when no second boundary falls between the two clock reads.
-  it('flake repro: deadline(601) taken at X.999 is still refused when the signer reads the clock at X+1.000', async () => {
+  // Crossing from X.999 to X+1.000 makes deadline(601) exactly 600 seconds ahead,
+  // so the signer correctly accepts and signs it.
+  it('flake repro: deadline(601) taken at X.999 is signed when the signer reads the clock at X+1.000 (600 ahead is legal)', async () => {
     const h = await bootVenue(gnosis);
     const X_MS = wholeSecondAhead();
     vi.useFakeTimers({ toFake: ['Date'] });
@@ -542,7 +547,7 @@ describe('direct venue quote and pool allowlist', () => {
       const late = deadline(601);
       expect(late).toBe(BigInt(X_MS / 1000 + 601));
       vi.setSystemTime(X_MS + 1000); // 1 ms later: the signer's floor(now) is X + 1
-      await expect(send(h, gnosis, happyCall(gnosis, { deadline: late }), '1')).rejects.toThrow(/10 minutes/);
+      await expect(send(h, gnosis, happyCall(gnosis, { deadline: late }), '1')).resolves.toMatchObject({ requestId: 'dex-100-1' });
     } finally {
       vi.useRealTimers();
     }
