@@ -5,12 +5,12 @@ This is the active roadmap for the repository.
 <!-- GENERATED:roadmap-release:start -->
 ## Latest Shipped Release
 
-- Latest release: [v1.17.0-rc.7](docs/releases/RELEASE_NOTES_1.17.0-rc.7.md)
-- Shipped in `v1.17.0-rc.7`:
-  - Provision `evalanche-1.17.0-rc.7.tgz` as a new pin. Leave `evalanche-1.17.0-rc.1.tgz`, `evalanche-1.17.0-rc.2.tgz`, `evalanche-1.17.0-rc.3.tgz`, `evalanche-1.17.0-rc.4.tgz`, `evalanche-1.17.0-rc.5.tgz`, and `evalanche-1.17.0-rc.6.tgz` in place. Provisioning again under one of those filenames would overwrite a rollback pin.
-  - Build KyberSwap aggregator routes on every pinned chain where Kyber is available: 1, 10, 56, 137, 146, 999, 4663, 8453, 42161, 43114, 59144, and 80094. Each chain uses its pinned router, Li.Fi diamond, and wrapped native. The builder refuses a disabled chain, an unknown router, a recipient that is not the treasury, and a route that does not match the build.
-  - Name the provision tarball from `package/package.json` inside the staged tarball, after the checksum. The installed tree and the working directory are not used. A bad version, or a filename `evalanche-<other>.tgz` that disagrees with that version, is refused before npm. As root, `EVALANCHE_BOX_TARBALL` is ignored. This rc pins `evalanche-1.17.0-rc.7.tgz`. `start` does not need package.json.
-  - Price a chain from CoinGecko `simple/price` when `price.priceFeed` is `coingecko`. The only URL is `https://api.coingecko.com/api/v3/simple/price`. A feed price must sit inside `price.bounds` or within 50% of a positive static price, and it fails closed otherwise. Redirects are refused. Static prices stay valid when the feed is off.
+- Latest release: [v1.17.1-rc.1](docs/releases/RELEASE_NOTES_1.17.1-rc.1.md)
+- Shipped in `v1.17.1-rc.1`:
+  - Provision `evalanche-1.17.1-rc.1.tgz` as a new pin. Leave `evalanche-1.17.0-rc.1.tgz`, `evalanche-1.17.0-rc.2.tgz`, `evalanche-1.17.0-rc.3.tgz`, `evalanche-1.17.0-rc.4.tgz`, `evalanche-1.17.0-rc.5.tgz`, `evalanche-1.17.0-rc.6.tgz`, and `evalanche-1.17.0-rc.7.tgz` in place. Provisioning again under one of those filenames would overwrite a rollback pin.
+  - CCTP V2 adds Base 8453 (domain 6), treasury to treasury. Avalanche and Base may burn their native USDC with an exact approval to TokenMessengerV2, and Avalanche, Base and Polygon may receive. `mintRecipient` and the burn caller must be the treasury, `destinationCaller` is zero unless pinned, finality is 2000, `maxFee` defaults to 0, and hooks are denied. Base native USDC is `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`.
+  - Chains and domains are the `CCTP_CHAINS` table. Arbitrum 42161 (domain 3) is listed but disabled. Each burning chain has a code-level `allowedDestinationDomains`: Base burns only to Avalanche 1, and Avalanche keeps 6 and 7. A config outside that ceiling fails startup, and such a burn is denied at request time.
+  - `sourceDomains` must list enabled chains that can burn (Avalanche 1, Base 6). Polygon 7 can no longer be a source. A domain on Circle's list but not in the table, such as 0, now fails startup.
 
 ## Current Focus
 
