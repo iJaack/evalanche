@@ -18,10 +18,15 @@ function expectedSummary(v: any) {
 }
 
 describe('Solana policy cluster and wSOL decimals', () => {
-  it('intent chainId differing from context cluster denies SOL_DENY_ACTION_MISMATCH', async () => {
+  // Spec v1.1 §7: the cluster check has its own reason and no instruction index; ACTION_MISMATCH is step 7 only.
+  it('intent chainId differing from context cluster denies SOL_DENY_CLUSTER_MISMATCH without instructionIndex', async () => {
     const b = await setup('approve');
     b.context.cluster = b.intent.chainId === 'solana:mainnet' ? 'solana:devnet' : 'solana:mainnet';
-    expectDeny(() => check(b.actions, b.context, b.intent), 'SOL_DENY_ACTION_MISMATCH');
+    let caught: any;
+    expectDeny(() => { try { return check(b.actions, b.context, b.intent); } catch (error) { caught = error; throw error; } },
+      'SOL_DENY_CLUSTER_MISMATCH');
+    expect(caught.reason).not.toBe('SOL_DENY_ACTION_MISMATCH');
+    expect(caught.instructionIndex).toBeUndefined();
   });
 
   it('matching cluster still allows the approve vector', async () => {
@@ -30,12 +35,13 @@ describe('Solana policy cluster and wSOL decimals', () => {
     expect(check(b.actions, b.context, b.intent)).toEqual(expectedSummary(b.v));
   });
 
-  it('wSOL registry decimals 8 with intent decimals 8 denies SOL_DENY_DECIMALS_MISMATCH', async () => {
+  it('wSOL registry decimals 8 with intent decimals 8 denies SOL_DENY_DECIMALS_MISMATCH at instruction 2', async () => {
     const b = await setup('wrap');
     b.context.config.mints[WSOL].decimals = 8;
     b.intent.tokenIn.decimals = 8;
     assertIntent(b.intent);
-    expectDeny(() => check(b.actions, b.context, b.intent), 'SOL_DENY_DECIMALS_MISMATCH');
+    // The first wSOL-touching action is the system.transfer at instruction 2.
+    expectDeny(() => check(b.actions, b.context, b.intent), 'SOL_DENY_DECIMALS_MISMATCH', 2);
   });
 
   it('wSOL decimals 9 still allows the wrap vector', async () => {
