@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- The npm tarball cap in `scripts/check-package-tarball.mjs` rises from 1,000,000 to 1,500,000 bytes. The package is 994,531 bytes at 1.17.0-rc.8, and the Solana 1.18 work (decoders, RPC quorum, key custody, Jupiter v6) needs room. The cap stays a hard gate in CI and in the publish workflow. See `docs/releases/RELEASE_NOTES_1.18.0-rc.1.md`.
+
 ## 1.17.0-rc.8
 
 - Release candidate, 1 November 2026. Provision `evalanche-1.17.0-rc.8.tgz` as a new pin. Leave `evalanche-1.17.0-rc.1.tgz` through `evalanche-1.17.0-rc.7.tgz` in place. Provisioning again under one of those filenames would overwrite a rollback pin. npm 1.17.0 is unaffected.

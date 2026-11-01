@@ -201,6 +201,65 @@ describe('release automation scripts', () => {
     expect(result.readmeMatches).toBe(true);
   });
 
+  it.each([
+    [1_500_000, true],
+    [1_500_001, false],
+  ])('caps the packed tarball at 1,500,000 bytes by default (size %i)', async (size, ok) => {
+    const root = await makeTempDir();
+    await writeFixture(root, 'README.md', '# Evalanche\n');
+    await writeFixture(root, 'package.json', `${JSON.stringify({
+      name: 'evalanche',
+      version: '1.8.8',
+      main: './dist/index.js',
+      module: './dist/index.mjs',
+      types: './dist/index.d.ts',
+      exports: {
+        '.': {
+          import: './dist/index.mjs',
+          require: './dist/index.js',
+          types: './dist/index.d.ts',
+        },
+      },
+    }, null, 2)}\n`);
+
+    await writeFixture(root, 'pkg/package/README.md', '# Evalanche\n');
+    await writeFixture(root, 'pkg/package/dist/index.js', 'module.exports = {};');
+    await writeFixture(root, 'pkg/package/dist/index.mjs', 'export {};');
+    await writeFixture(root, 'pkg/package/dist/index.d.ts', 'export {};');
+    await writeFixture(root, 'pkg/package/skill/SKILL.md', '# Skill\n');
+    await writeFixture(root, 'pkg/package/package.json', '{}\n');
+
+    const tarballPath = path.join(root, 'evalanche-1.8.8.tgz');
+    await execFileAsync('tar', ['-czf', tarballPath, '-C', path.join(root, 'pkg'), 'package']);
+    await writeFixture(root, 'pack.json', `${JSON.stringify([{
+      filename: 'evalanche-1.8.8.tgz',
+      size,
+      unpackedSize: 2000,
+      entryCount: 5,
+      files: [
+        { path: 'README.md' },
+        { path: 'dist/index.js' },
+        { path: 'dist/index.mjs' },
+        { path: 'dist/index.d.ts' },
+        { path: 'skill/SKILL.md' },
+        { path: 'package.json' },
+      ],
+    }], null, 2)}\n`);
+
+    const run = checkPackageTarball({
+      rootDir: root,
+      packJsonFile: 'pack.json',
+    });
+
+    if (ok) {
+      const result = await run;
+      expect(result.maxBytes).toBe(1_500_000);
+      expect(result.ok).toBe(true);
+    } else {
+      await expect(run).rejects.toThrow('Package tarball validation failed');
+    }
+  });
+
   it('checks audit regressions against a baseline', async () => {
     const root = await makeTempDir();
     await writeFixture(root, 'docs/security/audit-baseline.json', `${JSON.stringify({
