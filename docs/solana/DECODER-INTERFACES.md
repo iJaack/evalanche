@@ -37,13 +37,15 @@ Every other instruction denies.
 |---|---|---|
 | ComputeBudget | `02`+u32 (5 B), `03`+u64 (9 B), each exactly once | none |
 | System | u32 `2` + u64 (12 B) | from (signer, w), to (w) |
-| Token / Token-2022 | `0c`+u64+u8 TransferChecked | source w, mint, destination w, authority signer |
+| Token (SPL Token only; Token-2022 is denied as a whole program, `SOL_DENY_PROGRAM_NOT_ENABLED`, with no extension checks) | `0c`+u64+u8 TransferChecked | source w, mint, destination w, authority signer |
 | | `0d`+u64+u8 ApproveChecked | source w, mint, delegate, owner signer |
 | | `05` Revoke | source w, owner signer |
 | | `09` CloseAccount | account w, destination w, owner signer |
 | | `11` SyncNative | account w |
-| ATA | empty or `00` Create, `01` CreateIdempotent | payer (signer, w), ata w, wallet, mint, System, token program |
+| ATA | empty or `00` Create, `01` CreateIdempotent | payer (signer, w), ata w, wallet, mint, System, token program (Token; Token-2022 → `SOL_DENY_PROGRAM_NOT_ENABLED` before structure) |
 
+- Token-2022 (`TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb`): any instruction → `SOL_DENY_PROGRAM_NOT_ENABLED`, checked before structure. `TokenProgramId` keeps the Token-2022 id only for type completeness.
+- Jupiter and any other unknown top-level program → `SOL_DENY_PROGRAM_UNKNOWN` at decode (Jupiter arrives in PR5). A `swap` intent → `SOL_DENY_PROGRAM_NOT_ENABLED`.
 - Data length, account count and each signer/writable flag are exact.
 - Decoded fields must re-encode to the identical data bytes.
 - ATA derivation seeds are `[wallet, tokenProgram, mint]` under `ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL`.
@@ -55,16 +57,16 @@ Every other instruction denies.
 - Mints only from config, a subset of wSOL, USDC and USDT on mainnet.
 - Exact approve to an allowlisted delegate. Revoke is always allowed.
 - Wrap: an optional wSOL ATA create, a System transfer to the treasury wSOL ATA, then syncNative. Requires `allowWsol`.
-- Unwrap or close: closeAccount of a treasury ATA, with destination and owner both the treasury.
+- Unwrap or close: closeAccount of a treasury ATA, with destination and owner both the treasury. For wSOL, `amountIn` is the exact wSOL ATA balance: PR3 checks presence and format (canonical u64), and PR4 proves the balance. Non-wSOL needs `amountIn` `"0"`.
 - An ATA create needs the treasury as payer and wallet, plus the derived address.
-- Caps:
+- Caps: no defaults. Every cap is required in config. These code values are hard ceilings, and config may not exceed them (`SOL_DENY_CONFIG_ABOVE_CEILING`):
   - CU ≤ 400,000;
   - price ≤ 2,500,000 µlamports;
   - priority fee ≤ 1,000,000 lamports;
   - rent ≤ 3,000,000 lamports;
-  - `maxFeeUsd` 0.50 by default;
+  - `maxFeeUsd` ≤ 2.00 (required; there is no 0.50 default);
   - `tokenCaps` per mint and `native`, plus `maxPerTxUsd`, required with no default.
-- Jupiter is denied until PR5. Drift BET and Hedgehog are hard-denied, with their IDs **TO VERIFY**.
+- Jupiter is `SOL_DENY_PROGRAM_UNKNOWN` at decode until PR5. Drift BET and Hedgehog are hard-denied, with their IDs **TO VERIFY**.
 
 ## Deny reasons
 
@@ -85,19 +87,19 @@ SOL_DENY_CAP_MISSING  SOL_DENY_TOKEN_CAP  SOL_DENY_CONFIG_ABOVE_CEILING
 SOL_DENY_ACTIONS_MISMATCH  SOL_DENY_CLUSTER_MISMATCH
 ```
 
-There are 38 reasons. `SOL_DENY_ACTION_MISMATCH` means only a step-7 shape mismatch. `SOL_DENY_ACTIONS_MISMATCH` and `SOL_DENY_CLUSTER_MISMATCH` never carry an `instructionIndex`.
+There are 38 reasons. `SOL_DENY_TOKEN2022_EXTENSION` is reserved and not emitted in PR3. `SOL_DENY_ACTION_MISMATCH` means only a step-7 shape mismatch. `SOL_DENY_ACTIONS_MISMATCH` and `SOL_DENY_CLUSTER_MISMATCH` never carry an `instructionIndex`.
 
 PR4 adds the following reasons: `SOL_DENY_FEE_USD_CAP`, `SOL_DENY_FEE_UNAVAILABLE`, `SOL_DENY_RENT_CAP`, `SOL_DENY_PER_TX_USD` and `SOL_DENY_PRICE_UNAVAILABLE`, plus blockhash and simulation reasons.
 
 The order of checks is fixed:
 
-1. In `decodeSolanaMessage`:
+1. In `decodeSolanaMessage` (in the policy this runs as step 0's own decode, after hard denials and the handed-actions copy):
    1. hard-denied programs;
    2. `AdvanceNonceAccount` anywhere;
    3. per instruction, in index order;
    4. ComputeBudget cardinality.
 2. In `assertSolanaActionsAllowed`, which decodes the message itself (decoder errors keep their own reason):
-   0. hard denials (message, then handed actions); own decode (its errors keep their reason); handed actions must equal the decode exactly (order, JS types, exact field set; no sorting), else `SOL_DENY_ACTIONS_MISMATCH`. Malformed handed input, meaning any exception while reading it (Proxy, getters, holes, non-arrays), is also `SOL_DENY_ACTIONS_MISMATCH`, never a fallback. Then `intent.chainId` must equal the context cluster, else `SOL_DENY_CLUSTER_MISMATCH`. Steps 1–8 below use only the own decode;
+   0. hard denials (message, then handed actions); own decode (its errors keep their reason); handed actions must equal the decode exactly (order, JS types, exact field set; no sorting), else `SOL_DENY_ACTIONS_MISMATCH`. Malformed handed input is also `SOL_DENY_ACTIONS_MISMATCH`, with no index and never a fallback, and it **wins over decoder errors**: `null` actions with a nonce message give `ACTIONS_MISMATCH`. Malformed means any exception while reading the input (Proxy, getters, holes, non-arrays), or any break from the object form. The object form is: plain `Object.prototype` objects with own data properties only; arrays (including `impliedCpiPrograms`) with no own keys besides indices and `length`, symbols included; accessors rejected without being called; Proxies rejected. An invalid base64 message (a plain parser `Error`) is deferred to PR4. Then `intent.chainId` must equal the context cluster, else `SOL_DENY_CLUSTER_MISMATCH`. Steps 1–8 below use only the own decode;
    1. payer and wallet;
    2. `programIds`;
    3. program enablement;
@@ -120,3 +122,10 @@ The verifier must report the same first reason.
 ## Amendment log
 
 - v1.1, 2026-11-01, approved by Builder under Giacomo's 2026-10-26 'vai autonomamente' rule for evalanche Solana (tightening only). Adds `SOL_DENY_ACTIONS_MISMATCH` and `SOL_DENY_CLUSTER_MISMATCH` (38 reasons), the new order and the malformed-input rule, and wSOL decimals 9. The verifier must bind its input actions to its own decode the same way.
+- v1.1 doc corrections, 2026-11-01, approved by Builder under the same rule (no new reason):
+  - Token-2022 is denied as a whole program, with no extension checks.
+  - All defaults are removed (`maxFeeUsd` 0.50 included). Caps are required and the code values are hard ceilings, with `maxFeeUsd` ≤ 2.00.
+  - The handed-actions object form is spelled out, and malformed input wins over decoder errors.
+  - wSOL unwrap is the exact balance (format checked in PR3, balance in PR4).
+  - Jupiter is `PROGRAM_UNKNOWN` in PR3.
+  - Invalid base64 is deferred to PR4.

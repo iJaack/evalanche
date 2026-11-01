@@ -22,7 +22,7 @@ In PR3:
 - Token and native caps, and the `maxPerTxUsd` shape (raw-unit checks here; USD valuation is wired in PR4).
 - Hard prediction-market denials (IDs TO VERIFY).
 - Message-level `AdvanceNonceAccount` rejection. This is the doc's open PR2 item.
-- The Token-2022 extension checker as a pure function over account bytes. PR4 supplies the bytes from RPC.
+- Token-2022 is denied as a whole program in phase 1 (`SOL_DENY_PROGRAM_NOT_ENABLED`, v1.1). There is no extension checker and there are no extension checks in PR3.
 
 Not in PR3:
 
@@ -35,14 +35,13 @@ Not in PR3:
 
 ```
 src/signer/solana-decode/
-  constants.ts      program ids, instruction tags, sizes, SOLANA_PHASE1_DEFAULTS, hard-deny table
+  constants.ts      program ids, instruction tags, sizes, SOLANA_PHASE1_CEILINGS (hard ceilings, no defaults), hard-deny table
   errors.ts         SolanaDenyReason union, SolanaPolicyDenial class, deny()
   accounts.ts       account-role table from the v0 header (signer / writable per static index)
   compute-budget.ts decodeComputeBudget (moves PR2's inline loop here; PR2 API unchanged)
   system.ts         decodeSystem
-  token.ts          decodeToken (SPL Token and Token-2022 share layouts; `tokenProgram` is part of the output)
+  token.ts          decodeToken (SPL Token only; any Token-2022 instruction -> SOL_DENY_PROGRAM_NOT_ENABLED before structure)
   ata.ts            decodeAta + deriveTreasuryAtas (async, @solana/addresses) + TreasuryAtaMap
-  token2022.ts      assertToken2022NoExtensions(kind, data) pure TLV check (bytes supplied by PR4)
   decode.ts         decodeSolanaMessage(parsed) -> DecodedSolanaAction[]; derivedProgramIds()
   policy.ts         assertSolanaActionsAllowed(actions, config, intent); debit summary
   index.ts          re-exports (also re-exported from src/signer/index.ts and src/index.ts, as PR2 did)
@@ -141,7 +140,8 @@ Every decoder throws `SolanaPolicyDenial` (§7) and never returns a partial resu
 | System `1111…1111` | u32 LE `2` Transfer + u64 lamports (12 B) | 2: from (signer, writable), to (writable) | decode; policy decides |
 | | u32 `4` AdvanceNonceAccount, at any position | – | deny `SOL_DENY_DURABLE_NONCE` (checked before other System decoding) |
 | | u32 `0` CreateAccount, `1` Assign, `3` CreateAccountWithSeed, `5` WithdrawNonce, `6` InitializeNonce, `7` AuthorizeNonce, `8` Allocate, `9` AllocateWithSeed, `10` AssignWithSeed, `11` TransferWithSeed, `12` UpgradeNonceAccount, other | – | deny `SOL_DENY_SYSTEM_INSTRUCTION` |
-| SPL Token `Tokenkeg…` and Token-2022 `Tokenz…` | `0C` TransferChecked + u64 + u8 (10 B) | 4: source (w), mint (ro), destination (w), authority (signer). No extra multisig signers | decode |
+| Token-2022 `Tokenz…` | any instruction | – | deny `SOL_DENY_PROGRAM_NOT_ENABLED` (whole program, checked before any structural check; v1.1) |
+| SPL Token `Tokenkeg…` | `0C` TransferChecked + u64 + u8 (10 B) | 4: source (w), mint (ro), destination (w), authority (signer). No extra multisig signers | decode |
 | | `0D` ApproveChecked + u64 + u8 (10 B) | 4: source (w), mint (ro), delegate (ro), owner (signer) | decode |
 | | `05` Revoke (1 B) | 2: source (w), owner (signer) | decode |
 | | `09` CloseAccount (1 B) | 3: account (w), destination (w), owner (signer) | decode |
@@ -149,22 +149,21 @@ Every decoder throws `SolanaPolicyDenial` (§7) and never returns a partial resu
 | | `12` InitializeAccount3 (33 B) at top level | – | deny `SOL_DENY_TOKEN_INIT_OUTSIDE_ATA` |
 | | `03` Transfer, `04` Approve (unchecked) | – | deny `SOL_DENY_TOKEN_UNCHECKED` |
 | | `06` SetAuthority, `07` MintTo, `08` Burn, `0A` Freeze, `0B` Thaw, `0E` MintToChecked, `0F` BurnChecked, `00/01/02/10/13/14` initializers, `15–18` utility ops, other | – | deny `SOL_DENY_TOKEN_INSTRUCTION` |
-| | Token-2022 only: any tag ≥ `19` (extension instruction families) | – | deny `SOL_DENY_TOKEN2022_EXTENSION` |
-| ATA `ATokenGP…` | empty or `00` Create, `01` CreateIdempotent | 6: payer (signer, w), ata (w), wallet (ro), mint (ro), system program (ro, == System), token program (ro, Token or Token-2022) | decode |
+| ATA `ATokenGP…` | empty or `00` Create, `01` CreateIdempotent | 6: payer (signer, w), ata (w), wallet (ro), mint (ro), system program (ro, == System), token program (ro, Token; Token-2022 here -> `SOL_DENY_PROGRAM_NOT_ENABLED` before structure) | decode |
 | | `02` RecoverNested, other | – | deny `SOL_DENY_ATA_INSTRUCTION` |
-| any other program id | – | – | deny `SOL_DENY_PROGRAM_UNKNOWN` (Jupiter included until PR5) |
+| any other program id | – | – | deny `SOL_DENY_PROGRAM_UNKNOWN` (Jupiter included: top-level Jupiter is `SOL_DENY_PROGRAM_UNKNOWN` in PR3; Jupiter arrives in PR5) |
 
 Notes:
 
 - The hex tags in the Token rows are the 1-byte instruction discriminator (`0x0C` = 12, `0x0D` = 13, `0x11` = 17, `0x12` = 18).
-- Token-2022 instruction enum values ≥ 25 are extension instructions. PR3 confirms the exact boundary from the pinned spl-token-2022 source and records the source revision in the test header.
+- Token-2022 is denied as a whole program in phase 1 (`SOL_DENY_PROGRAM_NOT_ENABLED`, v1.1): every Token-2022 instruction, and an ATA create whose token program is Token-2022. No Token-2022 tag table and no extension boundary apply in PR3.
 
 ## 4. ComputeBudget (moved, unchanged semantics)
 
 - Exactly one `setComputeUnitLimit` and one `setComputeUnitPrice` per message. Their position is free; real wallets emit both orders (vectors R1 and R2).
 - Both values must equal the intent (`tx.computeUnitLimit`, `tx.computeUnitPriceMicroLamports`). The limit must be ≥ 1.
 - Caps: `units ≤ fees.maxComputeUnitLimit`, `µlamports ≤ fees.maxComputeUnitPriceMicroLamports`, and `solanaPriorityFeeLamports(units, price) ≤ fees.maxPriorityFeeLamports`.
-- `maxPriorityFeeLamports` defaults to `"1000000"`. 400,000 × 2,500,000 / 10⁶ = 1,000,000, so the default pair sits exactly at the cap. A vector one µlamport above the price cap must deny.
+- There are no defaults (v1.1). `maxComputeUnitLimit`, `maxComputeUnitPriceMicroLamports` and `maxPriorityFeeLamports` are required in config, else `SOL_DENY_CAP_MISSING`. The code values are hard ceilings (§6.6). At the ceilings, 400,000 × 2,500,000 / 10⁶ = 1,000,000, so the ceiling pair sits exactly at the priority-fee ceiling. A vector one µlamport above the price cap must deny.
 
 ## 5. ATA derivation via @solana/addresses
 
@@ -185,7 +184,7 @@ export function treasuryAtaOwnerOf(map: TreasuryAtaMap, account: Base58): Base58
 - `decodeAta` checks structure only:
   - 6 accounts with the flags in §3.2;
   - account 4 is System;
-  - account 5 is Token or Token-2022;
+  - account 5 is Token (Token-2022 -> `SOL_DENY_PROGRAM_NOT_ENABLED`, checked first);
   - data is empty, `00` or `01`.
 
   It does not judge ownership, so a third-party ATA create (R3) still decodes. Policy then requires:
@@ -222,7 +221,7 @@ export interface SolanaDebitSummary {
 
 ### 6.1 Order of checks (first failure wins; the order is part of the contract and is tested)
 
-`decodeSolanaMessage` runs first and fails in this order:
+Inside `decodeSolanaMessage` (standalone, or as step 1a of the policy) checks fail in this order:
 
 - (a) a pre-pass over all top-level program ids for hard denials (§8);
 - (b) a pre-pass for System `AdvanceNonceAccount` at any index;
@@ -232,7 +231,17 @@ export interface SolanaDebitSummary {
 `assertSolanaActionsAllowed(actions, context, intent)` treats the handed `actions` as untrusted evidence. It runs:
 
 1. Hard denials again (defense in depth, same reason): first over the parsed signed message, then over the handed actions (each `programId` and every `ata.create` implied CPI program).
-   - **Malformed input rule (v1.1):** the handed list is validated and snapshotted up front, inside one try/catch, before it is used at all. It must be a real array with no holes. Every element must be a non-null object whose own properties are all data properties (no getters or setters), and nested arrays follow the same rule. Any exception while reading it, including a throwing Proxy trap, a throwing getter, a sparse array, `{}`, `null` or `42`, or any failed check, becomes `SolanaPolicyDenial` `SOL_DENY_ACTIONS_MISMATCH` with no `instructionIndex`. The policy never falls back to the handed list. Everything after this point works only from the snapshot (for the comparison) and from the policy's own decode.
+   - **Malformed input rule (v1.1):** the handed list is validated and snapshotted up front, inside one try/catch, before it is used at all.
+   - **Handed-actions object form:**
+     - The list and every nested array (such as `impliedCpiPrograms`) is a real array with no holes, and has no own keys other than its canonical indices and `length` (symbol keys, `Symbol.iterator` included, are rejected).
+     - Every action is a plain object whose prototype is exactly `Object.prototype`, with only own data properties and no symbol keys. Values are primitives, except `impliedCpiPrograms`.
+     - Accessors (getters or setters) are rejected without being called.
+     - Proxies are rejected outright (`util.types.isProxy`), both for the list and for each action. A Proxy trap is therefore never trusted for descriptors.
+     - Arrays are walked with index loops over own property descriptors, never with iteration protocols.
+   - Any exception while reading the list, or any failed check, becomes `SolanaPolicyDenial` `SOL_DENY_ACTIONS_MISMATCH` with no `instructionIndex`. That includes a throwing Proxy trap, a throwing getter, a sparse array, `{}`, `null` and `42`. A raw `TypeError` never escapes.
+   - The policy never falls back to the handed list. Everything after this point works only from the snapshot (for the comparison) and from the policy's own decode.
+   - **Malformed handed actions win over decoder errors.** The copy runs before the own decode (1a). For example, `null` actions with a durable-nonce message give `SOL_DENY_ACTIONS_MISMATCH`, not `SOL_DENY_DURABLE_NONCE`.
+   - **Deferred to PR4:** an invalid base64 `serializedMessage` makes `parseSolanaMessage` throw a plain `Error` (no `SolanaPolicyDenial` reason). Mapping it to a stable deny reason is deferred to PR4, together with request-level error handling.
 1a. Own decode: `decodeSolanaMessage(parseSolanaMessage(intent.tx.serializedMessage))`. Decoder errors keep their own reason and index, for example `SOL_DENY_DURABLE_NONCE` at 2.
 1b. `SOL_DENY_ACTIONS_MISMATCH` (no `instructionIndex`): the handed actions must equal the own decode exactly. That means list order (no sorting), JS types (bigint ≠ number ≠ string) and the exact own-property set (an extra key whose value is `undefined` is a mismatch, and so is a missing key).
 1c. `SOL_DENY_CLUSTER_MISMATCH` (no `instructionIndex`): `intent.chainId` must equal `context.cluster`.
@@ -241,7 +250,7 @@ Steps 2–9 run only on the own decode:
 
 2. `intent.wallet === treasury === message payer`.
 3. `programIds` equality (§6.2).
-4. Every program is in `config.programs` and is a phase-1 program. Jupiter (`JUP6…`) is denied with `SOL_DENY_PROGRAM_NOT_ENABLED` until PR5.
+4. Every program is in `config.programs` and is a phase-1 program, else `SOL_DENY_PROGRAM_NOT_ENABLED`. Jupiter (`JUP6…`) as a top-level program never reaches this step: it is `SOL_DENY_PROGRAM_UNKNOWN` at decode in PR3. A `swap` intent is `SOL_DENY_PROGRAM_NOT_ENABLED`. Jupiter arrives in PR5.
 5. ComputeBudget values and caps (§4).
 6. Treasury-only recipients and authorities (§6.4), over every action in index order:
    - `system.transfer.to`, `transferChecked.destination`, `closeAccount.destination` and `ata.create.wallet`/`payer`;
@@ -263,11 +272,11 @@ Every shape also contains exactly one `computeBudget.setComputeUnitLimit` and on
 | intent | Required actions besides ComputeBudget | Rules |
 |---|---|---|
 | `transfer` / `system` (SOL wrap) | optional `ata.create` for the wSOL ATA, then exactly one `system.transfer`, then exactly one `token.syncNative` | `config.allowWsol === true`; `from === treasury`; `to === treasuryAtas.get(wSOL).ata`; `syncNative.account === to`; `tokenIn.mint === wSOL`, decimals 9; `lamports === amountIn > 0`. `to === from` gives `SOL_DENY_SELF_TRANSFER_NOOP`. |
-| `transfer` / `spl-token` (unwrap or close) | exactly one `token.closeAccount` | `account` is a treasury ATA of an allowlisted mint (reverse lookup); `destination === owner === treasury`; mint == `tokenIn.mint`. Non-wSOL: `amountIn === "0"` and PR4 must prove a zero token balance. wSOL: PR4 proves `amountIn` == token balance (open question Q4). |
+| `transfer` / `spl-token` (unwrap or close) | exactly one `token.closeAccount` | `account` is a treasury ATA of an allowlisted mint (reverse lookup); `destination === owner === treasury`; mint == `tokenIn.mint`. Non-wSOL: `amountIn === "0"` and PR4 must prove a zero token balance. wSOL (Q4 closed, v1.1): `amountIn` is the exact wSOL ATA token balance. PR3 checks presence and format (canonical u64, else `SOL_DENY_AMOUNT_MISMATCH`), and PR4 proves it equals the balance. |
 | `transfer` / `spl-token` (ATA create) | exactly one `ata.create` | §5 rules; `tokenIn.mint === ata.mint`; `amountIn === "0"`. |
 | `approve` / `spl-token` | exactly one `token.approveChecked` | `source === treasuryAtas.get(mint).ata`; `owner === treasury`; `delegate ∈ config.delegates` (empty means always deny); `mint === tokenIn.mint`; `decimals === mints[mint].decimals === tokenIn.decimals`; `0 < amount === amountIn < 2⁶⁴−1`. |
 | `revoke` / `spl-token` | exactly one `token.revoke` | `source === treasuryAtas.get(tokenIn.mint).ata`; `owner === treasury`; `amountIn === "0"`. Allowed even if the old delegate is no longer allowlisted. |
-| `swap` / `jupiter-v6` | – | `SOL_DENY_PROGRAM_NOT_ENABLED` until PR5 |
+| `swap` / `jupiter-v6` | – | `SOL_DENY_PROGRAM_NOT_ENABLED` until PR5 (top-level Jupiter instructions are `SOL_DENY_PROGRAM_UNKNOWN` at decode) |
 
 `token.transferChecked` decodes, but there is no allowed top-level shape for it in the no-Jupiter phase. Only derived ATAs are admitted, so a treasury-to-treasury SPL transfer is a no-op and denies with `SOL_DENY_SELF_TRANSFER_NOOP`. Any other destination denies with `SOL_DENY_RECIPIENT_NOT_TREASURY`. The decoder exists for PR5 route accounting and for exact denial reasons.
 
@@ -279,14 +288,7 @@ Every shape also contains exactly one `computeBudget.setComputeUnitLimit` and on
   - Every System transfer destination, every token destination, every close destination, and every ATA wallet or payer is the treasury or a derived treasury ATA. Otherwise `SOL_DENY_RECIPIENT_NOT_TREASURY` or `SOL_DENY_ATA_OWNER_NOT_TREASURY`.
   - Every authority, owner or signer is the treasury, otherwise `SOL_DENY_AUTHORITY_NOT_TREASURY`.
   - There is no config recipient list (doc §Transfer action).
-- Token-2022: no phase-1 mint is Token-2022. A Token-2022 mint is admitted only if Ops adds it to `config.mints` with `tokenProgram: Token-2022`, and PR4 must then pass `assertToken2022NoExtensions` on the fetched mint and account data:
-
-  ```ts
-  /** mint: data.length must be exactly 82 (base Mint, no TLV). account: exactly 170 = 165 base + AccountType(2) at 165
-   *  + one TLV entry ImmutableOwner (type 7, length 0). Anything else -> SOL_DENY_TOKEN2022_EXTENSION.
-   *  ExtensionType numbering TO VERIFY against the pinned spl-token-2022 source in PR3. */
-  export function assertToken2022NoExtensions(kind: 'mint' | 'account', data: Uint8Array): void;
-  ```
+- Token-2022 (v1.1): denied as a whole program in phase 1 (`SOL_DENY_PROGRAM_NOT_ENABLED`). Every Token-2022 instruction, and every ATA create whose token program is Token-2022, is denied before any structural check, so no Token-2022 mint can be used even if config lists one. There are no extension checks (no TLV parsing) in PR3, and none is planned for phase 1. `SOL_DENY_TOKEN2022_EXTENSION` stays in the frozen catalog but is reserved and never emitted in PR3.
 
 ### 6.5 Caps (raw units in PR3, USD in PR4)
 
@@ -349,6 +351,7 @@ export class SolanaPolicyDenial extends Error {
 - `SOL_DENY_ACTIONS_MISMATCH` (v1.1): the handed actions are malformed (§6.1, malformed input rule) or differ from the policy's own decode (§6.1, 1b). It has no `instructionIndex`.
 - `SOL_DENY_CLUSTER_MISMATCH` (v1.1): `intent.chainId` differs from `context.cluster` (§6.1, 1c). It has no `instructionIndex`.
 - `SOL_DENY_ACTION_MISMATCH` keeps only its step-7 meaning (action shape versus intent).
+- `SOL_DENY_TOKEN2022_EXTENSION` is reserved and not emitted in PR3, because Token-2022 is denied as a whole program with `SOL_DENY_PROGRAM_NOT_ENABLED`.
 - PR4 adds the fee, rent, blockhash, simulation and USD reasons (§9) in the same union.
 
 ## 8. Hard prediction-market denials
@@ -368,9 +371,9 @@ export const SOLANA_HARD_DENIED_PROGRAMS: ReadonlyArray<{ name: string; programI
 ## 9. Fields PR4 will enforce (defined now, not enforced in PR3)
 
 - **Fee:** `totalFeeLamports = 5000 × 1 + priorityFeeLamports` (from `SolanaDebitSummary`), then the max of that and the `getFeeForMessage` result on both quorum RPCs. Then `ceil(totalFee × solPriceUsdMicros / 1e9) ≤ maxFeeUsd`, with CoinGecko id `solana`, bounds and freshness per the doc. Reasons: `SOL_DENY_FEE_USD_CAP`, `SOL_DENY_FEE_UNAVAILABLE`.
-- **Rent:** for each `newAccounts` entry, `getMinimumBalanceForRentExemption(expectedSpace)` on both RPCs. Spaces: 165 for Token, 170 for a Token-2022 ATA with ImmutableOwner. The sum must be ≤ `maxRentLamports`, and the simulated lamport debit must match. Reason: `SOL_DENY_RENT_CAP`.
+- **Rent:** for each `newAccounts` entry, `getMinimumBalanceForRentExemption(expectedSpace)` on both RPCs. Spaces: 165 for Token. Token-2022 is denied in phase 1, and the `170` value in the type is reserved. The sum must be ≤ `maxRentLamports`, and the simulated lamport debit must match. Reason: `SOL_DENY_RENT_CAP`.
 - **USD:** `Σ debits × price ≤ maxPerTxUsd`. Reasons: `SOL_DENY_PER_TX_USD`, `SOL_DENY_PRICE_UNAVAILABLE`.
-- **Account state:** existing-ATA mint and owner, zero balance for close, wSOL balance for unwrap, delegate state for approve replacement, and Token-2022 extension bytes.
+- **Account state:** existing-ATA mint and owner, zero balance for close, wSOL balance for unwrap (`amountIn` must equal it, per Q4), and delegate state for approve replacement. There are no Token-2022 extension bytes, because Token-2022 is denied.
 
 ## 10. Size budget
 
@@ -398,12 +401,12 @@ export const SOLANA_HARD_DENIED_PROGRAMS: ReadonlyArray<{ name: string; programI
 | R6 | `FCHULYmFEAbLieKijUfr4VacVoT6FF1ZrocA59J2yaomyMLiUm5VbTBPmeKi6PQ65yDuPxhrxhLs948qHvprT3x` | 464121702 | v0: CB limit only, System ×4 | `SOL_DENY_COMPUTE_BUDGET_CARDINALITY` |
 | R7 | `4ajCxMeSKszs3aDPNCo8pWdr4v6RhdZttNwyYEtkdS3EtXg9YpPunNHMonUnRDcbVjimwq7BSUWpi267xGbswSRA` | 464121539 | v0: CB limit, price, SetLoadedAccountsDataSizeLimit, unknown program | `SOL_DENY_COMPUTE_BUDGET_INSTRUCTION` |
 | R8 | `2TMRp3gse21GAeSYJuZUmYbX6ybdhcfWgD6PxbFzX6k1ChSXJ36WTHaBgZ58EjXWnKnRGCKVDyJuLGvK6kgXo4qG` | 464121482 | v0: CB limit, price, SetLoadedAccountsDataSizeLimit (idx 2), ATA, transfer, syncNative, unknown program | `SOL_DENY_COMPUTE_BUDGET_INSTRUCTION` at idx 2 (order test). Its syncNative and ATA instructions are instruction-level positives |
-| R9 | `4QiCHtb7emZXsoncoHUd9g3Kyg2sKYYSs9w8g82sHyFs3YRWgXLyzFBnBTjVaLWxkUEdTs2ZaJiFHWNKKTnt6D8k` | 464121482 | v0: … Token close, Token-2022 close … | instruction-level decode of a Token-2022 closeAccount; message denies |
-| R10 | `ceCM7yAbNKVurFU1pMX33XZQFmDuVLp5QTV3CbPZzPtzTtoffo7iFsNCeKxGjHtJsbT8L5WXAQrZiw8QQtRAxnM` | 464121582 | v0: AdvanceNonce, CreateAccountWithSeed, Token-2022 InitializeAccount3 | `SOL_DENY_DURABLE_NONCE` first (order test) |
+| R9 | `4QiCHtb7emZXsoncoHUd9g3Kyg2sKYYSs9w8g82sHyFs3YRWgXLyzFBnBTjVaLWxkUEdTs2ZaJiFHWNKKTnt6D8k` | 464121482 | v0: … Token close, Token-2022 close … | the Token-2022 closeAccount at idx 6 denies `SOL_DENY_PROGRAM_NOT_ENABLED` at instruction level; the message denies `SOL_DENY_COMPUTE_BUDGET_INSTRUCTION` at idx 2 |
+| R10 | `ceCM7yAbNKVurFU1pMX33XZQFmDuVLp5QTV3CbPZzPtzTtoffo7iFsNCeKxGjHtJsbT8L5WXAQrZiw8QQtRAxnM` | 464121582 | v0: AdvanceNonce, CreateAccountWithSeed, Token-2022 InitializeAccount3 | `SOL_DENY_DURABLE_NONCE` first (order test); the Token-2022 instruction alone denies `SOL_DENY_PROGRAM_NOT_ENABLED` |
 | L1 | `5N5JcdiJXJXN8SdVHuodrbdAQCimdNB4qLqM1cgGQDeT7hM4c42qC7NdRojCM5dCnjwoAqPqkLZwkxWrpK8mwzVa` | 464121542 | legacy: unchecked Token Transfer | its instruction bytes re-wrapped into a v0 fixture → `SOL_DENY_TOKEN_UNCHECKED` |
 | L2 | `2iKgkPCWDCaDZnRkdUFg5itBJWfhQbUmRbFqw64x2h3a7rksYnqoL3VWPufosUsRmtoEzFBZppLoY54cbLrv64vh` | 464121599 | legacy: temp-account wrap (CreateAccountWithSeed, InitializeAccount3, transfer, syncNative, close) | re-wrapped → `SOL_DENY_SYSTEM_INSTRUCTION` / `SOL_DENY_TOKEN_INIT_OUTSIDE_ATA` |
-| L3 | `3JLEkYkb11ZfoYsEDtyW59f7cvW5Ru8Z2hZ4Kn9qsHsBVFwFbAfnnnT2AfUzhA6PvJoBeZuS9ZfzoxHr2prFgJSf` | 464121663 | legacy: Token-2022 Burn, close | re-wrapped → `SOL_DENY_TOKEN_INSTRUCTION` |
-| L4 | `5nMUBJyAAydorsupWc68Sz2uF5Cv7tHdngGLugb2scCwQg531Pk33ukV6Ff99tJziqf8iRidbGqm5o4uWwer6Z3Z` | 464121582 | legacy, 2 signers: ATA + Token-2022 transferChecked | Token-2022 transferChecked instruction-level positive |
+| L3 | `3JLEkYkb11ZfoYsEDtyW59f7cvW5Ru8Z2hZ4Kn9qsHsBVFwFbAfnnnT2AfUzhA6PvJoBeZuS9ZfzoxHr2prFgJSf` | 464121663 | legacy: Token-2022 Burn, close | re-wrapped → `SOL_DENY_PROGRAM_NOT_ENABLED` at idx 2 |
+| L4 | `5nMUBJyAAydorsupWc68Sz2uF5Cv7tHdngGLugb2scCwQg531Pk33ukV6Ff99tJziqf8iRidbGqm5o4uWwer6Z3Z` | 464121582 | legacy, 2 signers: ATA + Token-2022 transferChecked | re-wrapped → `SOL_DENY_PROGRAM_NOT_ENABLED` at idx 2 |
 | V1 | `3TD1EQyPKiYnHctRcQim8kaDZRPMTC7WnyiZ8JYrPxXX2wbpTbvhLcS3NpN3Yy5QHbMY5532d4Ys1yVg9cSPE5fE` | 464121664 | v0 with ALTs, includes RequestHeapFrame | `parseSolanaMessage` already denies the ALT; the heap-frame bytes are re-wrapped → `SOL_DENY_COMPUTE_BUDGET_INSTRUCTION` |
 
 - "Re-wrapped" means the recorded instruction bytes are kept exactly and placed in a v0, one-signer message built by `test/signer/solana-message-helpers.ts`. The fixture records the source signature and instruction index.
@@ -431,7 +434,7 @@ These use `key('treasury')` from `solana-message-helpers.ts` and real mint addre
 - **Program ids:** a duplicate-free `programIds` that omits the implied System for ATA create, an extra `programIds` entry.
 - **Message shape and config:** wrap with `allowWsol: false`, a second System transfer, `syncNative` on a non-treasury account, a Jupiter program present, a hard-denied program (synthetic `verified` entry in a test-only table).
 - **ComputeBudget:** caps one unit or one µlamport above, and a priority fee at cap + 1 lamport via rounding.
-- **Token-2022 data:** Token-2022 account data with a TransferHook TLV, and mint data of 83 bytes.
+- **Token-2022:** a Token-2022 instruction and an ATA create using Token-2022, each giving `SOL_DENY_PROGRAM_NOT_ENABLED` (v1.1; no TLV or extension vectors).
 
 ### 11.4 Shared vectors for Ops
 
@@ -444,10 +447,10 @@ Shared vectors go in `test/signer/fixtures/solana-decode/policy-vectors.json`. E
 ## 13. Open questions (need an answer before or during PR3 review)
 
 1. **The transfer action is nearly empty without Jupiter.** Under treasury-only recipients, SPL `transferChecked` has no legal top-level shape (self-transfer is a no-op). Confirm that "SPL Token transfer path" means decode-and-deny plus wrap, unwrap and ATA housekeeping, not a payment.
-2. **Fee defaults versus doc.** The doc says economic values live in the reviewed config and absence fails startup. This spec adds code defaults and ceilings per the brief. Confirm the ceilings: config may lower but not raise CU, price, priority and rent; `maxFeeUsd` may go higher.
+2. **Fee caps versus doc. Closed (v1.1).** There are no code defaults: caps are required in the reviewed config, and their absence fails. The code values are hard ceilings. Config may set CU, price, priority fee, rent and `maxFeeUsd` at or below their ceilings, never above (`SOL_DENY_CONFIG_ABOVE_CEILING`). `maxFeeUsd` has a 2.00 ceiling.
 3. **Prediction-market program ids.** Drift BET and Hedgehog IDs are TO VERIFY by a named reviewer, with a recorded source.
-4. **wSOL unwrap amount.** Should `amountIn` equal the wSOL ATA token balance (proven in PR4), or `"0"` with the native credit checked by simulation?
-5. **Token-2022 mints.** None is in phase 1. Should PR3 ship the extension checker anyway, as specced, or defer it until a Token-2022 mint is requested?
+4. **wSOL unwrap amount. Closed (v1.1).** `amountIn` is the exact wSOL ATA token balance. PR3 checks presence and format (canonical u64), and PR4 proves the balance.
+5. **Token-2022 mints. Closed (v1.1).** Token-2022 is denied as a whole program (`SOL_DENY_PROGRAM_NOT_ENABLED`). There is no extension checker in PR3.
 6. **Jupiter scope.** Jupiter v6 (PR5) is in scope, with swaps only between allowlisted mints and the treasury as the only recipient. The doc's CPI-only pool-vault exemption (`allowPoolTransfers`, pending Giacomo) is still needed, because Jupiter pays input into AMM vaults. "Treasury as the only recipient" applies to the *output* and to every top-level transfer.
 
 ## Amendment log
@@ -459,3 +462,11 @@ Shared vectors go in `test/signer/fixtures/solana-decode/policy-vectors.json`. E
   - §6.6: ceilings with no defaults, as implemented in #40 (`maxFeeUsd` required, 2.00 ceiling).
   - §7: `SOL_DENY_ACTIONS_MISMATCH` and `SOL_DENY_CLUSTER_MISMATCH` added, for 38 reasons. `SOL_DENY_ACTION_MISMATCH` is now step 7 only.
   - The AUTHORITY-before-RECIPIENT ordering minor was reachable only with forged actions, and the actions binding now covers it.
+- v1.1 doc corrections, 2026-11-01, approved by Builder under the same rule (tightening and consistency only, no new reason):
+  - Token-2022 is denied as a whole program (`SOL_DENY_PROGRAM_NOT_ENABLED`), with no extension checks. `token2022.ts`, the TLV vectors and the extension tag row are removed, R9/R10/L3/L4 match the fixtures, and `SOL_DENY_TOKEN2022_EXTENSION` is reserved.
+  - Every default is removed (priority fee, and `maxFeeUsd` 0.50). Caps are required, the code values are hard ceilings, and `maxFeeUsd` has a 2.00 ceiling. Q2 is closed.
+  - The handed-actions object form is spelled out: plain `Object.prototype` objects, arrays with no extra own keys (symbols included), accessors rejected unread, index loops only.
+  - Malformed handed actions win over decoder errors.
+  - wSOL Q4 is closed (exact balance; presence and format in PR3, balance in PR4). Q5 is closed.
+  - Jupiter is `SOL_DENY_PROGRAM_UNKNOWN` at decode in PR3 and arrives in PR5.
+  - Invalid base64 (a plain `Error` from the parser) is deferred to PR4.

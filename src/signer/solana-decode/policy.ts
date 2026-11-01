@@ -1,3 +1,4 @@
+import { isProxy } from 'node:util/types';
 import { parseSolanaMessage, solanaPriorityFeeLamports, type SolanaChainId, type SolanaSigningIntent } from '../solana-intent';
 import type { ResolvedSolanaCluster } from '../solana-policy';
 import { type TreasuryAtaMap, treasuryAtaOwnerOf } from './ata';
@@ -34,13 +35,16 @@ function structurallyEqual(left: unknown, right: unknown): boolean {
   return leftKeys.length === rightKeys.length && leftKeys.every(key =>
     Object.hasOwn(right, key) && structurallyEqual(leftRecord[key], rightRecord[key]));
 }
-/** Copy data descriptors only, retaining every own key without invoking accessors. */
-function snapshotProperties(source: object, target: object, normalize: (value: unknown, key: PropertyKey) => unknown): void {
-  for (const key of Reflect.ownKeys(source)) {
+/** Copy string-keyed data properties without invoking accessors. */
+function snapshotProperties(source: object, target: object, normalize: (value: unknown, key: string) => unknown): void {
+  const keys = Reflect.ownKeys(source);
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i];
+    if (typeof key !== 'string') throw new Error('action keys must be strings');
     const descriptor = Object.getOwnPropertyDescriptor(source, key);
     if (!descriptor || !('value' in descriptor)) throw new Error('actions must contain only data properties');
     Object.defineProperty(target, key, { value: normalize(descriptor.value, key),
-      enumerable: descriptor.enumerable, writable: true, configurable: !(Array.isArray(target) && key === 'length') });
+      enumerable: descriptor.enumerable, writable: true, configurable: true });
   }
 }
 function snapshotPrimitive(value: unknown): unknown {
@@ -50,23 +54,30 @@ function snapshotPrimitive(value: unknown): unknown {
   return value;
 }
 function snapshotArray<T>(value: unknown, element: (value: unknown) => T): T[] {
-  if (!Array.isArray(value)) throw new Error('actions must use real arrays');
-  const length: unknown = value.length;
+  if (isProxy(value) || !Array.isArray(value)) throw new Error('actions must use real arrays');
+  const descriptor = Object.getOwnPropertyDescriptor(value, 'length');
+  const length: unknown = descriptor && 'value' in descriptor ? descriptor.value : undefined;
   if (typeof length !== 'number' || !Number.isInteger(length) || length < 0 || length > 0xffffffff) {
     throw new Error('invalid action array length');
   }
+  const keys = Reflect.ownKeys(value);
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i];
+    if (key !== 'length' && (typeof key !== 'string' || !/^(0|[1-9][0-9]*)$/.test(key) || Number(key) >= length)) {
+      throw new Error('action arrays must contain only index keys and length');
+    }
+  }
+  if (keys.length !== length + 1) throw new Error('action arrays must not have holes');
   const result: T[] = [];
-  snapshotProperties(value, result, (item, key) =>
-    typeof key === 'string' && /^(0|[1-9][0-9]*)$/.test(key) && Number(key) < length
-      ? element(item) : snapshotPrimitive(item));
-  if (result.length !== length) throw new Error('action array length changed');
   for (let i = 0; i < length; i++) {
-    if (!Object.hasOwn(result, i)) throw new Error('action arrays must not have holes');
+    const item = Object.getOwnPropertyDescriptor(value, String(i));
+    if (!item || !('value' in item)) throw new Error('action arrays must contain only own data elements');
+    result.push(element(item.value));
   }
   return result;
 }
 function snapshotAction(value: unknown): Record<PropertyKey, unknown> {
-  if (value === null || typeof value !== 'object' || Object.getPrototypeOf(value) !== Object.prototype) {
+  if (value === null || typeof value !== 'object' || isProxy(value) || Object.getPrototypeOf(value) !== Object.prototype) {
     throw new Error('actions must be plain objects');
   }
   const result: Record<PropertyKey, unknown> = {};
@@ -88,11 +99,15 @@ export function assertSolanaActionsAllowed(
   } catch {
     deny('SOL_DENY_ACTIONS_MISMATCH', 'supplied actions are not plain data');
   }
-  for (const a of snapshot) {
+  for (let i = 0; i < snapshot.length; i++) {
+    const a = snapshot[i];
     const index = typeof a.instructionIndex === 'number' ? a.instructionIndex : undefined;
     if (typeof a.programId === 'string') assertProgramNotHardDenied(a.programId, index);
     if (a.kind === 'ata.create' && Array.isArray(a.impliedCpiPrograms)) {
-      for (const p of a.impliedCpiPrograms) if (typeof p === 'string') assertProgramNotHardDenied(p, index);
+      for (let j = 0; j < a.impliedCpiPrograms.length; j++) {
+        const p: unknown = a.impliedCpiPrograms[j];
+        if (typeof p === 'string') assertProgramNotHardDenied(p, index);
+      }
     }
   }
   // Bind supplied evidence and cluster before steps 2–9.
