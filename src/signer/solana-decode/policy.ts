@@ -34,6 +34,46 @@ function structurallyEqual(left: unknown, right: unknown): boolean {
   return leftKeys.length === rightKeys.length && leftKeys.every(key =>
     Object.hasOwn(right, key) && structurallyEqual(leftRecord[key], rightRecord[key]));
 }
+/** Copy data descriptors only, retaining every own key without invoking accessors. */
+function snapshotProperties(source: object, target: object, normalize: (value: unknown, key: PropertyKey) => unknown): void {
+  for (const key of Reflect.ownKeys(source)) {
+    const descriptor = Object.getOwnPropertyDescriptor(source, key);
+    if (!descriptor || !('value' in descriptor)) throw new Error('actions must contain only data properties');
+    Object.defineProperty(target, key, { value: normalize(descriptor.value, key),
+      enumerable: descriptor.enumerable, writable: true, configurable: !(Array.isArray(target) && key === 'length') });
+  }
+}
+function snapshotPrimitive(value: unknown): unknown {
+  if ((value !== null && typeof value === 'object') || typeof value === 'function') {
+    throw new Error('action values must be primitive');
+  }
+  return value;
+}
+function snapshotArray<T>(value: unknown, element: (value: unknown) => T): T[] {
+  if (!Array.isArray(value)) throw new Error('actions must use real arrays');
+  const length: unknown = value.length;
+  if (typeof length !== 'number' || !Number.isInteger(length) || length < 0 || length > 0xffffffff) {
+    throw new Error('invalid action array length');
+  }
+  const result: T[] = [];
+  snapshotProperties(value, result, (item, key) =>
+    typeof key === 'string' && /^(0|[1-9][0-9]*)$/.test(key) && Number(key) < length
+      ? element(item) : snapshotPrimitive(item));
+  if (result.length !== length) throw new Error('action array length changed');
+  for (let i = 0; i < length; i++) {
+    if (!Object.hasOwn(result, i)) throw new Error('action arrays must not have holes');
+  }
+  return result;
+}
+function snapshotAction(value: unknown): Record<PropertyKey, unknown> {
+  if (value === null || typeof value !== 'object' || Object.getPrototypeOf(value) !== Object.prototype) {
+    throw new Error('actions must be plain objects');
+  }
+  const result: Record<PropertyKey, unknown> = {};
+  snapshotProperties(value, result, (item, key) => key === 'impliedCpiPrograms'
+    ? snapshotArray(item, snapshotPrimitive) : snapshotPrimitive(item));
+  return result;
+}
 /** Pure offline policy; USD valuation, rent and account balances require PR4 evidence. */
 export function assertSolanaActionsAllowed(
   actions: readonly DecodedSolanaAction[], context: SolanaPolicyContext, intent: SolanaSigningIntent,
@@ -42,17 +82,26 @@ export function assertSolanaActionsAllowed(
   // 1. Hard denials, including the actual message even for supplied decoded evidence.
   const message = parseSolanaMessage(intent.tx.serializedMessage);
   for (const [index, ix] of message.instructions.entries()) assertProgramNotHardDenied(ix.programId, index);
-  for (const a of actions) {
-    assertProgramNotHardDenied(a.programId, a.instructionIndex);
-    if (a.kind === 'ata.create') for (const p of a.impliedCpiPrograms) assertProgramNotHardDenied(p, a.instructionIndex);
+  let snapshot: Record<PropertyKey, unknown>[];
+  try {
+    snapshot = snapshotArray(actions, snapshotAction);
+  } catch {
+    deny('SOL_DENY_ACTIONS_MISMATCH', 'supplied actions are not plain data');
+  }
+  for (const a of snapshot) {
+    const index = typeof a.instructionIndex === 'number' ? a.instructionIndex : undefined;
+    if (typeof a.programId === 'string') assertProgramNotHardDenied(a.programId, index);
+    if (a.kind === 'ata.create' && Array.isArray(a.impliedCpiPrograms)) {
+      for (const p of a.impliedCpiPrograms) if (typeof p === 'string') assertProgramNotHardDenied(p, index);
+    }
   }
   // Bind supplied evidence and cluster before steps 2–9.
   const decoded = decodeSolanaMessage(message);
-  if (!structurallyEqual(actions, decoded)) {
+  if (!structurallyEqual(snapshot, decoded)) {
     deny('SOL_DENY_ACTIONS_MISMATCH', 'supplied actions differ from the signed message');
   }
   if (intent.chainId !== context.cluster) {
-    deny('SOL_DENY_ACTION_MISMATCH', 'intent cluster differs from policy context');
+    deny('SOL_DENY_CLUSTER_MISMATCH', 'intent cluster differs from policy context');
   }
   // 2–4. Bind payer, program commitment and explicit phase admission.
   if (intent.wallet !== treasury || message.staticAccountKeys[0] !== treasury) {
