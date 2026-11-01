@@ -22,7 +22,7 @@ const MAINNET_MINTS = {
  * asset -> number references. Values below are synthetic test bounds, not policy defaults.
  * Programs need uniqueness and subset membership, not ordering (the doc specifies none).
  */
-function template(maxFeeUsd: string = PROVISIONAL_SOLANA_POLICY.maxFeeUsdDefault, maxPerTxUsd = '100'): RecordValue {
+function template(maxFeeUsd: string = PROVISIONAL_SOLANA_POLICY.maxFeeUsdTemplate, maxPerTxUsd = '100'): RecordValue {
   return { enabled: false, secretKeyPath: join(tmpdir(), 'evalanche-test-only-never-read', 'solana.key'), clusters: {
     [MAINNET]: {
       enabled: false, killSwitch: false,
@@ -88,22 +88,22 @@ async function signEvm(h: Awaited<ReturnType<typeof boot>>) {
 
 describe('PR2 full typed Solana config', () => {
   it.each(['0', '100', '1000.000000'])('preserves configured maxPerTxUsd verbatim: %s', (value) => {
-    const resolve = requireFn(chainModule, 'resolveSolanaConfig'); const config = template(PROVISIONAL_SOLANA_POLICY.maxFeeUsdDefault, value); const result = resolve(config);
+    const resolve = requireFn(chainModule, 'resolveSolanaConfig'); const config = template(PROVISIONAL_SOLANA_POLICY.maxFeeUsdTemplate, value); const result = resolve(config);
     expect(result.enabled).toBe(false);
     expect(result.clusters[MAINNET]).toMatchObject(cluster(config));
     expect(result.clusters[MAINNET].price.bounds[USDC]).toEqual({ min: 0.5, max: 2 });
     expect(result.clusters[MAINNET].price.bounds).not.toHaveProperty(USDC.toLowerCase());
-    expect(result.clusters[MAINNET].fees.maxFeeUsd).toBe(PROVISIONAL_SOLANA_POLICY.maxFeeUsdDefault); expect(result.clusters[MAINNET].maxPerTxUsd).toBe(value);
+    expect(result.clusters[MAINNET].fees.maxFeeUsd).toBe(PROVISIONAL_SOLANA_POLICY.maxFeeUsdTemplate); expect(result.clusters[MAINNET].maxPerTxUsd).toBe(value);
   });
-  it.each([undefined, { enabled: false, clusters: {} }, { clusters: { [MAINNET]: {} } }])('defaults flags with no other invented economics (except provisional maxFeeUsd): %j', (input) => {
+  it.each([undefined, { enabled: false, clusters: {} }, { clusters: { [MAINNET]: {} } }])('defaults flags with no invented economics: %j', (input) => {
     const resolve = requireFn(chainModule, 'resolveSolanaConfig'); const result = resolve(input);
     expect(result.enabled).toBe(false);
     for (const name of CLUSTERS) {
       const c = result.clusters[name];
       expect(c.enabled).toBe(false); expect(c.killSwitch).toBe(false); expect(c.alt.enabled).toBe(false); expect(c.allowWsol).toBe(false);
       expect(c.jupiter.enabled).toBe(false); expect(c.jupiter.allowPoolTransfers).toBe(PROVISIONAL_SOLANA_POLICY.allowPoolTransfersDefault);
-      // Exclude maxFeeUsd explicitly: provisional default per Builder; no other economic defaults.
-      expect(c.fees?.maxFeeUsd).toBe(PROVISIONAL_SOLANA_POLICY.maxFeeUsdDefault);
+      // Economic caps must all be explicit, including maxFeeUsd.
+      expect(c.fees?.maxFeeUsd).toBeUndefined();
       for (const field of ['maxComputeUnitLimit', 'maxComputeUnitPriceMicroLamports', 'maxPriorityFeeLamports']) {
         expect(c.fees?.[field], `fees.${field}`).toBeUndefined();
       }
@@ -112,9 +112,9 @@ describe('PR2 full typed Solana config', () => {
       }
     }
   });
-  it('defaults omitted maxFeeUsd in template fees to the provisional Builder cap', () => {
+  it('leaves omitted maxFeeUsd undefined (required, no default)', () => {
     const resolve = requireFn(chainModule, 'resolveSolanaConfig'); const config = template(); delete cluster(config).fees.maxFeeUsd;
-    expect(resolve(config).clusters[MAINNET].fees.maxFeeUsd).toBe(PROVISIONAL_SOLANA_POLICY.maxFeeUsdDefault);
+    expect(resolve(config).clusters[MAINNET].fees.maxFeeUsd).toBeUndefined();
   });
   it.each(['2', '0.25'])('keeps explicit valid maxFeeUsd %s configurable', (fee) => {
     const resolve = requireFn(chainModule, 'resolveSolanaConfig');
@@ -167,10 +167,14 @@ describe('PR2 full typed Solana config', () => {
     const resolve = requireFn(chainModule, 'resolveSolanaConfig'); const config = template(); cluster(config).mints[USDC].tokenProgram = TOKEN_2022;
     expect(resolve(config).clusters[MAINNET].mints[USDC].tokenProgram).toBe(TOKEN_2022);
   });
-  it('does not hardcode pending Ops proposals as upper bounds', () => {
-    const resolve = requireFn(chainModule, 'resolveSolanaConfig'); const config = template(); const c = cluster(config);
-    c.fees = { maxComputeUnitLimit: 400001, maxComputeUnitPriceMicroLamports: '2500001', maxPriorityFeeLamports: '1000001', maxFeeUsd: '2' }; c.maxRentLamports = '3000001';
-    expect(resolve(config).clusters[MAINNET].fees).toEqual(c.fees);
+  it('rejects fee and rent values above the phase-1 hard ceilings', () => {
+    const resolve = requireFn(chainModule, 'resolveSolanaConfig');
+    expect(resolve(template('2')).clusters[MAINNET].fees.maxFeeUsd).toBe('2');
+    for (const [field, value] of [['maxComputeUnitLimit', 400001], ['maxComputeUnitPriceMicroLamports', '2500001'], ['maxPriorityFeeLamports', '1000001'], ['maxRentLamports', '3000001']] as const) {
+      const config = template('2'); const c = cluster(config);
+      if (field === 'maxRentLamports') c[field] = value; else c.fees[field] = value;
+      expect(() => resolve(config), field).toThrow(/SOL_DENY_CONFIG_ABOVE_CEILING/);
+    }
   });
   it.each(['0', '0.50', '2', '2.000000'])('accepts canonical USD representation %s for both caps', (usd) => {
     const resolve = requireFn(chainModule, 'resolveSolanaConfig'); const result = resolve(template(usd, usd));
@@ -312,12 +316,12 @@ describe('PR2 readiness is separate from flag policy and signing availability', 
     expect(requireFn(chainModule, 'resolveSolanaPolicy')(config).effective).toEqual([MAINNET]);
     await expect(boot(config)).rejects.toThrow(/solana/i);
   });
-  it('readiness accepts enabled config without explicit maxFeeUsd because the default applies', () => {
+  it('readiness rejects enabled config without explicit maxFeeUsd', () => {
     const resolve = requireFn(chainModule, 'resolveSolanaConfig'); const ready = requireFn(chainModule, 'assertSolanaClusterReady');
     const config = template(); config.enabled = true; cluster(config).enabled = true; delete cluster(config).fees.maxFeeUsd;
     const normalized = resolve(config);
-    expect(normalized.clusters[MAINNET].fees.maxFeeUsd).toBe(PROVISIONAL_SOLANA_POLICY.maxFeeUsdDefault);
-    expect(() => ready(normalized, MAINNET)).not.toThrow();
+    expect(normalized.clusters[MAINNET].fees.maxFeeUsd).toBeUndefined();
+    expect(() => ready(normalized, MAINNET)).toThrow();
   });
   it('readiness rejects enabled config without maxPerTxUsd independently of parsing', () => {
     const resolve = requireFn(chainModule, 'resolveSolanaConfig'); const ready = requireFn(chainModule, 'assertSolanaClusterReady');
