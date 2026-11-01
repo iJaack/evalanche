@@ -90,7 +90,7 @@ export interface SignerChainConfig {
   dex?: DexVenueConfig;
   /** Zero-approval and setApprovalForAll(false) only. Off unless enabled. */
   revokeOnly?: RevokeOnlyConfig;
-  /** CCTP V2 burn on Avalanche and receive on Polygon. Off unless enabled. */
+  /** CCTP V2 burn, exact approve and receive per the `CCTP_CHAINS` table in cctp.ts. Off unless enabled. */
   cctp?: CctpConfig;
 }
 
