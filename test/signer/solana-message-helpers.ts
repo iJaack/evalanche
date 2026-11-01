@@ -7,9 +7,10 @@ import {
 } from './solana-test-helpers';
 
 // This helper is also a new file: its own guard accompanies the importing suite's guard.
-// PROVISIONAL — chosen by Builder on 26 Oct 2026 as the most cautious options; TO BE CONFIRMED BY GIACOMO. Change here only.
+// Builder 1 Nov 2026 (PR3 §13 decisions: maxFeeUsd required, hard ceiling 2.00, no default), still to be confirmed by Giacomo.
+// maxFeeUsdTemplate is an explicit fixture value, not a code default. Change here only.
 export const PROVISIONAL_SOLANA_POLICY = {
-  maxFeeUsdDefault: '0.50',
+  maxFeeUsdTemplate: '0.50',
   allowPoolTransfersDefault: false,
   maxPerTxUsdRequired: true,
 } as const;
