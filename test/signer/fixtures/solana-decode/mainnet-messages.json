@@ -1,0 +1,1552 @@
+[
+  {
+    "id": "R1",
+    "provenance": "mainnet",
+    "signature": "52pvnYHgfsEVrdq1HX8uY6vnMVFvqEfsHQK9kZArHuCyphsbyBXZUqBT1S8vkZZWu9HXCcQQLGzr2iTdyudBDqwK",
+    "slot": 464121701,
+    "blockTime": 1793542445,
+    "fetchedAt": "2026-11-01T14:14:27.915Z",
+    "rpc": "https://solana-rpc.publicnode.com",
+    "version": 0,
+    "messageHex": "800100020449d5edc679fb75911ef546b7c5debd8a7363018634c73f1ce6c9070de602b65fa2715e91ec6fe1470f67e69341c24ddf96d0af7ea8e7dd0ae590f5b9a6fc23740306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a400000000000000000000000000000000000000000000000000000000000000000000000483920190a23c9af2280afc38259724e25288c3870376cb61e5fbaf400a32719030200090350c300000000000002000502400d0300030200010c02000000bb3edd0c0000000000",
+    "expected": {
+      "actions": [
+        {
+          "instructionIndex": 0,
+          "programId": "ComputeBudget111111111111111111111111111111",
+          "kind": "computeBudget.setComputeUnitPrice",
+          "microLamports": "50000"
+        },
+        {
+          "instructionIndex": 1,
+          "programId": "ComputeBudget111111111111111111111111111111",
+          "kind": "computeBudget.setComputeUnitLimit",
+          "units": 200000
+        },
+        {
+          "instructionIndex": 2,
+          "programId": "11111111111111111111111111111111",
+          "kind": "system.transfer",
+          "from": "5yDxn2VBgwdVPQAFFbdZWFdoY5Xbyh369QQYgn6N2wLa",
+          "to": "Bw7K4xf7Mai3RfyFEQMGHvqHR8weBPrXR5n5V4a7iap3",
+          "lamports": "215826107"
+        }
+      ]
+    },
+    "expectedRoles": [
+      {
+        "index": 0,
+        "address": "5yDxn2VBgwdVPQAFFbdZWFdoY5Xbyh369QQYgn6N2wLa",
+        "signer": true,
+        "writable": true
+      },
+      {
+        "index": 1,
+        "address": "Bw7K4xf7Mai3RfyFEQMGHvqHR8weBPrXR5n5V4a7iap3",
+        "signer": false,
+        "writable": true
+      },
+      {
+        "index": 2,
+        "address": "ComputeBudget111111111111111111111111111111",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 3,
+        "address": "11111111111111111111111111111111",
+        "signer": false,
+        "writable": false
+      }
+    ],
+    "expectedProgramIds": [
+      "11111111111111111111111111111111",
+      "ComputeBudget111111111111111111111111111111"
+    ]
+  },
+  {
+    "id": "R2",
+    "provenance": "mainnet",
+    "signature": "5Wjvt6FvZLzgqptjrMaT2AvCMkbndkNNdsHhEWQjQP3jmHp7sbrg4bLm4xLXuJ7D5DEPLs3fsxgquc1nnjLWN1gu",
+    "slot": 464121537,
+    "blockTime": 1793542410,
+    "fetchedAt": "2026-11-01T14:14:27.915Z",
+    "rpc": "https://solana-rpc.publicnode.com",
+    "version": 0,
+    "messageHex": "800100030607b3b6b17e2a8d92c223a41835a889be3e3dc383d24f19da880d05d4217e5a67361c6671de1bb3be34f0647efef958760f710aac6ef3c9412eafb98eedaa3e68f7f65edea7d4ddcb7209a4c8fa204425f7b89144a0fc9d96cbc57109dadf071b0306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a4000000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a9c6fa7af3bedbad3a3d65f36aabc97431b1bbe4c2d2f6e0e47ca60203452f5d61b15292f91a4514321ada6ce94ec42069be17a9ff3a020b5b793593375ba07f77030300050237f800000300090388000000000000000404010502000a0c88130000000000000600",
+    "expected": {
+      "actions": [
+        {
+          "instructionIndex": 0,
+          "programId": "ComputeBudget111111111111111111111111111111",
+          "kind": "computeBudget.setComputeUnitLimit",
+          "units": 63543
+        },
+        {
+          "instructionIndex": 1,
+          "programId": "ComputeBudget111111111111111111111111111111",
+          "kind": "computeBudget.setComputeUnitPrice",
+          "microLamports": "136"
+        },
+        {
+          "instructionIndex": 2,
+          "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "tokenProgram": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "kind": "token.transferChecked",
+          "source": "4eE8iCmTAdMpwLaqKvn2wj2g5v2TV31fRVoWbwyxrgFh",
+          "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "destination": "HgwbNyweQUiV5diWJ1a7ocxgzf3AYSLhTpphEYRLujtN",
+          "authority": "X4o2UuVNMxnrgkzVy97kPF5gmS6CLRCVJGB48VastML",
+          "amount": "5000",
+          "decimals": 6
+        }
+      ]
+    },
+    "expectedRoles": [
+      {
+        "index": 0,
+        "address": "X4o2UuVNMxnrgkzVy97kPF5gmS6CLRCVJGB48VastML",
+        "signer": true,
+        "writable": true
+      },
+      {
+        "index": 1,
+        "address": "4eE8iCmTAdMpwLaqKvn2wj2g5v2TV31fRVoWbwyxrgFh",
+        "signer": false,
+        "writable": true
+      },
+      {
+        "index": 2,
+        "address": "HgwbNyweQUiV5diWJ1a7ocxgzf3AYSLhTpphEYRLujtN",
+        "signer": false,
+        "writable": true
+      },
+      {
+        "index": 3,
+        "address": "ComputeBudget111111111111111111111111111111",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 4,
+        "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 5,
+        "address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "signer": false,
+        "writable": false
+      }
+    ],
+    "expectedProgramIds": [
+      "ComputeBudget111111111111111111111111111111",
+      "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+    ]
+  },
+  {
+    "id": "R3",
+    "provenance": "mainnet",
+    "signature": "4TqGpMuipwJCmhaBKvaN9iRd33vKQwHNM28yJTuTfVstzjjUqyqt7kRx33nekK3KBJJD1qGksJH2cw9oLqQDkxJQ",
+    "slot": 464121532,
+    "blockTime": 1793542408,
+    "fetchedAt": "2026-11-01T14:14:27.915Z",
+    "rpc": "https://solana-rpc.publicnode.com",
+    "version": 0,
+    "messageHex": "800100060a0be007dcbcb58d6e1daf55ac86b2a06f9c2f7344d20c823e3dd8706dad609f8afa6697a2909abc990ced6d36fa78eba0fc0c886dbcccdc0a4923762f532158c69c376aedcbf51dbb5de0c4ebc38e2e76260a9918d366727462dac8c32134bb732026101ec20328964a32abab136c5405b91f3ae38ee4f64cb6bde879b86838d20306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a400000008c97258f4e2489f1bb3d1029148e0d830b5a1399daff1084048e7bd8dbe9f859062a4b3f728b79f11ddfac7ab7c4b59b7c4be59e808b6d63faa777811acc2860c6fa7af3bedbad3a3d65f36aabc97431b1bbe4c2d2f6e0e47ca60203452f5d61000000000000000000000000000000000000000000000000000000000000000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a94c5eca13721cd084efbc5e7667670e04c1a2d685729fcf957ae47ba2d9a1bd4a05040005022b4a000004000903f049020000000000050600010607080901010904020701000a0ce5e005000000000006080200030c02000000102700000000000000",
+    "expected": {
+      "actions": [
+        {
+          "instructionIndex": 0,
+          "programId": "ComputeBudget111111111111111111111111111111",
+          "kind": "computeBudget.setComputeUnitLimit",
+          "units": 18987
+        },
+        {
+          "instructionIndex": 1,
+          "programId": "ComputeBudget111111111111111111111111111111",
+          "kind": "computeBudget.setComputeUnitPrice",
+          "microLamports": "150000"
+        },
+        {
+          "instructionIndex": 2,
+          "programId": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
+          "kind": "ata.create",
+          "mode": "createIdempotent",
+          "payer": "oMcssxWxgooErb8bsRA4QN34VHhvfeEbdDjrwF6WH45",
+          "ata": "HrTf9CzXR1dRH4Sof5QrpmGWwpwAf3qZzwCsEjQpXcSq",
+          "wallet": "R4rNJHaffSUotNmqSKNEfDcJE8A7zJUkaoM5Jkd7cYX",
+          "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "tokenProgram": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "impliedCpiPrograms": [
+            "11111111111111111111111111111111",
+            "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+          ]
+        },
+        {
+          "instructionIndex": 3,
+          "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "tokenProgram": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "kind": "token.transferChecked",
+          "source": "BWocXaSJ46XRSnTUA92ffLzLriM7V8tHVLoUnS9HoWQz",
+          "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "destination": "HrTf9CzXR1dRH4Sof5QrpmGWwpwAf3qZzwCsEjQpXcSq",
+          "authority": "oMcssxWxgooErb8bsRA4QN34VHhvfeEbdDjrwF6WH45",
+          "amount": "385253",
+          "decimals": 6
+        },
+        {
+          "instructionIndex": 4,
+          "programId": "11111111111111111111111111111111",
+          "kind": "system.transfer",
+          "from": "oMcssxWxgooErb8bsRA4QN34VHhvfeEbdDjrwF6WH45",
+          "to": "3AVi9Tg9Uo68tJfuvoKvqKNWKkC5wPdSSdeBnizKZ6jT",
+          "lamports": "10000"
+        }
+      ]
+    },
+    "expectedRoles": [
+      {
+        "index": 0,
+        "address": "oMcssxWxgooErb8bsRA4QN34VHhvfeEbdDjrwF6WH45",
+        "signer": true,
+        "writable": true
+      },
+      {
+        "index": 1,
+        "address": "HrTf9CzXR1dRH4Sof5QrpmGWwpwAf3qZzwCsEjQpXcSq",
+        "signer": false,
+        "writable": true
+      },
+      {
+        "index": 2,
+        "address": "BWocXaSJ46XRSnTUA92ffLzLriM7V8tHVLoUnS9HoWQz",
+        "signer": false,
+        "writable": true
+      },
+      {
+        "index": 3,
+        "address": "3AVi9Tg9Uo68tJfuvoKvqKNWKkC5wPdSSdeBnizKZ6jT",
+        "signer": false,
+        "writable": true
+      },
+      {
+        "index": 4,
+        "address": "ComputeBudget111111111111111111111111111111",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 5,
+        "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 6,
+        "address": "R4rNJHaffSUotNmqSKNEfDcJE8A7zJUkaoM5Jkd7cYX",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 7,
+        "address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 8,
+        "address": "11111111111111111111111111111111",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 9,
+        "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+        "signer": false,
+        "writable": false
+      }
+    ],
+    "expectedProgramIds": [
+      "11111111111111111111111111111111",
+      "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
+      "ComputeBudget111111111111111111111111111111",
+      "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+    ]
+  },
+  {
+    "id": "R4",
+    "provenance": "mainnet",
+    "signature": "2zfBHaxemmgyrJyaxPaN4YYMQ4euvYJeRbruvRvWYgWEX61ibWEFzC3dios5Tu7izgdVDyidKkFhHWhHxKCp7JuW",
+    "slot": 464121702,
+    "blockTime": 1793542445,
+    "fetchedAt": "2026-11-01T14:14:27.915Z",
+    "rpc": "https://solana-rpc.publicnode.com",
+    "version": 0,
+    "messageHex": "800100030593ff65b9b63450b22df5cb94d8dfe6d3634a417859babc9700ec1ebc472d6b7465d32776dde23d7bc2bd2255e9b8c05430d1d3eef203a8034a99e4e8d83b0ec300000000000000000000000000000000000000000000000000000000000000000306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a4000000006a7d517192c568ee08a845f73d29788cf035c3145b21ab344d8062ea94000000fe24baf814fee1da9c9141e1c9a3bd573277017f2a25e3efb8c2be10ad0ffd6030203010400040400000003000502c20100000300090380841e000000000000",
+    "expected": {
+      "deny": "SOL_DENY_DURABLE_NONCE",
+      "instructionIndex": 0
+    },
+    "expectedRoles": [
+      {
+        "index": 0,
+        "address": "AxiomNsSrf4gvzTjf5SNw4HrViNMAPLJdhzLEgBKaNtj",
+        "signer": true,
+        "writable": true
+      },
+      {
+        "index": 1,
+        "address": "7rUvYvF8QE3LUepMG6GJg56EsR9TzhsH75M4LZ1BUwkN",
+        "signer": false,
+        "writable": true
+      },
+      {
+        "index": 2,
+        "address": "11111111111111111111111111111111",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 3,
+        "address": "ComputeBudget111111111111111111111111111111",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 4,
+        "address": "SysvarRecentB1ockHashes11111111111111111111",
+        "signer": false,
+        "writable": false
+      }
+    ]
+  },
+  {
+    "id": "R5",
+    "provenance": "mainnet",
+    "signature": "gHbERoMk316sjExXFGUV2cT4QpzioQ4oUSHK2SmBw87XzaLhXjhtAF3vTqWE3RsN5f7mkjj9cXu1LgiQnsQ1mVP",
+    "slot": 464121702,
+    "blockTime": 1793542445,
+    "fetchedAt": "2026-11-01T14:14:27.915Z",
+    "rpc": "https://solana-rpc.publicnode.com",
+    "version": 0,
+    "messageHex": "8001000205fb650ec4c0d06fb8d73e983bf42cf4f3d02576de06d5d61a34530fed98c1d66b051eb370821fa272267de66fa254c7c3b13a956ed5345fd0d17ea61ed7f7a4a17857cd1b8ed1732c89504026bc804adbac446553571bd6577ec726473c04d9fa00000000000000000000000000000000000000000000000000000000000000000306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a40000000c60d0e9af08aff3e312ed35b6a429d7461de68dbba021b615ae33a338656f3610404000502803e00000400090388130000000000000303020000540b00000000980d00000000002000000000000000333836363131383866333163643063336565353466663433636138323530373800000000000000000000000000000000000000000000000000000000000000000303010000540b00000000980d000000000020000000000000003237613238653836313235663539306163616137653938323131316534616338000000000000000000000000000000000000000000000000000000000000000000",
+    "expected": {
+      "deny": "SOL_DENY_SYSTEM_INSTRUCTION",
+      "instructionIndex": 2
+    },
+    "expectedRoles": [
+      {
+        "index": 0,
+        "address": "HvLi4xBRLC6Dz9VTeGCKAEonRzSJHmYLVL3xzmUEuU6n",
+        "signer": true,
+        "writable": true
+      },
+      {
+        "index": 1,
+        "address": "LzC41wZ7AGEc2VGpW1NVB5nQqKbjVrjVRMnSedcLdKN",
+        "signer": false,
+        "writable": true
+      },
+      {
+        "index": 2,
+        "address": "96maPBXEaZRos9Kbzet8iG4RA6stfutxfJEL5f4RwYFb",
+        "signer": false,
+        "writable": true
+      },
+      {
+        "index": 3,
+        "address": "11111111111111111111111111111111",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 4,
+        "address": "ComputeBudget111111111111111111111111111111",
+        "signer": false,
+        "writable": false
+      }
+    ]
+  },
+  {
+    "id": "R6",
+    "provenance": "mainnet",
+    "signature": "FCHULYmFEAbLieKijUfr4VacVoT6FF1ZrocA59J2yaomyMLiUm5VbTBPmeKi6PQ65yDuPxhrxhLs948qHvprT3x",
+    "slot": 464121702,
+    "blockTime": 1793542445,
+    "fetchedAt": "2026-11-01T14:14:27.915Z",
+    "rpc": "https://solana-rpc.publicnode.com",
+    "version": 0,
+    "messageHex": "800100020798adc32e396b48d1665628fd99cda230ab370daee8582a6936fcd45e1144cdcf01a51c34640a0c6a89cf3bc8a277d936b826104b711ba94abcfd3847150413f69d3445fa1c107eb5a52c3f9ecdd0533b767f7404867c779d9a6cec2e2887d39dd4792f3e5bb83a63e0f9c32e8a4c9ae9338d2369df7d0fdfec396c83188a5ac5e442973475c5affe1fb3fb88775e73f26b9c034ea4f4a67423d8fd19755a547200000000000000000000000000000000000000000000000000000000000000000306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a400000007d9d4e2205e3640dd38fd1721d342398d6e0cba19b96b8db903b26ba9bf0eae50506000502f00a0000050200010c020000005e30260000000000050200030c020000005e30260000000000050200040c020000005e30260000000000050200020c020000005e3026000000000000",
+    "expected": {
+      "deny": "SOL_DENY_COMPUTE_BUDGET_CARDINALITY"
+    },
+    "expectedRoles": [
+      {
+        "index": 0,
+        "address": "BGzeVawkg2y1mGmgLEBAE3o181m1ksVtoRH2WfbsrqmG",
+        "signer": true,
+        "writable": true
+      },
+      {
+        "index": 1,
+        "address": "7RS4A8188mDXvuChxD2H669ZEntNG92yyk3dFyTPWZK",
+        "signer": false,
+        "writable": true
+      },
+      {
+        "index": 2,
+        "address": "BafEtDRkc3BFafwcHjjriEG2pKhzVsPVAEYVVMwWhMqW",
+        "signer": false,
+        "writable": true
+      },
+      {
+        "index": 3,
+        "address": "FJQcGpfXKyvnAEyzQWYDBraVYgm4VkwGKeGBFZhdTapk",
+        "signer": false,
+        "writable": true
+      },
+      {
+        "index": 4,
+        "address": "GN2rCKcUGaJ2jWjiLzCyJc2FJqP7yBFfR7VyoLYzsjcV",
+        "signer": false,
+        "writable": true
+      },
+      {
+        "index": 5,
+        "address": "11111111111111111111111111111111",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 6,
+        "address": "ComputeBudget111111111111111111111111111111",
+        "signer": false,
+        "writable": false
+      }
+    ]
+  },
+  {
+    "id": "R7",
+    "provenance": "mainnet",
+    "signature": "4ajCxMeSKszs3aDPNCo8pWdr4v6RhdZttNwyYEtkdS3EtXg9YpPunNHMonUnRDcbVjimwq7BSUWpi267xGbswSRA",
+    "slot": 464121539,
+    "blockTime": 1793542410,
+    "fetchedAt": "2026-11-01T14:14:27.915Z",
+    "rpc": "https://solana-rpc.publicnode.com",
+    "version": 0,
+    "messageHex": "800100050765e1e594f56f8b6f31e4632e5eaeadf6f8ad0aa7493080a5042dc301aff9b021ec2e1ae7e529995b44f9d1a410c0b201381fc455479b3863d6ca5851c660ac3c0306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a400000003dddbb2c13a3a482b77059e73be403d66bc217234dac0d1c5b18261e85780a678bbc13258a8175d1c8f918d11d75bb9df3a2260b8cfba2e6b31e002198ae10e6a8de47201c6c3f2d5c9de7ac61aa92acfd58692f50c289cfd0f8bdb5d6c0b1d4c6fa7af3bedbad3a3d65f36aabc97431b1bbe4c2d2f6e0e47ca60203452f5d617dd52e420b5ec821bb0e02b2fe11b97086af8248338c78641dee04a5e08ef28c0402000502029e00000200090323c10000000000000200050440420f00040500030501068906069454f4057374d703000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000fdfd000000000000000000000000000000000000000000000000000000000000d26df705d26df705000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000f1f200000000000000000000000000000000000000000000000000000000000091df1c0200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000fd00000000000000000000000000000000000000000000000000000000000000666ff70500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000f1000000000000000000000000000000000000000000000000000000000000000a0a0101010101010101010101010101010101010101010101010101010101010a01010101010101010101010101010101010101010101010101010101010101c37189d951f1e3180000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+    "expected": {
+      "deny": "SOL_DENY_COMPUTE_BUDGET_INSTRUCTION",
+      "instructionIndex": 2
+    },
+    "expectedRoles": [
+      {
+        "index": 0,
+        "address": "7rhxnLV8C77o6d8oz26AgK8x8m5ePsdeRawjqvojbjnQ",
+        "signer": true,
+        "writable": true
+      },
+      {
+        "index": 1,
+        "address": "GtwzYxBQcPFNFQcYbdELuaKzb4DGJpGVU2ehLhzbffCw",
+        "signer": false,
+        "writable": true
+      },
+      {
+        "index": 2,
+        "address": "ComputeBudget111111111111111111111111111111",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 3,
+        "address": "5AVyF6qJBi8GxVjh6nh4Ew1DiJZugPxz9m58a8v2osk2",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 4,
+        "address": "AQU1FRd7papthgdrwPTTq5JacJh8YtwEXaBfKU3bTz45",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 5,
+        "address": "CNC5TaeNQEoSPfQKZ7GgfM4R8WYAJRKRSHFCHkf2H7ko",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 6,
+        "address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "signer": false,
+        "writable": false
+      }
+    ]
+  },
+  {
+    "id": "R8",
+    "provenance": "mainnet",
+    "signature": "2TMRp3gse21GAeSYJuZUmYbX6ybdhcfWgD6PxbFzX6k1ChSXJ36WTHaBgZ58EjXWnKnRGCKVDyJuLGvK6kgXo4qG",
+    "slot": 464121482,
+    "blockTime": 1793542397,
+    "fetchedAt": "2026-11-01T14:14:27.915Z",
+    "rpc": "https://solana-rpc.publicnode.com",
+    "version": 0,
+    "messageHex": "8001000a1182b260741c126443d2ac4e6cf28ac5654aac0c08fe68b0945c62666eef06a90f1aa2f05a6f8950fcbf5df9ca39481c6df13305c8b87c644f4d8c6d820b3789a62096df8750dc5ab579fb87919cc7e8825112c4215cb4e1ba5cf4e2d0ec19dc2a4aa9b78c0c67e73c3f3138a24707cfa714d656f9621f602505efbc146636527468642e3a61c89cf670011c9541f546544ddf2e8c24183289158a20e8d132f33a6cd743bd3e1fdafeaf411fba0fcca0908557b90e1f34a0d0778f8e09a509a015e264b54e4fc86a98ce1f7191658d77254604163eb8c078e3672c842d78b08a4a00000000000000000000000000000000000000000000000000000000000000000306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a40000000069b8857feab8184fb687f634618c035dac439dc1aeb3b5598a0f0000000000106ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a906ddf6e1ee758fde18425dbce46ccddab61afc4d83b90d27febdf928d8a18bfc092d2135657a159c2b87d4b66a70db8e9752389ff76aaf206ced063a38f95aed2a76e7b344640a1cfc594c8bcad0a091011cac7dd156bf83a833fb2208eb77ad770fe93ef5a5d6a0c5483217f0c607d9e5ee077b36f80f67827464bcf8cffaa68c97258f4e2489f1bb3d1029148e0d830b5a1399daff1084048e7bd8dbe9f859f2ccd535aca5f1736ac822dd0773e4d92fbd8a59b29403500295a9011c73a9e5b2951e761133b5059d0ba127d41d95213c56be2d08b686462d7679e841b98c410908000502803801000800090324f400000000000008000504000060000f0600050009070a0101070200050c02000000319d4800000000000a010501110f060004000e070b01010c0e1006050402030e09000b0a0c0d0c18f8c69e91e17587c8319d4800000000000100000000000000070200010c02000000881300000000000000",
+    "expected": {
+      "deny": "SOL_DENY_COMPUTE_BUDGET_INSTRUCTION",
+      "instructionIndex": 2
+    },
+    "expectedRoles": [
+      {
+        "index": 0,
+        "address": "9oBky1mg3Z4miE4FABPbZWad5izbSK7JLc9mdgAazmLz",
+        "signer": true,
+        "writable": true
+      },
+      {
+        "index": 1,
+        "address": "2nyhqdwKcJZR2vcqCyrYsaPVdAnFoJjiksCXJ7hfEYgD",
+        "signer": false,
+        "writable": true
+      },
+      {
+        "index": 2,
+        "address": "3CDUoR2V5UWcth7PeAN3AxhGJepZqcE3VJhMcH8pvkJm",
+        "signer": false,
+        "writable": true
+      },
+      {
+        "index": 3,
+        "address": "62TGZCZgidLQ5erm82EKK2uaSSFzwffV6HkXrd1Py7Jb",
+        "signer": false,
+        "writable": true
+      },
+      {
+        "index": 4,
+        "address": "82W13ctxL5Awur7KJ7GMPQagmRTxveUdbFEfHgcuJNpR",
+        "signer": false,
+        "writable": true
+      },
+      {
+        "index": 5,
+        "address": "8KsQvYL1zdyxwnzgtMsed1LPv3FDnrzQ3b16dWLaaFDE",
+        "signer": false,
+        "writable": true
+      },
+      {
+        "index": 6,
+        "address": "GEkCysJJh1p7seJS4bsU7mdFoqoYK8TtcMxzcecpp3mb",
+        "signer": false,
+        "writable": true
+      },
+      {
+        "index": 7,
+        "address": "11111111111111111111111111111111",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 8,
+        "address": "ComputeBudget111111111111111111111111111111",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 9,
+        "address": "So11111111111111111111111111111111111111112",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 10,
+        "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 11,
+        "address": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 12,
+        "address": "cpamdpZCGKUy5JxQXB4dcpGPiikHawvSWAd6mEn1sGG",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 13,
+        "address": "3rmHSu74h1ZcmAisVcWerTCiRDQbUrBKmcwptYGjHfet",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 14,
+        "address": "91mb6iXeurLJ7xqEygQufHDzmvAFsJyrnSWfWaxbzVGh",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 15,
+        "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 16,
+        "address": "HLnpSz9h2S4hiLQ43rnSD9XkcUThA7B8hQMKmDaiTLcC",
+        "signer": false,
+        "writable": false
+      }
+    ],
+    "instructionPositives": [
+      {
+        "index": 3,
+        "decoder": "decodeAta",
+        "expected": {
+          "instructionIndex": 3,
+          "programId": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
+          "kind": "ata.create",
+          "mode": "createIdempotent",
+          "payer": "9oBky1mg3Z4miE4FABPbZWad5izbSK7JLc9mdgAazmLz",
+          "ata": "8KsQvYL1zdyxwnzgtMsed1LPv3FDnrzQ3b16dWLaaFDE",
+          "wallet": "9oBky1mg3Z4miE4FABPbZWad5izbSK7JLc9mdgAazmLz",
+          "mint": "So11111111111111111111111111111111111111112",
+          "tokenProgram": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "impliedCpiPrograms": [
+            "11111111111111111111111111111111",
+            "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+          ]
+        }
+      },
+      {
+        "index": 4,
+        "decoder": "decodeSystem",
+        "expected": {
+          "instructionIndex": 4,
+          "programId": "11111111111111111111111111111111",
+          "kind": "system.transfer",
+          "from": "9oBky1mg3Z4miE4FABPbZWad5izbSK7JLc9mdgAazmLz",
+          "to": "8KsQvYL1zdyxwnzgtMsed1LPv3FDnrzQ3b16dWLaaFDE",
+          "lamports": "4758833"
+        }
+      },
+      {
+        "index": 5,
+        "decoder": "decodeToken",
+        "expected": {
+          "instructionIndex": 5,
+          "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "tokenProgram": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "kind": "token.syncNative",
+          "account": "8KsQvYL1zdyxwnzgtMsed1LPv3FDnrzQ3b16dWLaaFDE"
+        }
+      }
+    ]
+  },
+  {
+    "id": "R9",
+    "provenance": "mainnet",
+    "signature": "4QiCHtb7emZXsoncoHUd9g3Kyg2sKYYSs9w8g82sHyFs3YRWgXLyzFBnBTjVaLWxkUEdTs2ZaJiFHWNKKTnt6D8k",
+    "slot": 464121482,
+    "blockTime": 1793542397,
+    "fetchedAt": "2026-11-01T14:14:27.915Z",
+    "rpc": "https://solana-rpc.publicnode.com",
+    "version": 0,
+    "messageHex": "8001000a1126aaabe3583fe1e64ff0752a93051eba30c0ce01a1df49b2c87d0fd3f0c95f2ccff2307fbc2db0b6483d8fd7d78c3f4498856aa8ba82f352401dd99af5786a2ae99bef8a2041b8c725bb8ce27439062a9f3bc83fb1e1d8f1f3d06e563c6a3bf1fd87db8b44001297cbde173b628b90934d83fa6bbcc95a25b96361dcec5679898965c2cc96ffc8635088d51721c042ccc18236d962912095a1abaf02098d4bd670e728b1e33642ffedc3323ab3f103feee7077db22c4485986f368cc050159361aa2f05a6f8950fcbf5df9ca39481c6df13305c8b87c644f4d8c6d820b3789a60306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a400000008c97258f4e2489f1bb3d1029148e0d830b5a1399daff1084048e7bd8dbe9f859069b8857feab8184fb687f634618c035dac439dc1aeb3b5598a0f00000000001000000000000000000000000000000000000000000000000000000000000000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a9092d2135657a159c2b87d4b66a70db8e9752389ff76aaf206ced063a38f95aedf2ccd535aca5f1736ac822dd0773e4d92fbd8a59b29403500295a9011c73a9e536f2eee0edf0357dc5ac60b5a508b89c5259ab627d3bf54607b0f734ab7a5b8006ddf6e1ee758fde18425dbce46ccddab61afc4d83b90d27febdf928d8a18bfc2a76e7b344640a1cfc594c8bcad0a091011cac7dd156bf83a833fb2208eb77ad0b57b46b39ee1dc689cbd74b01a38102f22dca29c77d88e08064ee7c4634944b0807000502409c000007000903e09304000000000007000504000080000806000100090a0b01010c0e0d02030104050e09000f0b0c100c19414b3f4ceb5b5b88149a6a3003000000af04cc0000000000000b0301000001090f0303000001090a0200060c02000000881300000000000000",
+    "expected": {
+      "deny": "SOL_DENY_COMPUTE_BUDGET_INSTRUCTION",
+      "instructionIndex": 2
+    },
+    "expectedRoles": [
+      {
+        "index": 0,
+        "address": "3bwSF1gQ6JDMh6ULsy4uw7LCiFRyEVTmxau3mbKFd6rX",
+        "signer": true,
+        "writable": true
+      },
+      {
+        "index": 1,
+        "address": "Ezjb3iJNJtxx68bY5bjyXi5YhnDV3iiVWLcyfrcB3qwX",
+        "signer": false,
+        "writable": true
+      },
+      {
+        "index": 2,
+        "address": "GiuuRjMeZC5SRF5QiVcuxS3A8j9TxaNsHUPfQ8jXzykC",
+        "signer": false,
+        "writable": true
+      },
+      {
+        "index": 3,
+        "address": "J4gJSUw9SULGruJzSNJt3cUdYe9nGdC1pv117bEVRt6U",
+        "signer": false,
+        "writable": true
+      },
+      {
+        "index": 4,
+        "address": "AFLrSjyE9o2M5noYUipFjczmDrchwNvse2XEmjYfPtTP",
+        "signer": false,
+        "writable": true
+      },
+      {
+        "index": 5,
+        "address": "8bj6pSXEYZkzSx1wryHbmTEGVuXW4hziag1SGGvLEJrZ",
+        "signer": false,
+        "writable": true
+      },
+      {
+        "index": 6,
+        "address": "2nyhqdwKcJZR2vcqCyrYsaPVdAnFoJjiksCXJ7hfEYgD",
+        "signer": false,
+        "writable": true
+      },
+      {
+        "index": 7,
+        "address": "ComputeBudget111111111111111111111111111111",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 8,
+        "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 9,
+        "address": "So11111111111111111111111111111111111111112",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 10,
+        "address": "11111111111111111111111111111111",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 11,
+        "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 12,
+        "address": "cpamdpZCGKUy5JxQXB4dcpGPiikHawvSWAd6mEn1sGG",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 13,
+        "address": "HLnpSz9h2S4hiLQ43rnSD9XkcUThA7B8hQMKmDaiTLcC",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 14,
+        "address": "4hVsHTd1c1u3b5RZvX4zY7DJx3d4WogWguFPoRA1smbm",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 15,
+        "address": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 16,
+        "address": "3rmHSu74h1ZcmAisVcWerTCiRDQbUrBKmcwptYGjHfet",
+        "signer": false,
+        "writable": false
+      }
+    ],
+    "instructionPositives": [
+      {
+        "index": 5,
+        "decoder": "decodeToken",
+        "expected": {
+          "instructionIndex": 5,
+          "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "tokenProgram": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "kind": "token.closeAccount",
+          "account": "Ezjb3iJNJtxx68bY5bjyXi5YhnDV3iiVWLcyfrcB3qwX",
+          "destination": "3bwSF1gQ6JDMh6ULsy4uw7LCiFRyEVTmxau3mbKFd6rX",
+          "owner": "3bwSF1gQ6JDMh6ULsy4uw7LCiFRyEVTmxau3mbKFd6rX"
+        }
+      }
+    ]
+  },
+  {
+    "id": "R10",
+    "provenance": "mainnet",
+    "signature": "ceCM7yAbNKVurFU1pMX33XZQFmDuVLp5QTV3CbPZzPtzTtoffo7iFsNCeKxGjHtJsbT8L5WXAQrZiw8QQtRAxnM",
+    "slot": 464121582,
+    "blockTime": 1793542419,
+    "fetchedAt": "2026-11-01T14:14:27.915Z",
+    "rpc": "https://solana-rpc.publicnode.com",
+    "version": 0,
+    "messageHex": "8001000d17997d4d309b26f941469639c5b0342fec050b3d405e35385f69321e88fb4b5728276fdcb9a5ae0d295a9613886c28bbb41072ab8124b87910a691f668547a746442be37ec3a9fac5a12b7505280cff6ff422a8dad5031e7e7bb5853617f7a000d44fc1f78f94a33d0909c5e6b5fb021570ad8dbad8de8fdb3d20ed1cd99eb8e4e5d01e4429717ea34d2a365e5f07df6893090149b65767145502a31c58edcd671662c75158a13343f74c5242d8c9c1589bf7c512daebf200efa23c84592795a25cd6f5de8910ebee334b4fff18d365dea34e425169296f11ba1124da4eca4decccdcc745e38ad845b65526ea1ce5183ea6a3d9c4addac70e6affa1bbf4f2ccaf5edc94732dd53a8078ae1aaf2137e71a16454e76750c7d156a3a00630a9b8a256fbe895e953dc339aafbb55590aed99397234504587c13d88a1543f0776885d1800000000000000000000000000000000000000000000000000000000000000000156e0f693665acf44db1568bf175baa5189cb97f5d2ff3b655d2bb6fd6d18b00306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a40000000069b8857feab8184fb687f634618c035dac439dc1aeb3b5598a0f0000000000106a7d517192c568ee08a845f73d29788cf035c3145b21ab344d8062ea940000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a906ddf6e1ee758fde18425dbce46ccddab61afc4d83b90d27febdf928d8a18bfc164005144b57073bd1c0285a1ce6e449814b95f2480d5063ea846d110ff893ba3a865e69ee0f5480cabcf66357e4dc2f18d58d45c1ea7489fb3723d9793c72a66f9ab4a4f1958dc0a9c94c3fb72c07995843eda485e3a24f10c69399f819940facf136eb01fc1c4e883d23c8b5844ab59a37f66add57c5e9ac3b53e059d35c64c61d928faaa44d4b86a46b439244408595cd1087ae26c75cf1a5947ea5626daee909cb16a8b43ec84857eda40db03609d056e1648d3dec3f1811f7b11b880182fc5d58122af9bee252b97918b89c6ee94825579c66efb6608d00cf735085283c080a03070e0004040000000c000502c82c01000c000903c73f2901000000000a0200020c0200000020e0b2010000000016030515110203000a0200046403000000997d4d309b26f941469639c5b0342fec050b3d405e35385f69321e88fb4b57280800000000000000786832536a36716be0a51f0000000000a50000000000000006ddf6e1ee758fde18425dbce46ccddab61afc4d83b90d27febdf928d8a18bfc100204152112997d4d309b26f941469639c5b0342fec050b3d405e35385f69321e88fb4b57280b1112150d100f0501060004090813030a140b19e1f7501ed5b38488009435770000000005f584ebe03500000000",
+    "expected": {
+      "deny": "SOL_DENY_DURABLE_NONCE",
+      "instructionIndex": 0
+    },
+    "expectedRoles": [
+      {
+        "index": 0,
+        "address": "BLACKBTXf2jJDLcCT7n87FAjJfpP9TrUFELLWg4cmCLX",
+        "signer": true,
+        "writable": true
+      },
+      {
+        "index": 1,
+        "address": "3ewqEtq8tUaSniYRJBMUPr41bftM88SLeCi8LZB8QyD5",
+        "signer": false,
+        "writable": true
+      },
+      {
+        "index": 2,
+        "address": "5VY91ws6B2hMmBFRsXkoAAdsPHBJwRfBht4DXox3xkwn",
+        "signer": false,
+        "writable": true
+      },
+      {
+        "index": 3,
+        "address": "5eHhjP8JaYkz83CWwvGU2uMUXefd3AazWGx4gpcuEEYD",
+        "signer": false,
+        "writable": true
+      },
+      {
+        "index": 4,
+        "address": "7G4b9xMzNFaqfVXKJsht4pAH9Rv1yjwcERx4D8cRspbr",
+        "signer": false,
+        "writable": true
+      },
+      {
+        "index": 5,
+        "address": "7squQKz9D1y19KzjKTts3pSaWFZ9rz5BvhX3PBy22Vx8",
+        "signer": false,
+        "writable": true
+      },
+      {
+        "index": 6,
+        "address": "Epw59HrSNHMvwzZwuvpJgdn4uAPRLNFp1NmLFN79nzhq",
+        "signer": false,
+        "writable": true
+      },
+      {
+        "index": 7,
+        "address": "ErMQ8Ck8dt1e3vRYhwEECvJwSdjAeHsE8jPzaB2Wepr8",
+        "signer": false,
+        "writable": true
+      },
+      {
+        "index": 8,
+        "address": "H1DdshD7kGrHizdkRqrtzL3f6BWNmcjqVy5fSZfnhuCy",
+        "signer": false,
+        "writable": true
+      },
+      {
+        "index": 9,
+        "address": "HxM2rhNiWmRzLYvxxfYjmgquZZ8GKXYZtbDXZfK48Wgf",
+        "signer": false,
+        "writable": true
+      },
+      {
+        "index": 10,
+        "address": "11111111111111111111111111111111",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 11,
+        "address": "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 12,
+        "address": "ComputeBudget111111111111111111111111111111",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 13,
+        "address": "So11111111111111111111111111111111111111112",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 14,
+        "address": "SysvarRecentB1ockHashes11111111111111111111",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 15,
+        "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 16,
+        "address": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 17,
+        "address": "2Vrb9oMYFrPyHhbn7puXkrtAExyEkU2VTBr4WqYUxmBX",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 18,
+        "address": "4wTV1YmiEkRvAtNtsSGPtUrqRYQMe5SKy2uB4Jjaxnjf",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 19,
+        "address": "8Wf5TiAheLUqBrKXeYg2JtAFFMWtKdG2BSFgqUcPVwTt",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 20,
+        "address": "Ce6TQqeHC9p8KetsN6JsjHK7UTZk7nasjjnr7XxXp9F1",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 21,
+        "address": "ELMswNAmzkNuhTMtgJtfUx7isoxwxWX3eZ47sWqh6ug1",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 22,
+        "address": "GggeysEjGTaP4Ha8ebu7BUbjED5zZ3iS8pEtdkxwWhXF",
+        "signer": false,
+        "writable": false
+      }
+    ]
+  },
+  {
+    "id": "L1",
+    "provenance": "mainnet",
+    "signature": "5N5JcdiJXJXN8SdVHuodrbdAQCimdNB4qLqM1cgGQDeT7hM4c42qC7NdRojCM5dCnjwoAqPqkLZwkxWrpK8mwzVa",
+    "slot": 464121542,
+    "blockTime": 1793542411,
+    "fetchedAt": "2026-11-01T14:14:27.915Z",
+    "rpc": "https://solana-rpc.publicnode.com",
+    "version": "legacy",
+    "messageHex": "01000609243247566c0ea78e3f71f822e483af7c9558c3c5b601606368622e8e709bdd57dd85a70378ca692e5e0630ab8eb1986cc9b73da0f5a3c90fe0172077ca5d39efed83bd5b049bea701301a5a09cebeaf9fd27c22858be321a29275417f579986c00000000000000000000000000000000000000000000000000000000000000000306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a4000000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a98c97258f4e2489f1bb3d1029148e0d830b5a1399daff1084048e7bd8dbe9f859bcf18c49e4df0a67d6cc8e67e7a70f603d33b2450b86359c9bf753099c60549ac6fa7af3bedbad3a3d65f36aabc97431b1bbe4c2d2f6e0e47ca60203452f5d61403c0d1edadc3d7d53ad1af859afa0c874fa0edf54651551dcfc0031045ffe53030400050260ea000006060002070803050101050301020009037f53a81a00000000",
+    "expected": {
+      "deny": "SOL_DENY_TOKEN_UNCHECKED",
+      "instructionIndex": 2
+    },
+    "expectedRoles": [
+      {
+        "index": 0,
+        "address": "3SJ9LpfR1TFCfaRuNHtUcm7dT9R2R467d2nGbWvADsGS",
+        "signer": true,
+        "writable": true
+      },
+      {
+        "index": 1,
+        "address": "FujJdsELCvHQrX8mMLe8NrgGLWrB7GwsufkdtAFeobve",
+        "signer": false,
+        "writable": true
+      },
+      {
+        "index": 2,
+        "address": "GzA8sAUUPRawSoL37eY49f7PhGqU4JaQTRyTBT7944DH",
+        "signer": false,
+        "writable": true
+      },
+      {
+        "index": 3,
+        "address": "11111111111111111111111111111111",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 4,
+        "address": "ComputeBudget111111111111111111111111111111",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 5,
+        "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 6,
+        "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 7,
+        "address": "DiZGrukf1Rea8q7kjSsma76Pob5Adb6oJVjqhE21ZKvq",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 8,
+        "address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "signer": false,
+        "writable": false
+      }
+    ],
+    "rewraps": [
+      {
+        "provenance": "mainnet-rewrapped",
+        "sourceInstructionIndices": [
+          2
+        ],
+        "payer": "3SJ9LpfR1TFCfaRuNHtUcm7dT9R2R467d2nGbWvADsGS",
+        "normalization": "v0 one-signer; source account privileges preserved",
+        "instructions": [
+          {
+            "program": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+            "dataHex": "037f53a81a00000000",
+            "accounts": [
+              {
+                "address": "FujJdsELCvHQrX8mMLe8NrgGLWrB7GwsufkdtAFeobve",
+                "signer": false,
+                "writable": true
+              },
+              {
+                "address": "GzA8sAUUPRawSoL37eY49f7PhGqU4JaQTRyTBT7944DH",
+                "signer": false,
+                "writable": true
+              },
+              {
+                "address": "3SJ9LpfR1TFCfaRuNHtUcm7dT9R2R467d2nGbWvADsGS",
+                "signer": true,
+                "writable": true
+              }
+            ]
+          }
+        ],
+        "messageHex": "8001000205243247566c0ea78e3f71f822e483af7c9558c3c5b601606368622e8e709bdd57dd85a70378ca692e5e0630ab8eb1986cc9b73da0f5a3c90fe0172077ca5d39efed83bd5b049bea701301a5a09cebeaf9fd27c22858be321a29275417f579986c0306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a4000000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a92390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760303000502801a060003000903a025260000000000040301020009037f53a81a0000000000",
+        "expected": {
+          "deny": "SOL_DENY_TOKEN_UNCHECKED",
+          "instructionIndex": 2
+        }
+      }
+    ]
+  },
+  {
+    "id": "L2",
+    "provenance": "mainnet",
+    "signature": "2iKgkPCWDCaDZnRkdUFg5itBJWfhQbUmRbFqw64x2h3a7rksYnqoL3VWPufosUsRmtoEzFBZppLoY54cbLrv64vh",
+    "slot": 464121599,
+    "blockTime": 1793542423,
+    "fetchedAt": "2026-11-01T14:14:27.915Z",
+    "rpc": "https://solana-rpc.publicnode.com",
+    "version": "legacy",
+    "messageHex": "01000306fa7b214b571ce49e7b02ff0b663d4e7a56992db29300885e29827a47ea1f9493a519c879d20e3a71c6ef5772717d66428a9bd38046a2714055550625d9c12bfccd61425586f950232232e3a1fadefa04992b3e5e05dec8ff91015efc1c71a6840000000000000000000000000000000000000000000000000000000000000000069b8857feab8184fb687f634618c035dac439dc1aeb3b5598a0f0000000000106ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a9970b709be691561cfdbc22e6bbe70d25a4c581fec0511f105b263f93edfd663305030200017c03000000fa7b214b571ce49e7b02ff0b663d4e7a56992db29300885e29827a47ea1f94932000000000000000366136626132663438643637613965323337343339353339613736333038356138b6160000000000a50000000000000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a9050201042112fa7b214b571ce49e7b02ff0b663d4e7a56992db29300885e29827a47ea1f9493030200010c02000000efa95d1a00000000050101011105030102000109",
+    "expected": {
+      "deny": "SOL_DENY_SYSTEM_INSTRUCTION",
+      "instructionIndex": 2
+    },
+    "expectedRoles": [
+      {
+        "index": 0,
+        "address": "Hrmpdojc2zH6WNdY74YBPXDKjHEzpwjxp1DreXt9Pmog",
+        "signer": true,
+        "writable": true
+      },
+      {
+        "index": 1,
+        "address": "C7V5E3VqSPyDL3m1xoPGZ7n3Usacqr9CW1zK9V5zyYSf",
+        "signer": false,
+        "writable": true
+      },
+      {
+        "index": 2,
+        "address": "EpibUtdKUtaqT8xmLT9hMoBx3G5xaDTxxrehscWvr8HH",
+        "signer": false,
+        "writable": true
+      },
+      {
+        "index": 3,
+        "address": "11111111111111111111111111111111",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 4,
+        "address": "So11111111111111111111111111111111111111112",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 5,
+        "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+        "signer": false,
+        "writable": false
+      }
+    ],
+    "rewraps": [
+      {
+        "provenance": "mainnet-rewrapped",
+        "sourceInstructionIndices": [
+          0
+        ],
+        "payer": "Hrmpdojc2zH6WNdY74YBPXDKjHEzpwjxp1DreXt9Pmog",
+        "normalization": "v0 one-signer; source account privileges preserved",
+        "instructions": [
+          {
+            "program": "11111111111111111111111111111111",
+            "dataHex": "03000000fa7b214b571ce49e7b02ff0b663d4e7a56992db29300885e29827a47ea1f94932000000000000000366136626132663438643637613965323337343339353339613736333038356138b6160000000000a50000000000000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a9",
+            "accounts": [
+              {
+                "address": "Hrmpdojc2zH6WNdY74YBPXDKjHEzpwjxp1DreXt9Pmog",
+                "signer": true,
+                "writable": true
+              },
+              {
+                "address": "C7V5E3VqSPyDL3m1xoPGZ7n3Usacqr9CW1zK9V5zyYSf",
+                "signer": false,
+                "writable": true
+              }
+            ]
+          }
+        ],
+        "messageHex": "8001000204fa7b214b571ce49e7b02ff0b663d4e7a56992db29300885e29827a47ea1f9493a519c879d20e3a71c6ef5772717d66428a9bd38046a2714055550625d9c12bfc0306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a4000000000000000000000000000000000000000000000000000000000000000000000002390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760302000502801a060002000903a025260000000000030200017c03000000fa7b214b571ce49e7b02ff0b663d4e7a56992db29300885e29827a47ea1f94932000000000000000366136626132663438643637613965323337343339353339613736333038356138b6160000000000a50000000000000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a900",
+        "expected": {
+          "deny": "SOL_DENY_SYSTEM_INSTRUCTION",
+          "instructionIndex": 2
+        }
+      },
+      {
+        "provenance": "mainnet-rewrapped",
+        "sourceInstructionIndices": [
+          1
+        ],
+        "payer": "Hrmpdojc2zH6WNdY74YBPXDKjHEzpwjxp1DreXt9Pmog",
+        "normalization": "v0 one-signer; source account privileges preserved",
+        "instructions": [
+          {
+            "program": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+            "dataHex": "12fa7b214b571ce49e7b02ff0b663d4e7a56992db29300885e29827a47ea1f9493",
+            "accounts": [
+              {
+                "address": "C7V5E3VqSPyDL3m1xoPGZ7n3Usacqr9CW1zK9V5zyYSf",
+                "signer": false,
+                "writable": true
+              },
+              {
+                "address": "So11111111111111111111111111111111111111112",
+                "signer": false,
+                "writable": false
+              }
+            ]
+          }
+        ],
+        "messageHex": "8001000305fa7b214b571ce49e7b02ff0b663d4e7a56992db29300885e29827a47ea1f9493a519c879d20e3a71c6ef5772717d66428a9bd38046a2714055550625d9c12bfc0306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a40000000069b8857feab8184fb687f634618c035dac439dc1aeb3b5598a0f0000000000106ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a92390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760302000502801a060002000903a025260000000000040201032112fa7b214b571ce49e7b02ff0b663d4e7a56992db29300885e29827a47ea1f949300",
+        "expected": {
+          "deny": "SOL_DENY_TOKEN_INIT_OUTSIDE_ATA",
+          "instructionIndex": 2
+        }
+      }
+    ]
+  },
+  {
+    "id": "L3",
+    "provenance": "mainnet",
+    "signature": "3JLEkYkb11ZfoYsEDtyW59f7cvW5Ru8Z2hZ4Kn9qsHsBVFwFbAfnnnT2AfUzhA6PvJoBeZuS9ZfzoxHr2prFgJSf",
+    "slot": 464121663,
+    "blockTime": 1793542436,
+    "fetchedAt": "2026-11-01T14:14:27.915Z",
+    "rpc": "https://solana-rpc.publicnode.com",
+    "version": "legacy",
+    "messageHex": "01000307f4e064ad060ae3cf367ce9874f1dc08cd78c18e3522263e3ca37fab784bc9cde866977cb32d8ce28608d3998e916444324965532a9fe5d09c2fa043b5a57b19f8ded1536e3fc354bf36147d3755af038ad26b91453bf2535d5cd243b05f317844c65bdfb0ca927d9fbc358f0502b6e647e69bc24dbe505ec9eae4757a5cc0d630306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a4000000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a906ddf6e1ee758fde18425dbce46ccddab61afc4d83b90d27febdf928d8a18bfc13f51cb036b1e86a46190ab1c061c93ba8939312357b20c67d2f08319aea60e305040005026a280100040009036c5200000000000005030100000109060302030009085a8249712b00000006030200000109",
+    "expected": {
+      "deny": "SOL_DENY_PROGRAM_NOT_ENABLED",
+      "instructionIndex": 2
+    },
+    "expectedRoles": [
+      {
+        "index": 0,
+        "address": "HUtw6vVShhfgvh8GukrwaLSLvD1sX6gYwLP9QhsXhbrV",
+        "signer": true,
+        "writable": true
+      },
+      {
+        "index": 1,
+        "address": "A3guf8BdZCLY6P6e2SWYRcbkbFLtCKLdBJ21o38Nk1SE",
+        "signer": false,
+        "writable": true
+      },
+      {
+        "index": 2,
+        "address": "AZ2ASEvGFEa6dy1J389DNgrb7Dqgt1xUa5VwbgpMTm4w",
+        "signer": false,
+        "writable": true
+      },
+      {
+        "index": 3,
+        "address": "69Dy3XmHBKSrTxRxvkvaC2HgR2GWNmYmW9FwkGUeTQ3t",
+        "signer": false,
+        "writable": true
+      },
+      {
+        "index": 4,
+        "address": "ComputeBudget111111111111111111111111111111",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 5,
+        "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 6,
+        "address": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+        "signer": false,
+        "writable": false
+      }
+    ],
+    "rewraps": [
+      {
+        "provenance": "mainnet-rewrapped",
+        "sourceInstructionIndices": [
+          3
+        ],
+        "payer": "HUtw6vVShhfgvh8GukrwaLSLvD1sX6gYwLP9QhsXhbrV",
+        "normalization": "v0 one-signer; source account privileges preserved",
+        "instructions": [
+          {
+            "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+            "dataHex": "085a8249712b000000",
+            "accounts": [
+              {
+                "address": "AZ2ASEvGFEa6dy1J389DNgrb7Dqgt1xUa5VwbgpMTm4w",
+                "signer": false,
+                "writable": true
+              },
+              {
+                "address": "69Dy3XmHBKSrTxRxvkvaC2HgR2GWNmYmW9FwkGUeTQ3t",
+                "signer": false,
+                "writable": true
+              },
+              {
+                "address": "HUtw6vVShhfgvh8GukrwaLSLvD1sX6gYwLP9QhsXhbrV",
+                "signer": true,
+                "writable": true
+              }
+            ]
+          }
+        ],
+        "messageHex": "8001000205f4e064ad060ae3cf367ce9874f1dc08cd78c18e3522263e3ca37fab784bc9cde8ded1536e3fc354bf36147d3755af038ad26b91453bf2535d5cd243b05f317844c65bdfb0ca927d9fbc358f0502b6e647e69bc24dbe505ec9eae4757a5cc0d630306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a4000000006ddf6e1ee758fde18425dbce46ccddab61afc4d83b90d27febdf928d8a18bfc2390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760303000502801a060003000903a025260000000000040301020009085a8249712b00000000",
+        "expected": {
+          "deny": "SOL_DENY_PROGRAM_NOT_ENABLED",
+          "instructionIndex": 2
+        }
+      },
+      {
+        "provenance": "mainnet-rewrapped",
+        "sourceInstructionIndices": [
+          2
+        ],
+        "payer": "HUtw6vVShhfgvh8GukrwaLSLvD1sX6gYwLP9QhsXhbrV",
+        "normalization": "v0 one-signer; source account privileges preserved",
+        "instructions": [
+          {
+            "program": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+            "dataHex": "09",
+            "accounts": [
+              {
+                "address": "A3guf8BdZCLY6P6e2SWYRcbkbFLtCKLdBJ21o38Nk1SE",
+                "signer": false,
+                "writable": true
+              },
+              {
+                "address": "HUtw6vVShhfgvh8GukrwaLSLvD1sX6gYwLP9QhsXhbrV",
+                "signer": true,
+                "writable": true
+              },
+              {
+                "address": "HUtw6vVShhfgvh8GukrwaLSLvD1sX6gYwLP9QhsXhbrV",
+                "signer": true,
+                "writable": true
+              }
+            ]
+          }
+        ],
+        "messageHex": "8001000204f4e064ad060ae3cf367ce9874f1dc08cd78c18e3522263e3ca37fab784bc9cde866977cb32d8ce28608d3998e916444324965532a9fe5d09c2fa043b5a57b19f0306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a4000000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a92390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760302000502801a060002000903a0252600000000000303010000010900",
+        "expected": {
+          "actions": [
+            {
+              "instructionIndex": 0,
+              "programId": "ComputeBudget111111111111111111111111111111",
+              "kind": "computeBudget.setComputeUnitLimit",
+              "units": 400000
+            },
+            {
+              "instructionIndex": 1,
+              "programId": "ComputeBudget111111111111111111111111111111",
+              "kind": "computeBudget.setComputeUnitPrice",
+              "microLamports": "2500000"
+            },
+            {
+              "instructionIndex": 2,
+              "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+              "tokenProgram": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+              "kind": "token.closeAccount",
+              "account": "A3guf8BdZCLY6P6e2SWYRcbkbFLtCKLdBJ21o38Nk1SE",
+              "destination": "HUtw6vVShhfgvh8GukrwaLSLvD1sX6gYwLP9QhsXhbrV",
+              "owner": "HUtw6vVShhfgvh8GukrwaLSLvD1sX6gYwLP9QhsXhbrV"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "id": "L4",
+    "provenance": "mainnet",
+    "signature": "5nMUBJyAAydorsupWc68Sz2uF5Cv7tHdngGLugb2scCwQg531Pk33ukV6Ff99tJziqf8iRidbGqm5o4uWwer6Z3Z",
+    "slot": 464121582,
+    "blockTime": 1793542419,
+    "fetchedAt": "2026-11-01T14:14:27.915Z",
+    "rpc": "https://solana-rpc.publicnode.com",
+    "version": "legacy",
+    "messageHex": "0201070b331012f599c2cd8705478357754c1ed16eb7a71310261ef790d6f66bf246c279e90f523e885395e398cda945218ac39f2e240f6319c9abfd95db9e3baf9fb60c6ae54b66fae1a2047e89cbd5d99e34eea68ebdabc09c111566f625728aaebe667e8f93a79be7a7f5a3f02b4d14297f520091d0b2219f09cca1526bfac83c938500000000000000000000000000000000000000000000000000000000000000000306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a40000000054a535a992921064d24e87160da387c7c35b5ddbc92bb81e41fa8404105448d06ddf6e1ee758fde18425dbce46ccddab61afc4d83b90d27febdf928d8a18bfc8c97258f4e2489f1bb3d1029148e0d830b5a1399daff1084048e7bd8dbe9f859c69eb5adf79806f5b15e868bf54ff74e8435c3e9a05c017d8d22baaa7a17db88fea8deb0e6f131cce3d2448e252e3d38680b4e70a8501bbd6857be9f4e69776e869fd6d58bb9c5dcb022aed4e7684b19e66703708f6e7eeec4c0ff6d44a9476905080600030a09040701010704020903010a0ce098d00b000000000606002439343739376437632d393965612d346238382d623433372d65383536373537353232363005000502a063000005000903d42b000000000000",
+    "expected": {
+      "deny": "SOL_DENY_PROGRAM_NOT_ENABLED",
+      "instructionIndex": 2
+    },
+    "expectedRoles": [
+      {
+        "index": 0,
+        "address": "4SL1VpLV3v7zELwPQWTobCKigBGWoV6yy4BipQfYKDzY",
+        "signer": true,
+        "writable": true
+      },
+      {
+        "index": 1,
+        "address": "GgmYYHqfuaGUkejBZRHDsGz78Zgm2MrQzs4k7PeKwFyu",
+        "signer": true,
+        "writable": false
+      },
+      {
+        "index": 2,
+        "address": "8CH1JYmfn1nD29TXXDNTqXrFFpd9ccf8quNWP425FXFs",
+        "signer": false,
+        "writable": true
+      },
+      {
+        "index": 3,
+        "address": "9X3MJDoHbeMkHP7vxVt4p6RxLXM2HKdBa29LEVGZ1bbi",
+        "signer": false,
+        "writable": true
+      },
+      {
+        "index": 4,
+        "address": "11111111111111111111111111111111",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 5,
+        "address": "ComputeBudget111111111111111111111111111111",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 6,
+        "address": "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 7,
+        "address": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 8,
+        "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 9,
+        "address": "ENL66PGy8d8j5KNqLtCcg4uidDUac5ibt45wbjH9REzB",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 10,
+        "address": "J95uU8JeFEGi9A5y3mHRNTM5nNkYSVM2RZ7twqJuYMyw",
+        "signer": false,
+        "writable": false
+      }
+    ],
+    "rewraps": [
+      {
+        "provenance": "mainnet-rewrapped",
+        "sourceInstructionIndices": [
+          1
+        ],
+        "payer": "4SL1VpLV3v7zELwPQWTobCKigBGWoV6yy4BipQfYKDzY",
+        "normalization": "secondary signer demoted; instruction data and address list unchanged",
+        "instructions": [
+          {
+            "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+            "dataHex": "0ce098d00b0000000006",
+            "accounts": [
+              {
+                "address": "8CH1JYmfn1nD29TXXDNTqXrFFpd9ccf8quNWP425FXFs",
+                "signer": false,
+                "writable": true
+              },
+              {
+                "address": "ENL66PGy8d8j5KNqLtCcg4uidDUac5ibt45wbjH9REzB",
+                "signer": false,
+                "writable": false
+              },
+              {
+                "address": "9X3MJDoHbeMkHP7vxVt4p6RxLXM2HKdBa29LEVGZ1bbi",
+                "signer": false,
+                "writable": true
+              },
+              {
+                "address": "GgmYYHqfuaGUkejBZRHDsGz78Zgm2MrQzs4k7PeKwFyu",
+                "signer": true,
+                "writable": false
+              }
+            ]
+          }
+        ],
+        "messageHex": "8001000407331012f599c2cd8705478357754c1ed16eb7a71310261ef790d6f66bf246c2796ae54b66fae1a2047e89cbd5d99e34eea68ebdabc09c111566f625728aaebe667e8f93a79be7a7f5a3f02b4d14297f520091d0b2219f09cca1526bfac83c93850306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a40000000c69eb5adf79806f5b15e868bf54ff74e8435c3e9a05c017d8d22baaa7a17db88e90f523e885395e398cda945218ac39f2e240f6319c9abfd95db9e3baf9fb60c06ddf6e1ee758fde18425dbce46ccddab61afc4d83b90d27febdf928d8a18bfc2390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760303000502801a060003000903a0252600000000000604010402050a0ce098d00b000000000600",
+        "expected": {
+          "deny": "SOL_DENY_PROGRAM_NOT_ENABLED",
+          "instructionIndex": 2
+        }
+      }
+    ]
+  },
+  {
+    "id": "V1",
+    "provenance": "mainnet",
+    "signature": "3TD1EQyPKiYnHctRcQim8kaDZRPMTC7WnyiZ8JYrPxXX2wbpTbvhLcS3NpN3Yy5QHbMY5532d4Ys1yVg9cSPE5fE",
+    "slot": 464121664,
+    "blockTime": 1793542437,
+    "fetchedAt": "2026-11-01T14:14:27.915Z",
+    "rpc": "https://solana-rpc.publicnode.com",
+    "version": 0,
+    "messageHex": "800100060b183587a0b008ccae03979212dd635a00328b52aeea09efbcda9e5d1e8fb8f0bccfd2f8d103fd07d0844ba243fcf4da6bc282e54240d3cb1f3471b8f431e5822e9f7b664549f96b282309672b5695e9b1ebc0fdfc393e556523709c682f377e9220fccee021e99c1191405016526fd23e9796a79136069faf23f9c2d687b532d11a7a789b22c775f8586fda92f34c37182542fe4ee9f7ef0e527e6915597200961e7bb1db21617379acdc0456255a6c333f73712ab1e0e98a5a28e5edb95cbbac0c429bd7c18f50f8156d9afc1cdde72df668d9ab3becaf6b570d5766645ad9c88c97258f4e2489f1bb3d1029148e0d830b5a1399daff1084048e7bd8dbe9f8599700808a55d2346a5cef77dbbd8d44d84d0ce680c50766b1c53f237d2b18514a359b6388b82451826cbb83bb94217af9658608629f81634f0a2449de6b509c760306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a40000000f9358d28e1c123c4747bba3304e9b55a8c8c38a56803ecbda291ffa41e818f02060a00050235cc0d000a00090100000100000000000a0009039ee1000000000000070600010039341701010706000205393417010106700003013b39060618041b1717073432063c18041926272329211733353b36242528222a18191a2b0b0c0e363817173708092a18191a2b0d0c0e363817173708093a181a1b1c1e1f1d2039381717372c181a1b2d0f101110111117372c2c30181a1b31151438391717352e2f131216370258aa2955b184501f3526e8ab3b0000000007ec714aa30c0000833ff217000000003200050000000b1027018cb004128c602212445424237e020000000d10923fefa94a6f869fe80000000c00000000bc022300000000000064074d691aed5f4738cc114bee22d10211b9b2ae4eb73ccc58cd9af5d1c1ffc7a504017800fe2a9c3353b5ef3a032f3408ed0c8451eab56b567eef6d96abef02a67a44dea7030104050200076ec2ab420d1441f758607e3e41f483397c49c5a92ee6a038b761bad5d6d6f86f03000106020204c2c354040d2bf518eb3f3306b8b75250f859d29edd8eff3c306c0fce0049abb7050006080d0e040102040be486bb89eb3d1c739259325e0fb148285c3ca27bb8ad0a339a02940f4586e210054101020304087040436b3c6c3d3e3c8558f73b25fafd2515fae9de241e08a58b696d7c996833dafb0c29dfeef14c050001030405010864dd74b6b4e8b448032613332ecdf6d99e7db6e26ab63e1ad94de27844595fec0900101102090a0d0e0f020508",
+    "expected": {
+      "deny": "SOL_DENY_COMPUTE_BUDGET_INSTRUCTION",
+      "instructionIndex": 2
+    },
+    "expectedRoles": [
+      {
+        "index": 0,
+        "address": "2dW8MT8oUVkuhPevE5YQ9CB7hrw8RTJpEVcN7YiRUjpP",
+        "signer": true,
+        "writable": true
+      },
+      {
+        "index": 1,
+        "address": "EzFyjHwgKPsHYiXCDHKfKGxJ71BiRW7ZpirkZHddfGQm",
+        "signer": false,
+        "writable": true
+      },
+      {
+        "index": 2,
+        "address": "BjYxdMZJwEzUnsBQbtqaACkNJrqoEP8TpBGJabg7jsFF",
+        "signer": false,
+        "writable": true
+      },
+      {
+        "index": 3,
+        "address": "3Dmdc2DwXAr5ceMyjUn4rLwQVRqZ8sbgLbTMF9sGQjYU",
+        "signer": false,
+        "writable": true
+      },
+      {
+        "index": 4,
+        "address": "2nMv2S35WmzeSsyPfk8c3WsGcK2AytbMupSK7wgN1d6u",
+        "signer": false,
+        "writable": true
+      },
+      {
+        "index": 5,
+        "address": "33zdNtc9NcA2GZtuRTvGSc8XxaABedRDrny31fGkDpWF",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 6,
+        "address": "proVF4pMXVaYqmy4NjniPh4pqKNfMmsihgd4wdkCX3u",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 7,
+        "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 8,
+        "address": "BAT1Ndpu5gbLTp2AZkSXP79LJBZfCH4B3zGhi6LtvdhK",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 9,
+        "address": "4cG31VNF9TzFinNc7BmnjhFvGjxkY3sCETVMtMgbrhPs",
+        "signer": false,
+        "writable": false
+      },
+      {
+        "index": 10,
+        "address": "ComputeBudget111111111111111111111111111111",
+        "signer": false,
+        "writable": false
+      }
+    ],
+    "rewraps": [
+      {
+        "provenance": "mainnet-rewrapped",
+        "sourceInstructionIndices": [
+          1
+        ],
+        "payer": "2dW8MT8oUVkuhPevE5YQ9CB7hrw8RTJpEVcN7YiRUjpP",
+        "normalization": "v0 one-signer; source account privileges preserved",
+        "instructions": [
+          {
+            "program": "ComputeBudget111111111111111111111111111111",
+            "dataHex": "010000010000000000",
+            "accounts": []
+          }
+        ],
+        "messageHex": "8001000102183587a0b008ccae03979212dd635a00328b52aeea09efbcda9e5d1e8fb8f0bc0306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a400000002390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760301000502801a060001000903a02526000000000001000901000001000000000000",
+        "expected": {
+          "deny": "SOL_DENY_COMPUTE_BUDGET_INSTRUCTION",
+          "instructionIndex": 2
+        }
+      }
+    ]
+  }
+]

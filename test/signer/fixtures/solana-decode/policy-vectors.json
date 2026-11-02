@@ -1,0 +1,2577 @@
+[
+  {
+    "id": "wrap",
+    "provenance": "hand-built",
+    "messageHex": "800100030522df37c1a446aeebe8d68fe306dfb34af4f24f692eb5a321f5e23ea60b6b9563ceea64965f0cf4512af5e2f76ead4367b70fadf51ff1fbea7ea590b6ba0125a80306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a40000000000000000000000000000000000000000000000000000000000000000000000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a92390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760402000502801a060002000903a025260000000000030200010c020000006400000000000000040101011100",
+    "intent": {
+      "version": "1",
+      "intentId": "pr3-offline-vector",
+      "nonce": "1",
+      "createdAt": 1793542500000,
+      "expiresAt": 1793542590000,
+      "wallet": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+      "chainId": "solana:mainnet",
+      "action": "transfer",
+      "venue": "system",
+      "routeHash": "0x5ef1812df919d241b1117ce2a6c655dd85ed5e630f0c51a1b3b48c15539ec000",
+      "tx": {
+        "serializedMessage": "gAEAAwUi3zfBpEau6+jWj+MG37NK9PJPaS61oyH14j6mC2uVY87qZJZfDPRRKvXi926tQ2e3D631H/H76n6lkLa6ASWoAwZGb+UhFzL/7K26csOb57yM5bvF9xJrLEObOkAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAbd9uHXZaGT2cvhRs7reawctIXtX1s3kTqM9YV+/wCpI5DmCsCxRFXlfjPC3Mw1AxLIpUmF6yuEEC3CXYtMbHYEAgAFAoAaBgACAAkDoCUmAAAAAAADAgABDAIAAABkAAAAAAAAAAQBAQERAA==",
+        "recentBlockhash": "3PqRGmMhL119BM3BNhzVES4okxJqHPjyfqvtQZatN3oj",
+        "lastValidBlockHeight": 300000100,
+        "computeUnitLimit": 400000,
+        "computeUnitPriceMicroLamports": "2500000"
+      },
+      "tokenIn": {
+        "mint": "So11111111111111111111111111111111111111112",
+        "symbol": "wSOL",
+        "decimals": 9
+      },
+      "amountIn": "100",
+      "programIds": [
+        "11111111111111111111111111111111",
+        "ComputeBudget111111111111111111111111111111",
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      ]
+    },
+    "configProfile": {},
+    "expected": {
+      "actions": [
+        {
+          "instructionIndex": 0,
+          "programId": "ComputeBudget111111111111111111111111111111",
+          "kind": "computeBudget.setComputeUnitLimit",
+          "units": 400000
+        },
+        {
+          "instructionIndex": 1,
+          "programId": "ComputeBudget111111111111111111111111111111",
+          "kind": "computeBudget.setComputeUnitPrice",
+          "microLamports": "2500000"
+        },
+        {
+          "instructionIndex": 2,
+          "programId": "11111111111111111111111111111111",
+          "kind": "system.transfer",
+          "from": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+          "to": "EviHUThBFQWHrUMW4Fc2sAMCkb9CwdanGnArC54F7XFM",
+          "lamports": "100"
+        },
+        {
+          "instructionIndex": 3,
+          "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "tokenProgram": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "kind": "token.syncNative",
+          "account": "EviHUThBFQWHrUMW4Fc2sAMCkb9CwdanGnArC54F7XFM"
+        }
+      ],
+      "debitSummary": {
+        "debits": {
+          "native": "100"
+        },
+        "newAccounts": [],
+        "priorityFeeLamports": "1000000"
+      }
+    }
+  },
+  {
+    "id": "wrap-ata-0",
+    "provenance": "hand-built",
+    "messageHex": "800100050722df37c1a446aeebe8d68fe306dfb34af4f24f692eb5a321f5e23ea60b6b9563ceea64965f0cf4512af5e2f76ead4367b70fadf51ff1fbea7ea590b6ba0125a80306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a40000000069b8857feab8184fb687f634618c035dac439dc1aeb3b5598a0f00000000001000000000000000000000000000000000000000000000000000000000000000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a98c97258f4e2489f1bb3d1029148e0d830b5a1399daff1084048e7bd8dbe9f8592390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760502000502801a060002000903a02526000000000006060001000304050100040200010c020000006400000000000000050101011100",
+    "intent": {
+      "version": "1",
+      "intentId": "pr3-offline-vector",
+      "nonce": "1",
+      "createdAt": 1793542500000,
+      "expiresAt": 1793542590000,
+      "wallet": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+      "chainId": "solana:mainnet",
+      "action": "transfer",
+      "venue": "system",
+      "routeHash": "0x4a5dc0312659adbc423d119a6c96702fb758f64da20a90fef595b12e69827bac",
+      "tx": {
+        "serializedMessage": "gAEABQci3zfBpEau6+jWj+MG37NK9PJPaS61oyH14j6mC2uVY87qZJZfDPRRKvXi926tQ2e3D631H/H76n6lkLa6ASWoAwZGb+UhFzL/7K26csOb57yM5bvF9xJrLEObOkAAAAAGm4hX/quBhPtof2NGGMA12sQ53BrrO1WYoPAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABt324ddloZPZy+FGzut5rBy0he1fWzeROoz1hX7/AKmMlyWPTiSJ8bs9ECkUjg2DC1oTmdr/EIQEjnvY2+n4WSOQ5grAsURV5X4zwtzMNQMSyKVJhesrhBAtwl2LTGx2BQIABQKAGgYAAgAJA6AlJgAAAAAABgYAAQADBAUBAAQCAAEMAgAAAGQAAAAAAAAABQEBAREA",
+        "recentBlockhash": "3PqRGmMhL119BM3BNhzVES4okxJqHPjyfqvtQZatN3oj",
+        "lastValidBlockHeight": 300000100,
+        "computeUnitLimit": 400000,
+        "computeUnitPriceMicroLamports": "2500000"
+      },
+      "tokenIn": {
+        "mint": "So11111111111111111111111111111111111111112",
+        "symbol": "wSOL",
+        "decimals": 9
+      },
+      "amountIn": "100",
+      "programIds": [
+        "11111111111111111111111111111111",
+        "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
+        "ComputeBudget111111111111111111111111111111",
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      ]
+    },
+    "configProfile": {},
+    "expected": {
+      "actions": [
+        {
+          "instructionIndex": 0,
+          "programId": "ComputeBudget111111111111111111111111111111",
+          "kind": "computeBudget.setComputeUnitLimit",
+          "units": 400000
+        },
+        {
+          "instructionIndex": 1,
+          "programId": "ComputeBudget111111111111111111111111111111",
+          "kind": "computeBudget.setComputeUnitPrice",
+          "microLamports": "2500000"
+        },
+        {
+          "instructionIndex": 2,
+          "programId": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
+          "kind": "ata.create",
+          "mode": "create",
+          "payer": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+          "ata": "EviHUThBFQWHrUMW4Fc2sAMCkb9CwdanGnArC54F7XFM",
+          "wallet": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+          "mint": "So11111111111111111111111111111111111111112",
+          "tokenProgram": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "impliedCpiPrograms": [
+            "11111111111111111111111111111111",
+            "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+          ]
+        },
+        {
+          "instructionIndex": 3,
+          "programId": "11111111111111111111111111111111",
+          "kind": "system.transfer",
+          "from": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+          "to": "EviHUThBFQWHrUMW4Fc2sAMCkb9CwdanGnArC54F7XFM",
+          "lamports": "100"
+        },
+        {
+          "instructionIndex": 4,
+          "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "tokenProgram": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "kind": "token.syncNative",
+          "account": "EviHUThBFQWHrUMW4Fc2sAMCkb9CwdanGnArC54F7XFM"
+        }
+      ],
+      "debitSummary": {
+        "debits": {
+          "native": "100"
+        },
+        "newAccounts": [
+          {
+            "address": "EviHUThBFQWHrUMW4Fc2sAMCkb9CwdanGnArC54F7XFM",
+            "tokenProgram": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+            "expectedSpace": 165
+          }
+        ],
+        "priorityFeeLamports": "1000000"
+      }
+    }
+  },
+  {
+    "id": "wrap-ata-1",
+    "provenance": "hand-built",
+    "messageHex": "800100050722df37c1a446aeebe8d68fe306dfb34af4f24f692eb5a321f5e23ea60b6b9563ceea64965f0cf4512af5e2f76ead4367b70fadf51ff1fbea7ea590b6ba0125a80306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a40000000069b8857feab8184fb687f634618c035dac439dc1aeb3b5598a0f00000000001000000000000000000000000000000000000000000000000000000000000000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a98c97258f4e2489f1bb3d1029148e0d830b5a1399daff1084048e7bd8dbe9f8592390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760502000502801a060002000903a02526000000000006060001000304050101040200010c020000006400000000000000050101011100",
+    "intent": {
+      "version": "1",
+      "intentId": "pr3-offline-vector",
+      "nonce": "1",
+      "createdAt": 1793542500000,
+      "expiresAt": 1793542590000,
+      "wallet": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+      "chainId": "solana:mainnet",
+      "action": "transfer",
+      "venue": "system",
+      "routeHash": "0xfc4a537c5e88167e4b99ac62898285d78ac3475ce607409d26f3ecf111ae11b5",
+      "tx": {
+        "serializedMessage": "gAEABQci3zfBpEau6+jWj+MG37NK9PJPaS61oyH14j6mC2uVY87qZJZfDPRRKvXi926tQ2e3D631H/H76n6lkLa6ASWoAwZGb+UhFzL/7K26csOb57yM5bvF9xJrLEObOkAAAAAGm4hX/quBhPtof2NGGMA12sQ53BrrO1WYoPAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABt324ddloZPZy+FGzut5rBy0he1fWzeROoz1hX7/AKmMlyWPTiSJ8bs9ECkUjg2DC1oTmdr/EIQEjnvY2+n4WSOQ5grAsURV5X4zwtzMNQMSyKVJhesrhBAtwl2LTGx2BQIABQKAGgYAAgAJA6AlJgAAAAAABgYAAQADBAUBAQQCAAEMAgAAAGQAAAAAAAAABQEBAREA",
+        "recentBlockhash": "3PqRGmMhL119BM3BNhzVES4okxJqHPjyfqvtQZatN3oj",
+        "lastValidBlockHeight": 300000100,
+        "computeUnitLimit": 400000,
+        "computeUnitPriceMicroLamports": "2500000"
+      },
+      "tokenIn": {
+        "mint": "So11111111111111111111111111111111111111112",
+        "symbol": "wSOL",
+        "decimals": 9
+      },
+      "amountIn": "100",
+      "programIds": [
+        "11111111111111111111111111111111",
+        "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
+        "ComputeBudget111111111111111111111111111111",
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      ]
+    },
+    "configProfile": {},
+    "expected": {
+      "actions": [
+        {
+          "instructionIndex": 0,
+          "programId": "ComputeBudget111111111111111111111111111111",
+          "kind": "computeBudget.setComputeUnitLimit",
+          "units": 400000
+        },
+        {
+          "instructionIndex": 1,
+          "programId": "ComputeBudget111111111111111111111111111111",
+          "kind": "computeBudget.setComputeUnitPrice",
+          "microLamports": "2500000"
+        },
+        {
+          "instructionIndex": 2,
+          "programId": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
+          "kind": "ata.create",
+          "mode": "createIdempotent",
+          "payer": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+          "ata": "EviHUThBFQWHrUMW4Fc2sAMCkb9CwdanGnArC54F7XFM",
+          "wallet": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+          "mint": "So11111111111111111111111111111111111111112",
+          "tokenProgram": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "impliedCpiPrograms": [
+            "11111111111111111111111111111111",
+            "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+          ]
+        },
+        {
+          "instructionIndex": 3,
+          "programId": "11111111111111111111111111111111",
+          "kind": "system.transfer",
+          "from": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+          "to": "EviHUThBFQWHrUMW4Fc2sAMCkb9CwdanGnArC54F7XFM",
+          "lamports": "100"
+        },
+        {
+          "instructionIndex": 4,
+          "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "tokenProgram": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "kind": "token.syncNative",
+          "account": "EviHUThBFQWHrUMW4Fc2sAMCkb9CwdanGnArC54F7XFM"
+        }
+      ],
+      "debitSummary": {
+        "debits": {
+          "native": "100"
+        },
+        "newAccounts": [
+          {
+            "address": "EviHUThBFQWHrUMW4Fc2sAMCkb9CwdanGnArC54F7XFM",
+            "tokenProgram": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+            "expectedSpace": 165
+          }
+        ],
+        "priorityFeeLamports": "1000000"
+      }
+    }
+  },
+  {
+    "id": "unwrap-0",
+    "provenance": "hand-built",
+    "messageHex": "800100020422df37c1a446aeebe8d68fe306dfb34af4f24f692eb5a321f5e23ea60b6b9563ceea64965f0cf4512af5e2f76ead4367b70fadf51ff1fbea7ea590b6ba0125a80306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a4000000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a92390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760302000502801a060002000903a0252600000000000303010000010900",
+    "intent": {
+      "version": "1",
+      "intentId": "pr3-offline-vector",
+      "nonce": "1",
+      "createdAt": 1793542500000,
+      "expiresAt": 1793542590000,
+      "wallet": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+      "chainId": "solana:mainnet",
+      "action": "transfer",
+      "venue": "spl-token",
+      "routeHash": "0x24fb1681f1acf688e72da06758f890b24e5b0d908658683b9cc39bcd551e523f",
+      "tx": {
+        "serializedMessage": "gAEAAgQi3zfBpEau6+jWj+MG37NK9PJPaS61oyH14j6mC2uVY87qZJZfDPRRKvXi926tQ2e3D631H/H76n6lkLa6ASWoAwZGb+UhFzL/7K26csOb57yM5bvF9xJrLEObOkAAAAAG3fbh12Whk9nL4UbO63msHLSF7V9bN5E6jPWFfv8AqSOQ5grAsURV5X4zwtzMNQMSyKVJhesrhBAtwl2LTGx2AwIABQKAGgYAAgAJA6AlJgAAAAAAAwMBAAABCQA=",
+        "recentBlockhash": "3PqRGmMhL119BM3BNhzVES4okxJqHPjyfqvtQZatN3oj",
+        "lastValidBlockHeight": 300000100,
+        "computeUnitLimit": 400000,
+        "computeUnitPriceMicroLamports": "2500000"
+      },
+      "tokenIn": {
+        "mint": "So11111111111111111111111111111111111111112",
+        "symbol": "wSOL",
+        "decimals": 9
+      },
+      "amountIn": "0",
+      "programIds": [
+        "ComputeBudget111111111111111111111111111111",
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      ]
+    },
+    "configProfile": {},
+    "expected": {
+      "actions": [
+        {
+          "instructionIndex": 0,
+          "programId": "ComputeBudget111111111111111111111111111111",
+          "kind": "computeBudget.setComputeUnitLimit",
+          "units": 400000
+        },
+        {
+          "instructionIndex": 1,
+          "programId": "ComputeBudget111111111111111111111111111111",
+          "kind": "computeBudget.setComputeUnitPrice",
+          "microLamports": "2500000"
+        },
+        {
+          "instructionIndex": 2,
+          "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "tokenProgram": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "kind": "token.closeAccount",
+          "account": "EviHUThBFQWHrUMW4Fc2sAMCkb9CwdanGnArC54F7XFM",
+          "destination": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+          "owner": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ"
+        }
+      ],
+      "debitSummary": {
+        "debits": {},
+        "newAccounts": [],
+        "priorityFeeLamports": "1000000"
+      }
+    }
+  },
+  {
+    "id": "unwrap-123456789",
+    "provenance": "hand-built",
+    "messageHex": "800100020422df37c1a446aeebe8d68fe306dfb34af4f24f692eb5a321f5e23ea60b6b9563ceea64965f0cf4512af5e2f76ead4367b70fadf51ff1fbea7ea590b6ba0125a80306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a4000000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a92390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760302000502801a060002000903a0252600000000000303010000010900",
+    "intent": {
+      "version": "1",
+      "intentId": "pr3-offline-vector",
+      "nonce": "1",
+      "createdAt": 1793542500000,
+      "expiresAt": 1793542590000,
+      "wallet": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+      "chainId": "solana:mainnet",
+      "action": "transfer",
+      "venue": "spl-token",
+      "routeHash": "0x24fb1681f1acf688e72da06758f890b24e5b0d908658683b9cc39bcd551e523f",
+      "tx": {
+        "serializedMessage": "gAEAAgQi3zfBpEau6+jWj+MG37NK9PJPaS61oyH14j6mC2uVY87qZJZfDPRRKvXi926tQ2e3D631H/H76n6lkLa6ASWoAwZGb+UhFzL/7K26csOb57yM5bvF9xJrLEObOkAAAAAG3fbh12Whk9nL4UbO63msHLSF7V9bN5E6jPWFfv8AqSOQ5grAsURV5X4zwtzMNQMSyKVJhesrhBAtwl2LTGx2AwIABQKAGgYAAgAJA6AlJgAAAAAAAwMBAAABCQA=",
+        "recentBlockhash": "3PqRGmMhL119BM3BNhzVES4okxJqHPjyfqvtQZatN3oj",
+        "lastValidBlockHeight": 300000100,
+        "computeUnitLimit": 400000,
+        "computeUnitPriceMicroLamports": "2500000"
+      },
+      "tokenIn": {
+        "mint": "So11111111111111111111111111111111111111112",
+        "symbol": "wSOL",
+        "decimals": 9
+      },
+      "amountIn": "123456789",
+      "programIds": [
+        "ComputeBudget111111111111111111111111111111",
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      ]
+    },
+    "configProfile": {},
+    "expected": {
+      "actions": [
+        {
+          "instructionIndex": 0,
+          "programId": "ComputeBudget111111111111111111111111111111",
+          "kind": "computeBudget.setComputeUnitLimit",
+          "units": 400000
+        },
+        {
+          "instructionIndex": 1,
+          "programId": "ComputeBudget111111111111111111111111111111",
+          "kind": "computeBudget.setComputeUnitPrice",
+          "microLamports": "2500000"
+        },
+        {
+          "instructionIndex": 2,
+          "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "tokenProgram": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "kind": "token.closeAccount",
+          "account": "EviHUThBFQWHrUMW4Fc2sAMCkb9CwdanGnArC54F7XFM",
+          "destination": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+          "owner": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ"
+        }
+      ],
+      "debitSummary": {
+        "debits": {},
+        "newAccounts": [],
+        "priorityFeeLamports": "1000000"
+      }
+    }
+  },
+  {
+    "id": "usdc-ata-0",
+    "provenance": "hand-built",
+    "messageHex": "800100050722df37c1a446aeebe8d68fe306dfb34af4f24f692eb5a321f5e23ea60b6b956314f594795403a863c52a5eabd3b72799469949e7e2afc7bd8ea04b1688ef9c850306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a40000000c6fa7af3bedbad3a3d65f36aabc97431b1bbe4c2d2f6e0e47ca60203452f5d61000000000000000000000000000000000000000000000000000000000000000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a98c97258f4e2489f1bb3d1029148e0d830b5a1399daff1084048e7bd8dbe9f8592390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760302000502801a060002000903a0252600000000000606000100030405010000",
+    "intent": {
+      "version": "1",
+      "intentId": "pr3-offline-vector",
+      "nonce": "1",
+      "createdAt": 1793542500000,
+      "expiresAt": 1793542590000,
+      "wallet": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+      "chainId": "solana:mainnet",
+      "action": "transfer",
+      "venue": "spl-token",
+      "routeHash": "0xcb954a17ab578baefa15ed5c967cf9de4f48540b92aea47e1ff83d544be7e786",
+      "tx": {
+        "serializedMessage": "gAEABQci3zfBpEau6+jWj+MG37NK9PJPaS61oyH14j6mC2uVYxT1lHlUA6hjxSpeq9O3J5lGmUnn4q/HvY6gSxaI75yFAwZGb+UhFzL/7K26csOb57yM5bvF9xJrLEObOkAAAADG+nrzvtutOj1l82qryXQxsbvkwtL24OR8pgIDRS9dYQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABt324ddloZPZy+FGzut5rBy0he1fWzeROoz1hX7/AKmMlyWPTiSJ8bs9ECkUjg2DC1oTmdr/EIQEjnvY2+n4WSOQ5grAsURV5X4zwtzMNQMSyKVJhesrhBAtwl2LTGx2AwIABQKAGgYAAgAJA6AlJgAAAAAABgYAAQADBAUBAAA=",
+        "recentBlockhash": "3PqRGmMhL119BM3BNhzVES4okxJqHPjyfqvtQZatN3oj",
+        "lastValidBlockHeight": 300000100,
+        "computeUnitLimit": 400000,
+        "computeUnitPriceMicroLamports": "2500000"
+      },
+      "tokenIn": {
+        "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "symbol": "USDC",
+        "decimals": 6
+      },
+      "amountIn": "0",
+      "programIds": [
+        "11111111111111111111111111111111",
+        "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
+        "ComputeBudget111111111111111111111111111111",
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      ]
+    },
+    "configProfile": {},
+    "expected": {
+      "actions": [
+        {
+          "instructionIndex": 0,
+          "programId": "ComputeBudget111111111111111111111111111111",
+          "kind": "computeBudget.setComputeUnitLimit",
+          "units": 400000
+        },
+        {
+          "instructionIndex": 1,
+          "programId": "ComputeBudget111111111111111111111111111111",
+          "kind": "computeBudget.setComputeUnitPrice",
+          "microLamports": "2500000"
+        },
+        {
+          "instructionIndex": 2,
+          "programId": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
+          "kind": "ata.create",
+          "mode": "create",
+          "payer": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+          "ata": "2QpM5PMat8TmVfdk1ucQLFWF75PEhjNxJtFHFxqQvrhS",
+          "wallet": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+          "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "tokenProgram": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "impliedCpiPrograms": [
+            "11111111111111111111111111111111",
+            "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+          ]
+        }
+      ],
+      "debitSummary": {
+        "debits": {},
+        "newAccounts": [
+          {
+            "address": "2QpM5PMat8TmVfdk1ucQLFWF75PEhjNxJtFHFxqQvrhS",
+            "tokenProgram": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+            "expectedSpace": 165
+          }
+        ],
+        "priorityFeeLamports": "1000000"
+      }
+    }
+  },
+  {
+    "id": "usdc-ata-1",
+    "provenance": "hand-built",
+    "messageHex": "800100050722df37c1a446aeebe8d68fe306dfb34af4f24f692eb5a321f5e23ea60b6b956314f594795403a863c52a5eabd3b72799469949e7e2afc7bd8ea04b1688ef9c850306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a40000000c6fa7af3bedbad3a3d65f36aabc97431b1bbe4c2d2f6e0e47ca60203452f5d61000000000000000000000000000000000000000000000000000000000000000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a98c97258f4e2489f1bb3d1029148e0d830b5a1399daff1084048e7bd8dbe9f8592390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760302000502801a060002000903a0252600000000000606000100030405010100",
+    "intent": {
+      "version": "1",
+      "intentId": "pr3-offline-vector",
+      "nonce": "1",
+      "createdAt": 1793542500000,
+      "expiresAt": 1793542590000,
+      "wallet": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+      "chainId": "solana:mainnet",
+      "action": "transfer",
+      "venue": "spl-token",
+      "routeHash": "0x21576fb7f24de7d7bdb22c0418854891d49df5985d966e7d04f0349b2c104f77",
+      "tx": {
+        "serializedMessage": "gAEABQci3zfBpEau6+jWj+MG37NK9PJPaS61oyH14j6mC2uVYxT1lHlUA6hjxSpeq9O3J5lGmUnn4q/HvY6gSxaI75yFAwZGb+UhFzL/7K26csOb57yM5bvF9xJrLEObOkAAAADG+nrzvtutOj1l82qryXQxsbvkwtL24OR8pgIDRS9dYQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABt324ddloZPZy+FGzut5rBy0he1fWzeROoz1hX7/AKmMlyWPTiSJ8bs9ECkUjg2DC1oTmdr/EIQEjnvY2+n4WSOQ5grAsURV5X4zwtzMNQMSyKVJhesrhBAtwl2LTGx2AwIABQKAGgYAAgAJA6AlJgAAAAAABgYAAQADBAUBAQA=",
+        "recentBlockhash": "3PqRGmMhL119BM3BNhzVES4okxJqHPjyfqvtQZatN3oj",
+        "lastValidBlockHeight": 300000100,
+        "computeUnitLimit": 400000,
+        "computeUnitPriceMicroLamports": "2500000"
+      },
+      "tokenIn": {
+        "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "symbol": "USDC",
+        "decimals": 6
+      },
+      "amountIn": "0",
+      "programIds": [
+        "11111111111111111111111111111111",
+        "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
+        "ComputeBudget111111111111111111111111111111",
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      ]
+    },
+    "configProfile": {},
+    "expected": {
+      "actions": [
+        {
+          "instructionIndex": 0,
+          "programId": "ComputeBudget111111111111111111111111111111",
+          "kind": "computeBudget.setComputeUnitLimit",
+          "units": 400000
+        },
+        {
+          "instructionIndex": 1,
+          "programId": "ComputeBudget111111111111111111111111111111",
+          "kind": "computeBudget.setComputeUnitPrice",
+          "microLamports": "2500000"
+        },
+        {
+          "instructionIndex": 2,
+          "programId": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
+          "kind": "ata.create",
+          "mode": "createIdempotent",
+          "payer": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+          "ata": "2QpM5PMat8TmVfdk1ucQLFWF75PEhjNxJtFHFxqQvrhS",
+          "wallet": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+          "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "tokenProgram": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "impliedCpiPrograms": [
+            "11111111111111111111111111111111",
+            "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+          ]
+        }
+      ],
+      "debitSummary": {
+        "debits": {},
+        "newAccounts": [
+          {
+            "address": "2QpM5PMat8TmVfdk1ucQLFWF75PEhjNxJtFHFxqQvrhS",
+            "tokenProgram": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+            "expectedSpace": 165
+          }
+        ],
+        "priorityFeeLamports": "1000000"
+      }
+    }
+  },
+  {
+    "id": "usdc-close",
+    "provenance": "hand-built",
+    "messageHex": "800100020422df37c1a446aeebe8d68fe306dfb34af4f24f692eb5a321f5e23ea60b6b956314f594795403a863c52a5eabd3b72799469949e7e2afc7bd8ea04b1688ef9c850306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a4000000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a92390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760302000502801a060002000903a0252600000000000303010000010900",
+    "intent": {
+      "version": "1",
+      "intentId": "pr3-offline-vector",
+      "nonce": "1",
+      "createdAt": 1793542500000,
+      "expiresAt": 1793542590000,
+      "wallet": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+      "chainId": "solana:mainnet",
+      "action": "transfer",
+      "venue": "spl-token",
+      "routeHash": "0xe26817ebc262814cef74861c8d4a7cff3c772a0d31aac3d8f91cc2bd2c579463",
+      "tx": {
+        "serializedMessage": "gAEAAgQi3zfBpEau6+jWj+MG37NK9PJPaS61oyH14j6mC2uVYxT1lHlUA6hjxSpeq9O3J5lGmUnn4q/HvY6gSxaI75yFAwZGb+UhFzL/7K26csOb57yM5bvF9xJrLEObOkAAAAAG3fbh12Whk9nL4UbO63msHLSF7V9bN5E6jPWFfv8AqSOQ5grAsURV5X4zwtzMNQMSyKVJhesrhBAtwl2LTGx2AwIABQKAGgYAAgAJA6AlJgAAAAAAAwMBAAABCQA=",
+        "recentBlockhash": "3PqRGmMhL119BM3BNhzVES4okxJqHPjyfqvtQZatN3oj",
+        "lastValidBlockHeight": 300000100,
+        "computeUnitLimit": 400000,
+        "computeUnitPriceMicroLamports": "2500000"
+      },
+      "tokenIn": {
+        "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "symbol": "USDC",
+        "decimals": 6
+      },
+      "amountIn": "0",
+      "programIds": [
+        "ComputeBudget111111111111111111111111111111",
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      ]
+    },
+    "configProfile": {},
+    "expected": {
+      "actions": [
+        {
+          "instructionIndex": 0,
+          "programId": "ComputeBudget111111111111111111111111111111",
+          "kind": "computeBudget.setComputeUnitLimit",
+          "units": 400000
+        },
+        {
+          "instructionIndex": 1,
+          "programId": "ComputeBudget111111111111111111111111111111",
+          "kind": "computeBudget.setComputeUnitPrice",
+          "microLamports": "2500000"
+        },
+        {
+          "instructionIndex": 2,
+          "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "tokenProgram": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "kind": "token.closeAccount",
+          "account": "2QpM5PMat8TmVfdk1ucQLFWF75PEhjNxJtFHFxqQvrhS",
+          "destination": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+          "owner": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ"
+        }
+      ],
+      "debitSummary": {
+        "debits": {},
+        "newAccounts": [],
+        "priorityFeeLamports": "1000000"
+      }
+    }
+  },
+  {
+    "id": "approve",
+    "provenance": "hand-built",
+    "messageHex": "800100040622df37c1a446aeebe8d68fe306dfb34af4f24f692eb5a321f5e23ea60b6b956314f594795403a863c52a5eabd3b72799469949e7e2afc7bd8ea04b1688ef9c850306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a40000000c6fa7af3bedbad3a3d65f36aabc97431b1bbe4c2d2f6e0e47ca60203452f5d61d0c776f307eff78b900e5ef1a1d0da4da904e3af129dea8e4787273bb11a2ded06ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a92390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760302000502801a060002000903a0252600000000000504010304000a0d64000000000000000600",
+    "intent": {
+      "version": "1",
+      "intentId": "pr3-offline-vector",
+      "nonce": "1",
+      "createdAt": 1793542500000,
+      "expiresAt": 1793542590000,
+      "wallet": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+      "chainId": "solana:mainnet",
+      "action": "approve",
+      "venue": "spl-token",
+      "routeHash": "0x03cf60a3a83bc9bd2d714cdf811a3f9a18b8c0404b7d3b17d3c38726de91ae48",
+      "tx": {
+        "serializedMessage": "gAEABAYi3zfBpEau6+jWj+MG37NK9PJPaS61oyH14j6mC2uVYxT1lHlUA6hjxSpeq9O3J5lGmUnn4q/HvY6gSxaI75yFAwZGb+UhFzL/7K26csOb57yM5bvF9xJrLEObOkAAAADG+nrzvtutOj1l82qryXQxsbvkwtL24OR8pgIDRS9dYdDHdvMH7/eLkA5e8aHQ2k2pBOOvEp3qjkeHJzuxGi3tBt324ddloZPZy+FGzut5rBy0he1fWzeROoz1hX7/AKkjkOYKwLFEVeV+M8LczDUDEsilSYXrK4QQLcJdi0xsdgMCAAUCgBoGAAIACQOgJSYAAAAAAAUEAQMEAAoNZAAAAAAAAAAGAA==",
+        "recentBlockhash": "3PqRGmMhL119BM3BNhzVES4okxJqHPjyfqvtQZatN3oj",
+        "lastValidBlockHeight": 300000100,
+        "computeUnitLimit": 400000,
+        "computeUnitPriceMicroLamports": "2500000"
+      },
+      "tokenIn": {
+        "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "symbol": "USDC",
+        "decimals": 6
+      },
+      "amountIn": "100",
+      "programIds": [
+        "ComputeBudget111111111111111111111111111111",
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      ]
+    },
+    "configProfile": {},
+    "expected": {
+      "actions": [
+        {
+          "instructionIndex": 0,
+          "programId": "ComputeBudget111111111111111111111111111111",
+          "kind": "computeBudget.setComputeUnitLimit",
+          "units": 400000
+        },
+        {
+          "instructionIndex": 1,
+          "programId": "ComputeBudget111111111111111111111111111111",
+          "kind": "computeBudget.setComputeUnitPrice",
+          "microLamports": "2500000"
+        },
+        {
+          "instructionIndex": 2,
+          "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "tokenProgram": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "kind": "token.approveChecked",
+          "source": "2QpM5PMat8TmVfdk1ucQLFWF75PEhjNxJtFHFxqQvrhS",
+          "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "delegate": "F3zD6ze944JkWiLXaFXbm1AbbkuqKE6CvaDPWtpdUtRz",
+          "owner": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+          "amount": "100",
+          "decimals": 6
+        }
+      ],
+      "debitSummary": {
+        "debits": {
+          "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v": "100"
+        },
+        "newAccounts": [],
+        "priorityFeeLamports": "1000000"
+      }
+    }
+  },
+  {
+    "id": "revoke",
+    "provenance": "hand-built",
+    "messageHex": "800100020422df37c1a446aeebe8d68fe306dfb34af4f24f692eb5a321f5e23ea60b6b956314f594795403a863c52a5eabd3b72799469949e7e2afc7bd8ea04b1688ef9c850306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a4000000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a92390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760302000502801a060002000903a02526000000000003020100010500",
+    "intent": {
+      "version": "1",
+      "intentId": "pr3-offline-vector",
+      "nonce": "1",
+      "createdAt": 1793542500000,
+      "expiresAt": 1793542590000,
+      "wallet": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+      "chainId": "solana:mainnet",
+      "action": "revoke",
+      "venue": "spl-token",
+      "routeHash": "0x29506d790ee2094225ae9f3ee593509bb2966559ca127d9ed1fbe969b932efb4",
+      "tx": {
+        "serializedMessage": "gAEAAgQi3zfBpEau6+jWj+MG37NK9PJPaS61oyH14j6mC2uVYxT1lHlUA6hjxSpeq9O3J5lGmUnn4q/HvY6gSxaI75yFAwZGb+UhFzL/7K26csOb57yM5bvF9xJrLEObOkAAAAAG3fbh12Whk9nL4UbO63msHLSF7V9bN5E6jPWFfv8AqSOQ5grAsURV5X4zwtzMNQMSyKVJhesrhBAtwl2LTGx2AwIABQKAGgYAAgAJA6AlJgAAAAAAAwIBAAEFAA==",
+        "recentBlockhash": "3PqRGmMhL119BM3BNhzVES4okxJqHPjyfqvtQZatN3oj",
+        "lastValidBlockHeight": 300000100,
+        "computeUnitLimit": 400000,
+        "computeUnitPriceMicroLamports": "2500000"
+      },
+      "tokenIn": {
+        "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "symbol": "USDC",
+        "decimals": 6
+      },
+      "amountIn": "0",
+      "programIds": [
+        "ComputeBudget111111111111111111111111111111",
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      ]
+    },
+    "configProfile": {},
+    "expected": {
+      "actions": [
+        {
+          "instructionIndex": 0,
+          "programId": "ComputeBudget111111111111111111111111111111",
+          "kind": "computeBudget.setComputeUnitLimit",
+          "units": 400000
+        },
+        {
+          "instructionIndex": 1,
+          "programId": "ComputeBudget111111111111111111111111111111",
+          "kind": "computeBudget.setComputeUnitPrice",
+          "microLamports": "2500000"
+        },
+        {
+          "instructionIndex": 2,
+          "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "tokenProgram": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "kind": "token.revoke",
+          "source": "2QpM5PMat8TmVfdk1ucQLFWF75PEhjNxJtFHFxqQvrhS",
+          "owner": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ"
+        }
+      ],
+      "debitSummary": {
+        "debits": {},
+        "newAccounts": [],
+        "priorityFeeLamports": "1000000"
+      }
+    }
+  },
+  {
+    "id": "revoke-no-delegates",
+    "provenance": "hand-built",
+    "messageHex": "800100020422df37c1a446aeebe8d68fe306dfb34af4f24f692eb5a321f5e23ea60b6b956314f594795403a863c52a5eabd3b72799469949e7e2afc7bd8ea04b1688ef9c850306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a4000000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a92390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760302000502801a060002000903a02526000000000003020100010500",
+    "intent": {
+      "version": "1",
+      "intentId": "pr3-offline-vector",
+      "nonce": "1",
+      "createdAt": 1793542500000,
+      "expiresAt": 1793542590000,
+      "wallet": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+      "chainId": "solana:mainnet",
+      "action": "revoke",
+      "venue": "spl-token",
+      "routeHash": "0x29506d790ee2094225ae9f3ee593509bb2966559ca127d9ed1fbe969b932efb4",
+      "tx": {
+        "serializedMessage": "gAEAAgQi3zfBpEau6+jWj+MG37NK9PJPaS61oyH14j6mC2uVYxT1lHlUA6hjxSpeq9O3J5lGmUnn4q/HvY6gSxaI75yFAwZGb+UhFzL/7K26csOb57yM5bvF9xJrLEObOkAAAAAG3fbh12Whk9nL4UbO63msHLSF7V9bN5E6jPWFfv8AqSOQ5grAsURV5X4zwtzMNQMSyKVJhesrhBAtwl2LTGx2AwIABQKAGgYAAgAJA6AlJgAAAAAAAwIBAAEFAA==",
+        "recentBlockhash": "3PqRGmMhL119BM3BNhzVES4okxJqHPjyfqvtQZatN3oj",
+        "lastValidBlockHeight": 300000100,
+        "computeUnitLimit": 400000,
+        "computeUnitPriceMicroLamports": "2500000"
+      },
+      "tokenIn": {
+        "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "symbol": "USDC",
+        "decimals": 6
+      },
+      "amountIn": "0",
+      "programIds": [
+        "ComputeBudget111111111111111111111111111111",
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      ]
+    },
+    "configProfile": {
+      "delegates": []
+    },
+    "expected": {
+      "actions": [
+        {
+          "instructionIndex": 0,
+          "programId": "ComputeBudget111111111111111111111111111111",
+          "kind": "computeBudget.setComputeUnitLimit",
+          "units": 400000
+        },
+        {
+          "instructionIndex": 1,
+          "programId": "ComputeBudget111111111111111111111111111111",
+          "kind": "computeBudget.setComputeUnitPrice",
+          "microLamports": "2500000"
+        },
+        {
+          "instructionIndex": 2,
+          "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "tokenProgram": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "kind": "token.revoke",
+          "source": "2QpM5PMat8TmVfdk1ucQLFWF75PEhjNxJtFHFxqQvrhS",
+          "owner": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ"
+        }
+      ],
+      "debitSummary": {
+        "debits": {},
+        "newAccounts": [],
+        "priorityFeeLamports": "1000000"
+      }
+    }
+  },
+  {
+    "id": "wrap-reversed-cb",
+    "provenance": "hand-built",
+    "messageHex": "800100030522df37c1a446aeebe8d68fe306dfb34af4f24f692eb5a321f5e23ea60b6b9563ceea64965f0cf4512af5e2f76ead4367b70fadf51ff1fbea7ea590b6ba0125a80306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a40000000000000000000000000000000000000000000000000000000000000000000000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a92390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760402000903a02526000000000002000502801a0600030200010c020000006400000000000000040101011100",
+    "intent": {
+      "version": "1",
+      "intentId": "pr3-offline-vector",
+      "nonce": "1",
+      "createdAt": 1793542500000,
+      "expiresAt": 1793542590000,
+      "wallet": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+      "chainId": "solana:mainnet",
+      "action": "transfer",
+      "venue": "system",
+      "routeHash": "0xb4187b6347a5b0354e5266ae34081139e4065f6a6842bc701d1e98827c24cfc5",
+      "tx": {
+        "serializedMessage": "gAEAAwUi3zfBpEau6+jWj+MG37NK9PJPaS61oyH14j6mC2uVY87qZJZfDPRRKvXi926tQ2e3D631H/H76n6lkLa6ASWoAwZGb+UhFzL/7K26csOb57yM5bvF9xJrLEObOkAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAbd9uHXZaGT2cvhRs7reawctIXtX1s3kTqM9YV+/wCpI5DmCsCxRFXlfjPC3Mw1AxLIpUmF6yuEEC3CXYtMbHYEAgAJA6AlJgAAAAAAAgAFAoAaBgADAgABDAIAAABkAAAAAAAAAAQBAQERAA==",
+        "recentBlockhash": "3PqRGmMhL119BM3BNhzVES4okxJqHPjyfqvtQZatN3oj",
+        "lastValidBlockHeight": 300000100,
+        "computeUnitLimit": 400000,
+        "computeUnitPriceMicroLamports": "2500000"
+      },
+      "tokenIn": {
+        "mint": "So11111111111111111111111111111111111111112",
+        "symbol": "wSOL",
+        "decimals": 9
+      },
+      "amountIn": "100",
+      "programIds": [
+        "11111111111111111111111111111111",
+        "ComputeBudget111111111111111111111111111111",
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      ]
+    },
+    "configProfile": {},
+    "expected": {
+      "actions": [
+        {
+          "instructionIndex": 0,
+          "programId": "ComputeBudget111111111111111111111111111111",
+          "kind": "computeBudget.setComputeUnitPrice",
+          "microLamports": "2500000"
+        },
+        {
+          "instructionIndex": 1,
+          "programId": "ComputeBudget111111111111111111111111111111",
+          "kind": "computeBudget.setComputeUnitLimit",
+          "units": 400000
+        },
+        {
+          "instructionIndex": 2,
+          "programId": "11111111111111111111111111111111",
+          "kind": "system.transfer",
+          "from": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+          "to": "EviHUThBFQWHrUMW4Fc2sAMCkb9CwdanGnArC54F7XFM",
+          "lamports": "100"
+        },
+        {
+          "instructionIndex": 3,
+          "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "tokenProgram": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "kind": "token.syncNative",
+          "account": "EviHUThBFQWHrUMW4Fc2sAMCkb9CwdanGnArC54F7XFM"
+        }
+      ],
+      "debitSummary": {
+        "debits": {
+          "native": "100"
+        },
+        "newAccounts": [],
+        "priorityFeeLamports": "1000000"
+      }
+    }
+  },
+  {
+    "id": "approve-token-cap-boundary",
+    "provenance": "hand-built",
+    "messageHex": "800100040622df37c1a446aeebe8d68fe306dfb34af4f24f692eb5a321f5e23ea60b6b956314f594795403a863c52a5eabd3b72799469949e7e2afc7bd8ea04b1688ef9c850306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a40000000c6fa7af3bedbad3a3d65f36aabc97431b1bbe4c2d2f6e0e47ca60203452f5d61d0c776f307eff78b900e5ef1a1d0da4da904e3af129dea8e4787273bb11a2ded06ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a92390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760302000502801a060002000903a0252600000000000504010304000a0d00e1f505000000000600",
+    "intent": {
+      "version": "1",
+      "intentId": "pr3-offline-vector",
+      "nonce": "1",
+      "createdAt": 1793542500000,
+      "expiresAt": 1793542590000,
+      "wallet": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+      "chainId": "solana:mainnet",
+      "action": "approve",
+      "venue": "spl-token",
+      "routeHash": "0x940484ebe65efaca6d86ca27430acf1a9f5736ab34f7044c8a81fbede7a45999",
+      "tx": {
+        "serializedMessage": "gAEABAYi3zfBpEau6+jWj+MG37NK9PJPaS61oyH14j6mC2uVYxT1lHlUA6hjxSpeq9O3J5lGmUnn4q/HvY6gSxaI75yFAwZGb+UhFzL/7K26csOb57yM5bvF9xJrLEObOkAAAADG+nrzvtutOj1l82qryXQxsbvkwtL24OR8pgIDRS9dYdDHdvMH7/eLkA5e8aHQ2k2pBOOvEp3qjkeHJzuxGi3tBt324ddloZPZy+FGzut5rBy0he1fWzeROoz1hX7/AKkjkOYKwLFEVeV+M8LczDUDEsilSYXrK4QQLcJdi0xsdgMCAAUCgBoGAAIACQOgJSYAAAAAAAUEAQMEAAoNAOH1BQAAAAAGAA==",
+        "recentBlockhash": "3PqRGmMhL119BM3BNhzVES4okxJqHPjyfqvtQZatN3oj",
+        "lastValidBlockHeight": 300000100,
+        "computeUnitLimit": 400000,
+        "computeUnitPriceMicroLamports": "2500000"
+      },
+      "tokenIn": {
+        "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "symbol": "USDC",
+        "decimals": 6
+      },
+      "amountIn": "100000000",
+      "programIds": [
+        "ComputeBudget111111111111111111111111111111",
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      ]
+    },
+    "configProfile": {},
+    "expected": {
+      "actions": [
+        {
+          "instructionIndex": 0,
+          "programId": "ComputeBudget111111111111111111111111111111",
+          "kind": "computeBudget.setComputeUnitLimit",
+          "units": 400000
+        },
+        {
+          "instructionIndex": 1,
+          "programId": "ComputeBudget111111111111111111111111111111",
+          "kind": "computeBudget.setComputeUnitPrice",
+          "microLamports": "2500000"
+        },
+        {
+          "instructionIndex": 2,
+          "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "tokenProgram": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "kind": "token.approveChecked",
+          "source": "2QpM5PMat8TmVfdk1ucQLFWF75PEhjNxJtFHFxqQvrhS",
+          "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "delegate": "F3zD6ze944JkWiLXaFXbm1AbbkuqKE6CvaDPWtpdUtRz",
+          "owner": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+          "amount": "100000000",
+          "decimals": 6
+        }
+      ],
+      "debitSummary": {
+        "debits": {
+          "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v": "100000000"
+        },
+        "newAccounts": [],
+        "priorityFeeLamports": "1000000"
+      }
+    }
+  },
+  {
+    "id": "wrap-native-cap-boundary",
+    "provenance": "hand-built",
+    "messageHex": "800100030522df37c1a446aeebe8d68fe306dfb34af4f24f692eb5a321f5e23ea60b6b9563ceea64965f0cf4512af5e2f76ead4367b70fadf51ff1fbea7ea590b6ba0125a80306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a40000000000000000000000000000000000000000000000000000000000000000000000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a92390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760402000502801a060002000903a025260000000000030200010c0200000000ca9a3b00000000040101011100",
+    "intent": {
+      "version": "1",
+      "intentId": "pr3-offline-vector",
+      "nonce": "1",
+      "createdAt": 1793542500000,
+      "expiresAt": 1793542590000,
+      "wallet": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+      "chainId": "solana:mainnet",
+      "action": "transfer",
+      "venue": "system",
+      "routeHash": "0xfdb8318a5112555bbcfa4afc091a6284c34c1f81800b3b6e923f1bcea21a586b",
+      "tx": {
+        "serializedMessage": "gAEAAwUi3zfBpEau6+jWj+MG37NK9PJPaS61oyH14j6mC2uVY87qZJZfDPRRKvXi926tQ2e3D631H/H76n6lkLa6ASWoAwZGb+UhFzL/7K26csOb57yM5bvF9xJrLEObOkAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAbd9uHXZaGT2cvhRs7reawctIXtX1s3kTqM9YV+/wCpI5DmCsCxRFXlfjPC3Mw1AxLIpUmF6yuEEC3CXYtMbHYEAgAFAoAaBgACAAkDoCUmAAAAAAADAgABDAIAAAAAypo7AAAAAAQBAQERAA==",
+        "recentBlockhash": "3PqRGmMhL119BM3BNhzVES4okxJqHPjyfqvtQZatN3oj",
+        "lastValidBlockHeight": 300000100,
+        "computeUnitLimit": 400000,
+        "computeUnitPriceMicroLamports": "2500000"
+      },
+      "tokenIn": {
+        "mint": "So11111111111111111111111111111111111111112",
+        "symbol": "wSOL",
+        "decimals": 9
+      },
+      "amountIn": "1000000000",
+      "programIds": [
+        "11111111111111111111111111111111",
+        "ComputeBudget111111111111111111111111111111",
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      ]
+    },
+    "configProfile": {},
+    "expected": {
+      "actions": [
+        {
+          "instructionIndex": 0,
+          "programId": "ComputeBudget111111111111111111111111111111",
+          "kind": "computeBudget.setComputeUnitLimit",
+          "units": 400000
+        },
+        {
+          "instructionIndex": 1,
+          "programId": "ComputeBudget111111111111111111111111111111",
+          "kind": "computeBudget.setComputeUnitPrice",
+          "microLamports": "2500000"
+        },
+        {
+          "instructionIndex": 2,
+          "programId": "11111111111111111111111111111111",
+          "kind": "system.transfer",
+          "from": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+          "to": "EviHUThBFQWHrUMW4Fc2sAMCkb9CwdanGnArC54F7XFM",
+          "lamports": "1000000000"
+        },
+        {
+          "instructionIndex": 3,
+          "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "tokenProgram": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "kind": "token.syncNative",
+          "account": "EviHUThBFQWHrUMW4Fc2sAMCkb9CwdanGnArC54F7XFM"
+        }
+      ],
+      "debitSummary": {
+        "debits": {
+          "native": "1000000000"
+        },
+        "newAccounts": [],
+        "priorityFeeLamports": "1000000"
+      }
+    }
+  },
+  {
+    "id": "recipient-other-owner-ata",
+    "provenance": "hand-built",
+    "messageHex": "800100030622df37c1a446aeebe8d68fe306dfb34af4f24f692eb5a321f5e23ea60b6b95636d6d2cfe518fc89413890466cdf3f224a248d10419d5936c3bdda45f79e29fa9ceea64965f0cf4512af5e2f76ead4367b70fadf51ff1fbea7ea590b6ba0125a80306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a40000000000000000000000000000000000000000000000000000000000000000000000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a92390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760403000502801a060003000903a025260000000000040200010c020000006400000000000000050102011100",
+    "intent": {
+      "version": "1",
+      "intentId": "pr3-offline-vector",
+      "nonce": "1",
+      "createdAt": 1793542500000,
+      "expiresAt": 1793542590000,
+      "wallet": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+      "chainId": "solana:mainnet",
+      "action": "transfer",
+      "venue": "system",
+      "routeHash": "0x8954f530686763531fbb6e4f3fa482cda69a7268352905be69b41d0b90ee524a",
+      "tx": {
+        "serializedMessage": "gAEAAwYi3zfBpEau6+jWj+MG37NK9PJPaS61oyH14j6mC2uVY21tLP5Rj8iUE4kEZs3z8iSiSNEEGdWTbDvdpF954p+pzupkll8M9FEq9eL3bq1DZ7cPrfUf8fvqfqWQtroBJagDBkZv5SEXMv/srbpyw5vnvIzlu8X3EmssQ5s6QAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABt324ddloZPZy+FGzut5rBy0he1fWzeROoz1hX7/AKkjkOYKwLFEVeV+M8LczDUDEsilSYXrK4QQLcJdi0xsdgQDAAUCgBoGAAMACQOgJSYAAAAAAAQCAAEMAgAAAGQAAAAAAAAABQECAREA",
+        "recentBlockhash": "3PqRGmMhL119BM3BNhzVES4okxJqHPjyfqvtQZatN3oj",
+        "lastValidBlockHeight": 300000100,
+        "computeUnitLimit": 400000,
+        "computeUnitPriceMicroLamports": "2500000"
+      },
+      "tokenIn": {
+        "mint": "So11111111111111111111111111111111111111112",
+        "symbol": "wSOL",
+        "decimals": 9
+      },
+      "amountIn": "100",
+      "programIds": [
+        "11111111111111111111111111111111",
+        "ComputeBudget111111111111111111111111111111",
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      ]
+    },
+    "configProfile": {},
+    "expected": {
+      "deny": "SOL_DENY_RECIPIENT_NOT_TREASURY",
+      "instructionIndex": 2
+    }
+  },
+  {
+    "id": "ata-wrong-seeds",
+    "provenance": "hand-built",
+    "messageHex": "800100050722df37c1a446aeebe8d68fe306dfb34af4f24f692eb5a321f5e23ea60b6b9563c626d460289be8032a75e52b151859bc500e769f6f48776151d1f3eb6a329e850306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a40000000c6fa7af3bedbad3a3d65f36aabc97431b1bbe4c2d2f6e0e47ca60203452f5d61000000000000000000000000000000000000000000000000000000000000000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a98c97258f4e2489f1bb3d1029148e0d830b5a1399daff1084048e7bd8dbe9f8592390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760302000502801a060002000903a0252600000000000606000100030405010100",
+    "intent": {
+      "version": "1",
+      "intentId": "pr3-offline-vector",
+      "nonce": "1",
+      "createdAt": 1793542500000,
+      "expiresAt": 1793542590000,
+      "wallet": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+      "chainId": "solana:mainnet",
+      "action": "transfer",
+      "venue": "spl-token",
+      "routeHash": "0xd134e6546f4c57520c41d36b85702070df9333ad097bc8f1333ccdfe67f1fdc0",
+      "tx": {
+        "serializedMessage": "gAEABQci3zfBpEau6+jWj+MG37NK9PJPaS61oyH14j6mC2uVY8Ym1GAom+gDKnXlKxUYWbxQDnafb0h3YVHR8+tqMp6FAwZGb+UhFzL/7K26csOb57yM5bvF9xJrLEObOkAAAADG+nrzvtutOj1l82qryXQxsbvkwtL24OR8pgIDRS9dYQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABt324ddloZPZy+FGzut5rBy0he1fWzeROoz1hX7/AKmMlyWPTiSJ8bs9ECkUjg2DC1oTmdr/EIQEjnvY2+n4WSOQ5grAsURV5X4zwtzMNQMSyKVJhesrhBAtwl2LTGx2AwIABQKAGgYAAgAJA6AlJgAAAAAABgYAAQADBAUBAQA=",
+        "recentBlockhash": "3PqRGmMhL119BM3BNhzVES4okxJqHPjyfqvtQZatN3oj",
+        "lastValidBlockHeight": 300000100,
+        "computeUnitLimit": 400000,
+        "computeUnitPriceMicroLamports": "2500000"
+      },
+      "tokenIn": {
+        "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "symbol": "USDC",
+        "decimals": 6
+      },
+      "amountIn": "0",
+      "programIds": [
+        "11111111111111111111111111111111",
+        "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
+        "ComputeBudget111111111111111111111111111111",
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      ]
+    },
+    "configProfile": {},
+    "expected": {
+      "deny": "SOL_DENY_ATA_DERIVATION",
+      "instructionIndex": 2
+    }
+  },
+  {
+    "id": "ata-wrong-wallet",
+    "provenance": "hand-built",
+    "messageHex": "800100060822df37c1a446aeebe8d68fe306dfb34af4f24f692eb5a321f5e23ea60b6b956314f594795403a863c52a5eabd3b72799469949e7e2afc7bd8ea04b1688ef9c850306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a400000000da2eae67d45dd449657eed57777721560d184046b929eed2d0a3a75eedab56bc6fa7af3bedbad3a3d65f36aabc97431b1bbe4c2d2f6e0e47ca60203452f5d61000000000000000000000000000000000000000000000000000000000000000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a98c97258f4e2489f1bb3d1029148e0d830b5a1399daff1084048e7bd8dbe9f8592390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760302000502801a060002000903a0252600000000000706000103040506010100",
+    "intent": {
+      "version": "1",
+      "intentId": "pr3-offline-vector",
+      "nonce": "1",
+      "createdAt": 1793542500000,
+      "expiresAt": 1793542590000,
+      "wallet": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+      "chainId": "solana:mainnet",
+      "action": "transfer",
+      "venue": "spl-token",
+      "routeHash": "0x6f11135425a0ecde3f56bd52eac9de06ee813939cc6f5674ee99f7f6ef7c1235",
+      "tx": {
+        "serializedMessage": "gAEABggi3zfBpEau6+jWj+MG37NK9PJPaS61oyH14j6mC2uVYxT1lHlUA6hjxSpeq9O3J5lGmUnn4q/HvY6gSxaI75yFAwZGb+UhFzL/7K26csOb57yM5bvF9xJrLEObOkAAAAANourmfUXdRJZX7tV3d3IVYNGEBGuSnu0tCjp17tq1a8b6evO+2606PWXzaqvJdDGxu+TC0vbg5HymAgNFL11hAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAG3fbh12Whk9nL4UbO63msHLSF7V9bN5E6jPWFfv8AqYyXJY9OJInxuz0QKRSODYMLWhOZ2v8QhASOe9jb6fhZI5DmCsCxRFXlfjPC3Mw1AxLIpUmF6yuEEC3CXYtMbHYDAgAFAoAaBgACAAkDoCUmAAAAAAAHBgABAwQFBgEBAA==",
+        "recentBlockhash": "3PqRGmMhL119BM3BNhzVES4okxJqHPjyfqvtQZatN3oj",
+        "lastValidBlockHeight": 300000100,
+        "computeUnitLimit": 400000,
+        "computeUnitPriceMicroLamports": "2500000"
+      },
+      "tokenIn": {
+        "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "symbol": "USDC",
+        "decimals": 6
+      },
+      "amountIn": "0",
+      "programIds": [
+        "11111111111111111111111111111111",
+        "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
+        "ComputeBudget111111111111111111111111111111",
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      ]
+    },
+    "configProfile": {},
+    "expected": {
+      "deny": "SOL_DENY_ATA_OWNER_NOT_TREASURY",
+      "instructionIndex": 2
+    }
+  },
+  {
+    "id": "close-wrong-destination",
+    "provenance": "hand-built",
+    "messageHex": "800100020522df37c1a446aeebe8d68fe306dfb34af4f24f692eb5a321f5e23ea60b6b9563ceea64965f0cf4512af5e2f76ead4367b70fadf51ff1fbea7ea590b6ba0125a80da2eae67d45dd449657eed57777721560d184046b929eed2d0a3a75eedab56b0306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a4000000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a92390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760303000502801a060003000903a0252600000000000403010200010900",
+    "intent": {
+      "version": "1",
+      "intentId": "pr3-offline-vector",
+      "nonce": "1",
+      "createdAt": 1793542500000,
+      "expiresAt": 1793542590000,
+      "wallet": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+      "chainId": "solana:mainnet",
+      "action": "transfer",
+      "venue": "spl-token",
+      "routeHash": "0x21f26ee05b783de4735d9df8303007381a03f0fa77757da13c5fa5b9958135da",
+      "tx": {
+        "serializedMessage": "gAEAAgUi3zfBpEau6+jWj+MG37NK9PJPaS61oyH14j6mC2uVY87qZJZfDPRRKvXi926tQ2e3D631H/H76n6lkLa6ASWoDaLq5n1F3USWV+7Vd3dyFWDRhARrkp7tLQo6de7atWsDBkZv5SEXMv/srbpyw5vnvIzlu8X3EmssQ5s6QAAAAAbd9uHXZaGT2cvhRs7reawctIXtX1s3kTqM9YV+/wCpI5DmCsCxRFXlfjPC3Mw1AxLIpUmF6yuEEC3CXYtMbHYDAwAFAoAaBgADAAkDoCUmAAAAAAAEAwECAAEJAA==",
+        "recentBlockhash": "3PqRGmMhL119BM3BNhzVES4okxJqHPjyfqvtQZatN3oj",
+        "lastValidBlockHeight": 300000100,
+        "computeUnitLimit": 400000,
+        "computeUnitPriceMicroLamports": "2500000"
+      },
+      "tokenIn": {
+        "mint": "So11111111111111111111111111111111111111112",
+        "symbol": "wSOL",
+        "decimals": 9
+      },
+      "amountIn": "0",
+      "programIds": [
+        "ComputeBudget111111111111111111111111111111",
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      ]
+    },
+    "configProfile": {},
+    "expected": {
+      "deny": "SOL_DENY_RECIPIENT_NOT_TREASURY",
+      "instructionIndex": 2
+    }
+  },
+  {
+    "id": "approve-invalid-0",
+    "provenance": "hand-built",
+    "messageHex": "800100040622df37c1a446aeebe8d68fe306dfb34af4f24f692eb5a321f5e23ea60b6b956314f594795403a863c52a5eabd3b72799469949e7e2afc7bd8ea04b1688ef9c850306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a40000000c6fa7af3bedbad3a3d65f36aabc97431b1bbe4c2d2f6e0e47ca60203452f5d61d0c776f307eff78b900e5ef1a1d0da4da904e3af129dea8e4787273bb11a2ded06ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a92390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760302000502801a060002000903a0252600000000000504010304000a0d00000000000000000600",
+    "intent": {
+      "version": "1",
+      "intentId": "pr3-offline-vector",
+      "nonce": "1",
+      "createdAt": 1793542500000,
+      "expiresAt": 1793542590000,
+      "wallet": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+      "chainId": "solana:mainnet",
+      "action": "approve",
+      "venue": "spl-token",
+      "routeHash": "0xc01ecd830649b2c5561d70a31f747ec4ab59baa48d5cb0e283869942a3058b2f",
+      "tx": {
+        "serializedMessage": "gAEABAYi3zfBpEau6+jWj+MG37NK9PJPaS61oyH14j6mC2uVYxT1lHlUA6hjxSpeq9O3J5lGmUnn4q/HvY6gSxaI75yFAwZGb+UhFzL/7K26csOb57yM5bvF9xJrLEObOkAAAADG+nrzvtutOj1l82qryXQxsbvkwtL24OR8pgIDRS9dYdDHdvMH7/eLkA5e8aHQ2k2pBOOvEp3qjkeHJzuxGi3tBt324ddloZPZy+FGzut5rBy0he1fWzeROoz1hX7/AKkjkOYKwLFEVeV+M8LczDUDEsilSYXrK4QQLcJdi0xsdgMCAAUCgBoGAAIACQOgJSYAAAAAAAUEAQMEAAoNAAAAAAAAAAAGAA==",
+        "recentBlockhash": "3PqRGmMhL119BM3BNhzVES4okxJqHPjyfqvtQZatN3oj",
+        "lastValidBlockHeight": 300000100,
+        "computeUnitLimit": 400000,
+        "computeUnitPriceMicroLamports": "2500000"
+      },
+      "tokenIn": {
+        "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "symbol": "USDC",
+        "decimals": 6
+      },
+      "amountIn": "0",
+      "programIds": [
+        "ComputeBudget111111111111111111111111111111",
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      ]
+    },
+    "configProfile": {},
+    "expected": {
+      "deny": "SOL_DENY_APPROVE_AMOUNT",
+      "instructionIndex": 2
+    }
+  },
+  {
+    "id": "approve-invalid-18446744073709551615",
+    "provenance": "hand-built",
+    "messageHex": "800100040622df37c1a446aeebe8d68fe306dfb34af4f24f692eb5a321f5e23ea60b6b956314f594795403a863c52a5eabd3b72799469949e7e2afc7bd8ea04b1688ef9c850306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a40000000c6fa7af3bedbad3a3d65f36aabc97431b1bbe4c2d2f6e0e47ca60203452f5d61d0c776f307eff78b900e5ef1a1d0da4da904e3af129dea8e4787273bb11a2ded06ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a92390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760302000502801a060002000903a0252600000000000504010304000a0dffffffffffffffff0600",
+    "intent": {
+      "version": "1",
+      "intentId": "pr3-offline-vector",
+      "nonce": "1",
+      "createdAt": 1793542500000,
+      "expiresAt": 1793542590000,
+      "wallet": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+      "chainId": "solana:mainnet",
+      "action": "approve",
+      "venue": "spl-token",
+      "routeHash": "0xa5cc94d67e865ed0a0b0936566cbe62620b1c56893279f7f8e3c0f999c496d94",
+      "tx": {
+        "serializedMessage": "gAEABAYi3zfBpEau6+jWj+MG37NK9PJPaS61oyH14j6mC2uVYxT1lHlUA6hjxSpeq9O3J5lGmUnn4q/HvY6gSxaI75yFAwZGb+UhFzL/7K26csOb57yM5bvF9xJrLEObOkAAAADG+nrzvtutOj1l82qryXQxsbvkwtL24OR8pgIDRS9dYdDHdvMH7/eLkA5e8aHQ2k2pBOOvEp3qjkeHJzuxGi3tBt324ddloZPZy+FGzut5rBy0he1fWzeROoz1hX7/AKkjkOYKwLFEVeV+M8LczDUDEsilSYXrK4QQLcJdi0xsdgMCAAUCgBoGAAIACQOgJSYAAAAAAAUEAQMEAAoN//////////8GAA==",
+        "recentBlockhash": "3PqRGmMhL119BM3BNhzVES4okxJqHPjyfqvtQZatN3oj",
+        "lastValidBlockHeight": 300000100,
+        "computeUnitLimit": 400000,
+        "computeUnitPriceMicroLamports": "2500000"
+      },
+      "tokenIn": {
+        "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "symbol": "USDC",
+        "decimals": 6
+      },
+      "amountIn": "18446744073709551615",
+      "programIds": [
+        "ComputeBudget111111111111111111111111111111",
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      ]
+    },
+    "configProfile": {},
+    "expected": {
+      "deny": "SOL_DENY_APPROVE_AMOUNT",
+      "instructionIndex": 2
+    }
+  },
+  {
+    "id": "approve-unlisted-delegate",
+    "provenance": "hand-built",
+    "messageHex": "800100040622df37c1a446aeebe8d68fe306dfb34af4f24f692eb5a321f5e23ea60b6b956314f594795403a863c52a5eabd3b72799469949e7e2afc7bd8ea04b1688ef9c850306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a40000000c6fa7af3bedbad3a3d65f36aabc97431b1bbe4c2d2f6e0e47ca60203452f5d611eb64d2fc5d0d4aef78eb49b26732322e23c1dab45e4d2c616f122b2a9167c7906ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a92390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760302000502801a060002000903a0252600000000000504010304000a0d64000000000000000600",
+    "intent": {
+      "version": "1",
+      "intentId": "pr3-offline-vector",
+      "nonce": "1",
+      "createdAt": 1793542500000,
+      "expiresAt": 1793542590000,
+      "wallet": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+      "chainId": "solana:mainnet",
+      "action": "approve",
+      "venue": "spl-token",
+      "routeHash": "0x1e9b3122f6dcf16c4aa331a588480140cd1a077faaf7422cffb4e5fab4446f79",
+      "tx": {
+        "serializedMessage": "gAEABAYi3zfBpEau6+jWj+MG37NK9PJPaS61oyH14j6mC2uVYxT1lHlUA6hjxSpeq9O3J5lGmUnn4q/HvY6gSxaI75yFAwZGb+UhFzL/7K26csOb57yM5bvF9xJrLEObOkAAAADG+nrzvtutOj1l82qryXQxsbvkwtL24OR8pgIDRS9dYR62TS/F0NSu9460myZzIyLiPB2rReTSxhbxIrKpFnx5Bt324ddloZPZy+FGzut5rBy0he1fWzeROoz1hX7/AKkjkOYKwLFEVeV+M8LczDUDEsilSYXrK4QQLcJdi0xsdgMCAAUCgBoGAAIACQOgJSYAAAAAAAUEAQMEAAoNZAAAAAAAAAAGAA==",
+        "recentBlockhash": "3PqRGmMhL119BM3BNhzVES4okxJqHPjyfqvtQZatN3oj",
+        "lastValidBlockHeight": 300000100,
+        "computeUnitLimit": 400000,
+        "computeUnitPriceMicroLamports": "2500000"
+      },
+      "tokenIn": {
+        "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "symbol": "USDC",
+        "decimals": 6
+      },
+      "amountIn": "100",
+      "programIds": [
+        "ComputeBudget111111111111111111111111111111",
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      ]
+    },
+    "configProfile": {},
+    "expected": {
+      "deny": "SOL_DENY_DELEGATE_NOT_ALLOWED",
+      "instructionIndex": 2
+    }
+  },
+  {
+    "id": "approve-no-delegates",
+    "provenance": "hand-built",
+    "messageHex": "800100040622df37c1a446aeebe8d68fe306dfb34af4f24f692eb5a321f5e23ea60b6b956314f594795403a863c52a5eabd3b72799469949e7e2afc7bd8ea04b1688ef9c850306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a40000000c6fa7af3bedbad3a3d65f36aabc97431b1bbe4c2d2f6e0e47ca60203452f5d61d0c776f307eff78b900e5ef1a1d0da4da904e3af129dea8e4787273bb11a2ded06ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a92390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760302000502801a060002000903a0252600000000000504010304000a0d64000000000000000600",
+    "intent": {
+      "version": "1",
+      "intentId": "pr3-offline-vector",
+      "nonce": "1",
+      "createdAt": 1793542500000,
+      "expiresAt": 1793542590000,
+      "wallet": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+      "chainId": "solana:mainnet",
+      "action": "approve",
+      "venue": "spl-token",
+      "routeHash": "0x03cf60a3a83bc9bd2d714cdf811a3f9a18b8c0404b7d3b17d3c38726de91ae48",
+      "tx": {
+        "serializedMessage": "gAEABAYi3zfBpEau6+jWj+MG37NK9PJPaS61oyH14j6mC2uVYxT1lHlUA6hjxSpeq9O3J5lGmUnn4q/HvY6gSxaI75yFAwZGb+UhFzL/7K26csOb57yM5bvF9xJrLEObOkAAAADG+nrzvtutOj1l82qryXQxsbvkwtL24OR8pgIDRS9dYdDHdvMH7/eLkA5e8aHQ2k2pBOOvEp3qjkeHJzuxGi3tBt324ddloZPZy+FGzut5rBy0he1fWzeROoz1hX7/AKkjkOYKwLFEVeV+M8LczDUDEsilSYXrK4QQLcJdi0xsdgMCAAUCgBoGAAIACQOgJSYAAAAAAAUEAQMEAAoNZAAAAAAAAAAGAA==",
+        "recentBlockhash": "3PqRGmMhL119BM3BNhzVES4okxJqHPjyfqvtQZatN3oj",
+        "lastValidBlockHeight": 300000100,
+        "computeUnitLimit": 400000,
+        "computeUnitPriceMicroLamports": "2500000"
+      },
+      "tokenIn": {
+        "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "symbol": "USDC",
+        "decimals": 6
+      },
+      "amountIn": "100",
+      "programIds": [
+        "ComputeBudget111111111111111111111111111111",
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      ]
+    },
+    "configProfile": {
+      "delegates": []
+    },
+    "expected": {
+      "deny": "SOL_DENY_DELEGATE_NOT_ALLOWED",
+      "instructionIndex": 2
+    }
+  },
+  {
+    "id": "instruction-decimals",
+    "provenance": "hand-built",
+    "messageHex": "800100040622df37c1a446aeebe8d68fe306dfb34af4f24f692eb5a321f5e23ea60b6b956314f594795403a863c52a5eabd3b72799469949e7e2afc7bd8ea04b1688ef9c850306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a40000000c6fa7af3bedbad3a3d65f36aabc97431b1bbe4c2d2f6e0e47ca60203452f5d61d0c776f307eff78b900e5ef1a1d0da4da904e3af129dea8e4787273bb11a2ded06ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a92390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760302000502801a060002000903a0252600000000000504010304000a0d64000000000000000700",
+    "intent": {
+      "version": "1",
+      "intentId": "pr3-offline-vector",
+      "nonce": "1",
+      "createdAt": 1793542500000,
+      "expiresAt": 1793542590000,
+      "wallet": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+      "chainId": "solana:mainnet",
+      "action": "approve",
+      "venue": "spl-token",
+      "routeHash": "0x309dcba6ae194cc0d01ec1e01990b6e0772d67bc4594e5576712ee2599b89bf8",
+      "tx": {
+        "serializedMessage": "gAEABAYi3zfBpEau6+jWj+MG37NK9PJPaS61oyH14j6mC2uVYxT1lHlUA6hjxSpeq9O3J5lGmUnn4q/HvY6gSxaI75yFAwZGb+UhFzL/7K26csOb57yM5bvF9xJrLEObOkAAAADG+nrzvtutOj1l82qryXQxsbvkwtL24OR8pgIDRS9dYdDHdvMH7/eLkA5e8aHQ2k2pBOOvEp3qjkeHJzuxGi3tBt324ddloZPZy+FGzut5rBy0he1fWzeROoz1hX7/AKkjkOYKwLFEVeV+M8LczDUDEsilSYXrK4QQLcJdi0xsdgMCAAUCgBoGAAIACQOgJSYAAAAAAAUEAQMEAAoNZAAAAAAAAAAHAA==",
+        "recentBlockhash": "3PqRGmMhL119BM3BNhzVES4okxJqHPjyfqvtQZatN3oj",
+        "lastValidBlockHeight": 300000100,
+        "computeUnitLimit": 400000,
+        "computeUnitPriceMicroLamports": "2500000"
+      },
+      "tokenIn": {
+        "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "symbol": "USDC",
+        "decimals": 6
+      },
+      "amountIn": "100",
+      "programIds": [
+        "ComputeBudget111111111111111111111111111111",
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      ]
+    },
+    "configProfile": {},
+    "expected": {
+      "deny": "SOL_DENY_DECIMALS_MISMATCH",
+      "instructionIndex": 2
+    }
+  },
+  {
+    "id": "intent-decimals",
+    "provenance": "hand-built",
+    "messageHex": "800100040622df37c1a446aeebe8d68fe306dfb34af4f24f692eb5a321f5e23ea60b6b956314f594795403a863c52a5eabd3b72799469949e7e2afc7bd8ea04b1688ef9c850306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a40000000c6fa7af3bedbad3a3d65f36aabc97431b1bbe4c2d2f6e0e47ca60203452f5d61d0c776f307eff78b900e5ef1a1d0da4da904e3af129dea8e4787273bb11a2ded06ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a92390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760302000502801a060002000903a0252600000000000504010304000a0d64000000000000000600",
+    "intent": {
+      "version": "1",
+      "intentId": "pr3-offline-vector",
+      "nonce": "1",
+      "createdAt": 1793542500000,
+      "expiresAt": 1793542590000,
+      "wallet": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+      "chainId": "solana:mainnet",
+      "action": "approve",
+      "venue": "spl-token",
+      "routeHash": "0x03cf60a3a83bc9bd2d714cdf811a3f9a18b8c0404b7d3b17d3c38726de91ae48",
+      "tx": {
+        "serializedMessage": "gAEABAYi3zfBpEau6+jWj+MG37NK9PJPaS61oyH14j6mC2uVYxT1lHlUA6hjxSpeq9O3J5lGmUnn4q/HvY6gSxaI75yFAwZGb+UhFzL/7K26csOb57yM5bvF9xJrLEObOkAAAADG+nrzvtutOj1l82qryXQxsbvkwtL24OR8pgIDRS9dYdDHdvMH7/eLkA5e8aHQ2k2pBOOvEp3qjkeHJzuxGi3tBt324ddloZPZy+FGzut5rBy0he1fWzeROoz1hX7/AKkjkOYKwLFEVeV+M8LczDUDEsilSYXrK4QQLcJdi0xsdgMCAAUCgBoGAAIACQOgJSYAAAAAAAUEAQMEAAoNZAAAAAAAAAAGAA==",
+        "recentBlockhash": "3PqRGmMhL119BM3BNhzVES4okxJqHPjyfqvtQZatN3oj",
+        "lastValidBlockHeight": 300000100,
+        "computeUnitLimit": 400000,
+        "computeUnitPriceMicroLamports": "2500000"
+      },
+      "tokenIn": {
+        "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "symbol": "USDC",
+        "decimals": 7
+      },
+      "amountIn": "100",
+      "programIds": [
+        "ComputeBudget111111111111111111111111111111",
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      ]
+    },
+    "configProfile": {},
+    "expected": {
+      "deny": "SOL_DENY_DECIMALS_MISMATCH",
+      "instructionIndex": 2
+    }
+  },
+  {
+    "id": "approve-amount-mismatch",
+    "provenance": "hand-built",
+    "messageHex": "800100040622df37c1a446aeebe8d68fe306dfb34af4f24f692eb5a321f5e23ea60b6b956314f594795403a863c52a5eabd3b72799469949e7e2afc7bd8ea04b1688ef9c850306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a40000000c6fa7af3bedbad3a3d65f36aabc97431b1bbe4c2d2f6e0e47ca60203452f5d61d0c776f307eff78b900e5ef1a1d0da4da904e3af129dea8e4787273bb11a2ded06ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a92390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760302000502801a060002000903a0252600000000000504010304000a0d64000000000000000600",
+    "intent": {
+      "version": "1",
+      "intentId": "pr3-offline-vector",
+      "nonce": "1",
+      "createdAt": 1793542500000,
+      "expiresAt": 1793542590000,
+      "wallet": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+      "chainId": "solana:mainnet",
+      "action": "approve",
+      "venue": "spl-token",
+      "routeHash": "0x03cf60a3a83bc9bd2d714cdf811a3f9a18b8c0404b7d3b17d3c38726de91ae48",
+      "tx": {
+        "serializedMessage": "gAEABAYi3zfBpEau6+jWj+MG37NK9PJPaS61oyH14j6mC2uVYxT1lHlUA6hjxSpeq9O3J5lGmUnn4q/HvY6gSxaI75yFAwZGb+UhFzL/7K26csOb57yM5bvF9xJrLEObOkAAAADG+nrzvtutOj1l82qryXQxsbvkwtL24OR8pgIDRS9dYdDHdvMH7/eLkA5e8aHQ2k2pBOOvEp3qjkeHJzuxGi3tBt324ddloZPZy+FGzut5rBy0he1fWzeROoz1hX7/AKkjkOYKwLFEVeV+M8LczDUDEsilSYXrK4QQLcJdi0xsdgMCAAUCgBoGAAIACQOgJSYAAAAAAAUEAQMEAAoNZAAAAAAAAAAGAA==",
+        "recentBlockhash": "3PqRGmMhL119BM3BNhzVES4okxJqHPjyfqvtQZatN3oj",
+        "lastValidBlockHeight": 300000100,
+        "computeUnitLimit": 400000,
+        "computeUnitPriceMicroLamports": "2500000"
+      },
+      "tokenIn": {
+        "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "symbol": "USDC",
+        "decimals": 6
+      },
+      "amountIn": "101",
+      "programIds": [
+        "ComputeBudget111111111111111111111111111111",
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      ]
+    },
+    "configProfile": {},
+    "expected": {
+      "deny": "SOL_DENY_AMOUNT_MISMATCH",
+      "instructionIndex": 2
+    }
+  },
+  {
+    "id": "mint-missing",
+    "provenance": "hand-built",
+    "messageHex": "800100040622df37c1a446aeebe8d68fe306dfb34af4f24f692eb5a321f5e23ea60b6b9563ffe073983b65609ee5ae428d5df3625983b141e9bfaa6767fbd1e5b9fcbb2bba0306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a40000000ce010e60afedb22717bd63192f54145a3f965a33bb82d2c7029eb2ce1e208264d0c776f307eff78b900e5ef1a1d0da4da904e3af129dea8e4787273bb11a2ded06ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a92390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760302000502801a060002000903a0252600000000000504010304000a0d64000000000000000600",
+    "intent": {
+      "version": "1",
+      "intentId": "pr3-offline-vector",
+      "nonce": "1",
+      "createdAt": 1793542500000,
+      "expiresAt": 1793542590000,
+      "wallet": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+      "chainId": "solana:mainnet",
+      "action": "approve",
+      "venue": "spl-token",
+      "routeHash": "0x3ef447cf9f51e820ec5e183bb8abb97c1e145fb56349ec2c8a7203f668e209b3",
+      "tx": {
+        "serializedMessage": "gAEABAYi3zfBpEau6+jWj+MG37NK9PJPaS61oyH14j6mC2uVY//gc5g7ZWCe5a5CjV3zYlmDsUHpv6pnZ/vR5bn8uyu6AwZGb+UhFzL/7K26csOb57yM5bvF9xJrLEObOkAAAADOAQ5gr+2yJxe9YxkvVBRaP5ZaM7uC0scCnrLOHiCCZNDHdvMH7/eLkA5e8aHQ2k2pBOOvEp3qjkeHJzuxGi3tBt324ddloZPZy+FGzut5rBy0he1fWzeROoz1hX7/AKkjkOYKwLFEVeV+M8LczDUDEsilSYXrK4QQLcJdi0xsdgMCAAUCgBoGAAIACQOgJSYAAAAAAAUEAQMEAAoNZAAAAAAAAAAGAA==",
+        "recentBlockhash": "3PqRGmMhL119BM3BNhzVES4okxJqHPjyfqvtQZatN3oj",
+        "lastValidBlockHeight": 300000100,
+        "computeUnitLimit": 400000,
+        "computeUnitPriceMicroLamports": "2500000"
+      },
+      "tokenIn": {
+        "mint": "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
+        "symbol": "USDT",
+        "decimals": 6
+      },
+      "amountIn": "100",
+      "programIds": [
+        "ComputeBudget111111111111111111111111111111",
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      ]
+    },
+    "configProfile": {
+      "resolvedMutation": {
+        "removeMint": "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB"
+      }
+    },
+    "expected": {
+      "deny": "SOL_DENY_MINT_NOT_ALLOWED",
+      "instructionIndex": 2
+    }
+  },
+  {
+    "id": "token-program-mismatch",
+    "provenance": "hand-built",
+    "messageHex": "800100040622df37c1a446aeebe8d68fe306dfb34af4f24f692eb5a321f5e23ea60b6b956314f594795403a863c52a5eabd3b72799469949e7e2afc7bd8ea04b1688ef9c850306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a40000000c6fa7af3bedbad3a3d65f36aabc97431b1bbe4c2d2f6e0e47ca60203452f5d61d0c776f307eff78b900e5ef1a1d0da4da904e3af129dea8e4787273bb11a2ded06ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a92390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760302000502801a060002000903a0252600000000000504010304000a0d64000000000000000600",
+    "intent": {
+      "version": "1",
+      "intentId": "pr3-offline-vector",
+      "nonce": "1",
+      "createdAt": 1793542500000,
+      "expiresAt": 1793542590000,
+      "wallet": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+      "chainId": "solana:mainnet",
+      "action": "approve",
+      "venue": "spl-token",
+      "routeHash": "0x03cf60a3a83bc9bd2d714cdf811a3f9a18b8c0404b7d3b17d3c38726de91ae48",
+      "tx": {
+        "serializedMessage": "gAEABAYi3zfBpEau6+jWj+MG37NK9PJPaS61oyH14j6mC2uVYxT1lHlUA6hjxSpeq9O3J5lGmUnn4q/HvY6gSxaI75yFAwZGb+UhFzL/7K26csOb57yM5bvF9xJrLEObOkAAAADG+nrzvtutOj1l82qryXQxsbvkwtL24OR8pgIDRS9dYdDHdvMH7/eLkA5e8aHQ2k2pBOOvEp3qjkeHJzuxGi3tBt324ddloZPZy+FGzut5rBy0he1fWzeROoz1hX7/AKkjkOYKwLFEVeV+M8LczDUDEsilSYXrK4QQLcJdi0xsdgMCAAUCgBoGAAIACQOgJSYAAAAAAAUEAQMEAAoNZAAAAAAAAAAGAA==",
+        "recentBlockhash": "3PqRGmMhL119BM3BNhzVES4okxJqHPjyfqvtQZatN3oj",
+        "lastValidBlockHeight": 300000100,
+        "computeUnitLimit": 400000,
+        "computeUnitPriceMicroLamports": "2500000"
+      },
+      "tokenIn": {
+        "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "symbol": "USDC",
+        "decimals": 6
+      },
+      "amountIn": "100",
+      "programIds": [
+        "ComputeBudget111111111111111111111111111111",
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      ]
+    },
+    "configProfile": {
+      "resolvedMutation": {
+        "mintTokenProgram": {
+          "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "tokenProgram": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"
+        }
+      }
+    },
+    "expected": {
+      "deny": "SOL_DENY_TOKEN_PROGRAM_MISMATCH",
+      "instructionIndex": 2
+    }
+  },
+  {
+    "id": "token-in-mint-mismatch",
+    "provenance": "hand-built",
+    "messageHex": "800100040622df37c1a446aeebe8d68fe306dfb34af4f24f692eb5a321f5e23ea60b6b956314f594795403a863c52a5eabd3b72799469949e7e2afc7bd8ea04b1688ef9c850306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a40000000c6fa7af3bedbad3a3d65f36aabc97431b1bbe4c2d2f6e0e47ca60203452f5d61d0c776f307eff78b900e5ef1a1d0da4da904e3af129dea8e4787273bb11a2ded06ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a92390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760302000502801a060002000903a0252600000000000504010304000a0d64000000000000000600",
+    "intent": {
+      "version": "1",
+      "intentId": "pr3-offline-vector",
+      "nonce": "1",
+      "createdAt": 1793542500000,
+      "expiresAt": 1793542590000,
+      "wallet": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+      "chainId": "solana:mainnet",
+      "action": "approve",
+      "venue": "spl-token",
+      "routeHash": "0x03cf60a3a83bc9bd2d714cdf811a3f9a18b8c0404b7d3b17d3c38726de91ae48",
+      "tx": {
+        "serializedMessage": "gAEABAYi3zfBpEau6+jWj+MG37NK9PJPaS61oyH14j6mC2uVYxT1lHlUA6hjxSpeq9O3J5lGmUnn4q/HvY6gSxaI75yFAwZGb+UhFzL/7K26csOb57yM5bvF9xJrLEObOkAAAADG+nrzvtutOj1l82qryXQxsbvkwtL24OR8pgIDRS9dYdDHdvMH7/eLkA5e8aHQ2k2pBOOvEp3qjkeHJzuxGi3tBt324ddloZPZy+FGzut5rBy0he1fWzeROoz1hX7/AKkjkOYKwLFEVeV+M8LczDUDEsilSYXrK4QQLcJdi0xsdgMCAAUCgBoGAAIACQOgJSYAAAAAAAUEAQMEAAoNZAAAAAAAAAAGAA==",
+        "recentBlockhash": "3PqRGmMhL119BM3BNhzVES4okxJqHPjyfqvtQZatN3oj",
+        "lastValidBlockHeight": 300000100,
+        "computeUnitLimit": 400000,
+        "computeUnitPriceMicroLamports": "2500000"
+      },
+      "tokenIn": {
+        "mint": "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
+        "symbol": "USDT",
+        "decimals": 6
+      },
+      "amountIn": "100",
+      "programIds": [
+        "ComputeBudget111111111111111111111111111111",
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      ]
+    },
+    "configProfile": {},
+    "expected": {
+      "deny": "SOL_DENY_ACTION_MISMATCH",
+      "instructionIndex": 2
+    }
+  },
+  {
+    "id": "wsol-disabled",
+    "provenance": "hand-built",
+    "messageHex": "800100030522df37c1a446aeebe8d68fe306dfb34af4f24f692eb5a321f5e23ea60b6b9563ceea64965f0cf4512af5e2f76ead4367b70fadf51ff1fbea7ea590b6ba0125a80306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a40000000000000000000000000000000000000000000000000000000000000000000000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a92390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760402000502801a060002000903a025260000000000030200010c020000006400000000000000040101011100",
+    "intent": {
+      "version": "1",
+      "intentId": "pr3-offline-vector",
+      "nonce": "1",
+      "createdAt": 1793542500000,
+      "expiresAt": 1793542590000,
+      "wallet": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+      "chainId": "solana:mainnet",
+      "action": "transfer",
+      "venue": "system",
+      "routeHash": "0x5ef1812df919d241b1117ce2a6c655dd85ed5e630f0c51a1b3b48c15539ec000",
+      "tx": {
+        "serializedMessage": "gAEAAwUi3zfBpEau6+jWj+MG37NK9PJPaS61oyH14j6mC2uVY87qZJZfDPRRKvXi926tQ2e3D631H/H76n6lkLa6ASWoAwZGb+UhFzL/7K26csOb57yM5bvF9xJrLEObOkAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAbd9uHXZaGT2cvhRs7reawctIXtX1s3kTqM9YV+/wCpI5DmCsCxRFXlfjPC3Mw1AxLIpUmF6yuEEC3CXYtMbHYEAgAFAoAaBgACAAkDoCUmAAAAAAADAgABDAIAAABkAAAAAAAAAAQBAQERAA==",
+        "recentBlockhash": "3PqRGmMhL119BM3BNhzVES4okxJqHPjyfqvtQZatN3oj",
+        "lastValidBlockHeight": 300000100,
+        "computeUnitLimit": 400000,
+        "computeUnitPriceMicroLamports": "2500000"
+      },
+      "tokenIn": {
+        "mint": "So11111111111111111111111111111111111111112",
+        "symbol": "wSOL",
+        "decimals": 9
+      },
+      "amountIn": "100",
+      "programIds": [
+        "11111111111111111111111111111111",
+        "ComputeBudget111111111111111111111111111111",
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      ]
+    },
+    "configProfile": {
+      "allowWsol": false
+    },
+    "expected": {
+      "deny": "SOL_DENY_WSOL_DISABLED"
+    }
+  },
+  {
+    "id": "second-system-transfer",
+    "provenance": "hand-built",
+    "messageHex": "800100030522df37c1a446aeebe8d68fe306dfb34af4f24f692eb5a321f5e23ea60b6b9563ceea64965f0cf4512af5e2f76ead4367b70fadf51ff1fbea7ea590b6ba0125a80306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a40000000000000000000000000000000000000000000000000000000000000000000000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a92390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760502000502801a060002000903a025260000000000030200010c020000006400000000000000030200010c020000006400000000000000040101011100",
+    "intent": {
+      "version": "1",
+      "intentId": "pr3-offline-vector",
+      "nonce": "1",
+      "createdAt": 1793542500000,
+      "expiresAt": 1793542590000,
+      "wallet": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+      "chainId": "solana:mainnet",
+      "action": "transfer",
+      "venue": "system",
+      "routeHash": "0x833bb26d9c6f370a50e163d3b468a60d6a29c60cb064bf5c1369928852fabd62",
+      "tx": {
+        "serializedMessage": "gAEAAwUi3zfBpEau6+jWj+MG37NK9PJPaS61oyH14j6mC2uVY87qZJZfDPRRKvXi926tQ2e3D631H/H76n6lkLa6ASWoAwZGb+UhFzL/7K26csOb57yM5bvF9xJrLEObOkAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAbd9uHXZaGT2cvhRs7reawctIXtX1s3kTqM9YV+/wCpI5DmCsCxRFXlfjPC3Mw1AxLIpUmF6yuEEC3CXYtMbHYFAgAFAoAaBgACAAkDoCUmAAAAAAADAgABDAIAAABkAAAAAAAAAAMCAAEMAgAAAGQAAAAAAAAABAEBAREA",
+        "recentBlockhash": "3PqRGmMhL119BM3BNhzVES4okxJqHPjyfqvtQZatN3oj",
+        "lastValidBlockHeight": 300000100,
+        "computeUnitLimit": 400000,
+        "computeUnitPriceMicroLamports": "2500000"
+      },
+      "tokenIn": {
+        "mint": "So11111111111111111111111111111111111111112",
+        "symbol": "wSOL",
+        "decimals": 9
+      },
+      "amountIn": "100",
+      "programIds": [
+        "11111111111111111111111111111111",
+        "ComputeBudget111111111111111111111111111111",
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      ]
+    },
+    "configProfile": {},
+    "expected": {
+      "deny": "SOL_DENY_UNEXPECTED_ACTION",
+      "instructionIndex": 3
+    }
+  },
+  {
+    "id": "sync-wrong-account",
+    "provenance": "hand-built",
+    "messageHex": "800100030622df37c1a446aeebe8d68fe306dfb34af4f24f692eb5a321f5e23ea60b6b9563ceea64965f0cf4512af5e2f76ead4367b70fadf51ff1fbea7ea590b6ba0125a814f594795403a863c52a5eabd3b72799469949e7e2afc7bd8ea04b1688ef9c850306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a40000000000000000000000000000000000000000000000000000000000000000000000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a92390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760403000502801a060003000903a025260000000000040200010c020000006400000000000000050102011100",
+    "intent": {
+      "version": "1",
+      "intentId": "pr3-offline-vector",
+      "nonce": "1",
+      "createdAt": 1793542500000,
+      "expiresAt": 1793542590000,
+      "wallet": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+      "chainId": "solana:mainnet",
+      "action": "transfer",
+      "venue": "system",
+      "routeHash": "0xf7609b9add57dab9289884777a9262d5746aaaeda2fcbcc343b705a8711bb828",
+      "tx": {
+        "serializedMessage": "gAEAAwYi3zfBpEau6+jWj+MG37NK9PJPaS61oyH14j6mC2uVY87qZJZfDPRRKvXi926tQ2e3D631H/H76n6lkLa6ASWoFPWUeVQDqGPFKl6r07cnmUaZSefir8e9jqBLFojvnIUDBkZv5SEXMv/srbpyw5vnvIzlu8X3EmssQ5s6QAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABt324ddloZPZy+FGzut5rBy0he1fWzeROoz1hX7/AKkjkOYKwLFEVeV+M8LczDUDEsilSYXrK4QQLcJdi0xsdgQDAAUCgBoGAAMACQOgJSYAAAAAAAQCAAEMAgAAAGQAAAAAAAAABQECAREA",
+        "recentBlockhash": "3PqRGmMhL119BM3BNhzVES4okxJqHPjyfqvtQZatN3oj",
+        "lastValidBlockHeight": 300000100,
+        "computeUnitLimit": 400000,
+        "computeUnitPriceMicroLamports": "2500000"
+      },
+      "tokenIn": {
+        "mint": "So11111111111111111111111111111111111111112",
+        "symbol": "wSOL",
+        "decimals": 9
+      },
+      "amountIn": "100",
+      "programIds": [
+        "11111111111111111111111111111111",
+        "ComputeBudget111111111111111111111111111111",
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      ]
+    },
+    "configProfile": {},
+    "expected": {
+      "deny": "SOL_DENY_ACTION_MISMATCH",
+      "instructionIndex": 3
+    }
+  },
+  {
+    "id": "system-self-transfer",
+    "provenance": "hand-built",
+    "messageHex": "800100030522df37c1a446aeebe8d68fe306dfb34af4f24f692eb5a321f5e23ea60b6b9563ceea64965f0cf4512af5e2f76ead4367b70fadf51ff1fbea7ea590b6ba0125a80306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a40000000000000000000000000000000000000000000000000000000000000000000000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a92390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760402000502801a060002000903a025260000000000030200000c020000006400000000000000040101011100",
+    "intent": {
+      "version": "1",
+      "intentId": "pr3-offline-vector",
+      "nonce": "1",
+      "createdAt": 1793542500000,
+      "expiresAt": 1793542590000,
+      "wallet": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+      "chainId": "solana:mainnet",
+      "action": "transfer",
+      "venue": "system",
+      "routeHash": "0x1e46e7d8a71ed00305cb7e8f9cd7d66f1631076c982d83c9a2ce423f71c52a80",
+      "tx": {
+        "serializedMessage": "gAEAAwUi3zfBpEau6+jWj+MG37NK9PJPaS61oyH14j6mC2uVY87qZJZfDPRRKvXi926tQ2e3D631H/H76n6lkLa6ASWoAwZGb+UhFzL/7K26csOb57yM5bvF9xJrLEObOkAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAbd9uHXZaGT2cvhRs7reawctIXtX1s3kTqM9YV+/wCpI5DmCsCxRFXlfjPC3Mw1AxLIpUmF6yuEEC3CXYtMbHYEAgAFAoAaBgACAAkDoCUmAAAAAAADAgAADAIAAABkAAAAAAAAAAQBAQERAA==",
+        "recentBlockhash": "3PqRGmMhL119BM3BNhzVES4okxJqHPjyfqvtQZatN3oj",
+        "lastValidBlockHeight": 300000100,
+        "computeUnitLimit": 400000,
+        "computeUnitPriceMicroLamports": "2500000"
+      },
+      "tokenIn": {
+        "mint": "So11111111111111111111111111111111111111112",
+        "symbol": "wSOL",
+        "decimals": 9
+      },
+      "amountIn": "100",
+      "programIds": [
+        "11111111111111111111111111111111",
+        "ComputeBudget111111111111111111111111111111",
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      ]
+    },
+    "configProfile": {},
+    "expected": {
+      "deny": "SOL_DENY_SELF_TRANSFER_NOOP",
+      "instructionIndex": 2
+    }
+  },
+  {
+    "id": "token-self-transfer",
+    "provenance": "hand-built",
+    "messageHex": "800100030522df37c1a446aeebe8d68fe306dfb34af4f24f692eb5a321f5e23ea60b6b956314f594795403a863c52a5eabd3b72799469949e7e2afc7bd8ea04b1688ef9c850306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a40000000c6fa7af3bedbad3a3d65f36aabc97431b1bbe4c2d2f6e0e47ca60203452f5d6106ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a92390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760302000502801a060002000903a0252600000000000404010301000a0c64000000000000000600",
+    "intent": {
+      "version": "1",
+      "intentId": "pr3-offline-vector",
+      "nonce": "1",
+      "createdAt": 1793542500000,
+      "expiresAt": 1793542590000,
+      "wallet": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+      "chainId": "solana:mainnet",
+      "action": "transfer",
+      "venue": "spl-token",
+      "routeHash": "0x523c4dc7734176ed3bc654d8fd0664756fe7ed440a34b742c620b17d76bb94c7",
+      "tx": {
+        "serializedMessage": "gAEAAwUi3zfBpEau6+jWj+MG37NK9PJPaS61oyH14j6mC2uVYxT1lHlUA6hjxSpeq9O3J5lGmUnn4q/HvY6gSxaI75yFAwZGb+UhFzL/7K26csOb57yM5bvF9xJrLEObOkAAAADG+nrzvtutOj1l82qryXQxsbvkwtL24OR8pgIDRS9dYQbd9uHXZaGT2cvhRs7reawctIXtX1s3kTqM9YV+/wCpI5DmCsCxRFXlfjPC3Mw1AxLIpUmF6yuEEC3CXYtMbHYDAgAFAoAaBgACAAkDoCUmAAAAAAAEBAEDAQAKDGQAAAAAAAAABgA=",
+        "recentBlockhash": "3PqRGmMhL119BM3BNhzVES4okxJqHPjyfqvtQZatN3oj",
+        "lastValidBlockHeight": 300000100,
+        "computeUnitLimit": 400000,
+        "computeUnitPriceMicroLamports": "2500000"
+      },
+      "tokenIn": {
+        "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "symbol": "USDC",
+        "decimals": 6
+      },
+      "amountIn": "100",
+      "programIds": [
+        "ComputeBudget111111111111111111111111111111",
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      ]
+    },
+    "configProfile": {},
+    "expected": {
+      "deny": "SOL_DENY_SELF_TRANSFER_NOOP",
+      "instructionIndex": 2
+    }
+  },
+  {
+    "id": "token-external-transfer",
+    "provenance": "hand-built",
+    "messageHex": "800100030622df37c1a446aeebe8d68fe306dfb34af4f24f692eb5a321f5e23ea60b6b956314f594795403a863c52a5eabd3b72799469949e7e2afc7bd8ea04b1688ef9c85df5bd1b4d85042f4696a485b50cf3b64e88b138ee77cd4f8b5c171c53df47e6d0306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a40000000c6fa7af3bedbad3a3d65f36aabc97431b1bbe4c2d2f6e0e47ca60203452f5d6106ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a92390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760303000502801a060003000903a0252600000000000504010402000a0c64000000000000000600",
+    "intent": {
+      "version": "1",
+      "intentId": "pr3-offline-vector",
+      "nonce": "1",
+      "createdAt": 1793542500000,
+      "expiresAt": 1793542590000,
+      "wallet": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+      "chainId": "solana:mainnet",
+      "action": "transfer",
+      "venue": "spl-token",
+      "routeHash": "0x36927a7e99e142077d835f648157c49fd216dced14425fbbf2fe72c1514e77cc",
+      "tx": {
+        "serializedMessage": "gAEAAwYi3zfBpEau6+jWj+MG37NK9PJPaS61oyH14j6mC2uVYxT1lHlUA6hjxSpeq9O3J5lGmUnn4q/HvY6gSxaI75yF31vRtNhQQvRpakhbUM87ZOiLE47nfNT4tcFxxT30fm0DBkZv5SEXMv/srbpyw5vnvIzlu8X3EmssQ5s6QAAAAMb6evO+2606PWXzaqvJdDGxu+TC0vbg5HymAgNFL11hBt324ddloZPZy+FGzut5rBy0he1fWzeROoz1hX7/AKkjkOYKwLFEVeV+M8LczDUDEsilSYXrK4QQLcJdi0xsdgMDAAUCgBoGAAMACQOgJSYAAAAAAAUEAQQCAAoMZAAAAAAAAAAGAA==",
+        "recentBlockhash": "3PqRGmMhL119BM3BNhzVES4okxJqHPjyfqvtQZatN3oj",
+        "lastValidBlockHeight": 300000100,
+        "computeUnitLimit": 400000,
+        "computeUnitPriceMicroLamports": "2500000"
+      },
+      "tokenIn": {
+        "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "symbol": "USDC",
+        "decimals": 6
+      },
+      "amountIn": "100",
+      "programIds": [
+        "ComputeBudget111111111111111111111111111111",
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      ]
+    },
+    "configProfile": {},
+    "expected": {
+      "deny": "SOL_DENY_RECIPIENT_NOT_TREASURY",
+      "instructionIndex": 2
+    }
+  },
+  {
+    "id": "wrap-amount-mismatch",
+    "provenance": "hand-built",
+    "messageHex": "800100030522df37c1a446aeebe8d68fe306dfb34af4f24f692eb5a321f5e23ea60b6b9563ceea64965f0cf4512af5e2f76ead4367b70fadf51ff1fbea7ea590b6ba0125a80306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a40000000000000000000000000000000000000000000000000000000000000000000000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a92390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760402000502801a060002000903a025260000000000030200010c020000006400000000000000040101011100",
+    "intent": {
+      "version": "1",
+      "intentId": "pr3-offline-vector",
+      "nonce": "1",
+      "createdAt": 1793542500000,
+      "expiresAt": 1793542590000,
+      "wallet": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+      "chainId": "solana:mainnet",
+      "action": "transfer",
+      "venue": "system",
+      "routeHash": "0x5ef1812df919d241b1117ce2a6c655dd85ed5e630f0c51a1b3b48c15539ec000",
+      "tx": {
+        "serializedMessage": "gAEAAwUi3zfBpEau6+jWj+MG37NK9PJPaS61oyH14j6mC2uVY87qZJZfDPRRKvXi926tQ2e3D631H/H76n6lkLa6ASWoAwZGb+UhFzL/7K26csOb57yM5bvF9xJrLEObOkAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAbd9uHXZaGT2cvhRs7reawctIXtX1s3kTqM9YV+/wCpI5DmCsCxRFXlfjPC3Mw1AxLIpUmF6yuEEC3CXYtMbHYEAgAFAoAaBgACAAkDoCUmAAAAAAADAgABDAIAAABkAAAAAAAAAAQBAQERAA==",
+        "recentBlockhash": "3PqRGmMhL119BM3BNhzVES4okxJqHPjyfqvtQZatN3oj",
+        "lastValidBlockHeight": 300000100,
+        "computeUnitLimit": 400000,
+        "computeUnitPriceMicroLamports": "2500000"
+      },
+      "tokenIn": {
+        "mint": "So11111111111111111111111111111111111111112",
+        "symbol": "wSOL",
+        "decimals": 9
+      },
+      "amountIn": "101",
+      "programIds": [
+        "11111111111111111111111111111111",
+        "ComputeBudget111111111111111111111111111111",
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      ]
+    },
+    "configProfile": {},
+    "expected": {
+      "deny": "SOL_DENY_AMOUNT_MISMATCH",
+      "instructionIndex": 2
+    }
+  },
+  {
+    "id": "unexpected-revoke",
+    "provenance": "hand-built",
+    "messageHex": "800100040622df37c1a446aeebe8d68fe306dfb34af4f24f692eb5a321f5e23ea60b6b956314f594795403a863c52a5eabd3b72799469949e7e2afc7bd8ea04b1688ef9c850306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a40000000c6fa7af3bedbad3a3d65f36aabc97431b1bbe4c2d2f6e0e47ca60203452f5d61d0c776f307eff78b900e5ef1a1d0da4da904e3af129dea8e4787273bb11a2ded06ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a92390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760402000502801a060002000903a0252600000000000504010304000a0d64000000000000000605020100010500",
+    "intent": {
+      "version": "1",
+      "intentId": "pr3-offline-vector",
+      "nonce": "1",
+      "createdAt": 1793542500000,
+      "expiresAt": 1793542590000,
+      "wallet": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+      "chainId": "solana:mainnet",
+      "action": "approve",
+      "venue": "spl-token",
+      "routeHash": "0x83b92f5ca5c88e7f65cf2ddfbe4eee66bec91bf194f936525343762403672a70",
+      "tx": {
+        "serializedMessage": "gAEABAYi3zfBpEau6+jWj+MG37NK9PJPaS61oyH14j6mC2uVYxT1lHlUA6hjxSpeq9O3J5lGmUnn4q/HvY6gSxaI75yFAwZGb+UhFzL/7K26csOb57yM5bvF9xJrLEObOkAAAADG+nrzvtutOj1l82qryXQxsbvkwtL24OR8pgIDRS9dYdDHdvMH7/eLkA5e8aHQ2k2pBOOvEp3qjkeHJzuxGi3tBt324ddloZPZy+FGzut5rBy0he1fWzeROoz1hX7/AKkjkOYKwLFEVeV+M8LczDUDEsilSYXrK4QQLcJdi0xsdgQCAAUCgBoGAAIACQOgJSYAAAAAAAUEAQMEAAoNZAAAAAAAAAAGBQIBAAEFAA==",
+        "recentBlockhash": "3PqRGmMhL119BM3BNhzVES4okxJqHPjyfqvtQZatN3oj",
+        "lastValidBlockHeight": 300000100,
+        "computeUnitLimit": 400000,
+        "computeUnitPriceMicroLamports": "2500000"
+      },
+      "tokenIn": {
+        "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "symbol": "USDC",
+        "decimals": 6
+      },
+      "amountIn": "100",
+      "programIds": [
+        "ComputeBudget111111111111111111111111111111",
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      ]
+    },
+    "configProfile": {},
+    "expected": {
+      "deny": "SOL_DENY_UNEXPECTED_ACTION",
+      "instructionIndex": 3
+    }
+  },
+  {
+    "id": "units-over-cap",
+    "provenance": "hand-built",
+    "messageHex": "800100030522df37c1a446aeebe8d68fe306dfb34af4f24f692eb5a321f5e23ea60b6b9563ceea64965f0cf4512af5e2f76ead4367b70fadf51ff1fbea7ea590b6ba0125a80306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a40000000000000000000000000000000000000000000000000000000000000000000000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a92390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760402000502811a060002000903a025260000000000030200010c020000006400000000000000040101011100",
+    "intent": {
+      "version": "1",
+      "intentId": "pr3-offline-vector",
+      "nonce": "1",
+      "createdAt": 1793542500000,
+      "expiresAt": 1793542590000,
+      "wallet": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+      "chainId": "solana:mainnet",
+      "action": "transfer",
+      "venue": "system",
+      "routeHash": "0xc9477bc8e69ed96a3465c5eec94e96892c2eadefc3c531bd558d9a582c724825",
+      "tx": {
+        "serializedMessage": "gAEAAwUi3zfBpEau6+jWj+MG37NK9PJPaS61oyH14j6mC2uVY87qZJZfDPRRKvXi926tQ2e3D631H/H76n6lkLa6ASWoAwZGb+UhFzL/7K26csOb57yM5bvF9xJrLEObOkAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAbd9uHXZaGT2cvhRs7reawctIXtX1s3kTqM9YV+/wCpI5DmCsCxRFXlfjPC3Mw1AxLIpUmF6yuEEC3CXYtMbHYEAgAFAoEaBgACAAkDoCUmAAAAAAADAgABDAIAAABkAAAAAAAAAAQBAQERAA==",
+        "recentBlockhash": "3PqRGmMhL119BM3BNhzVES4okxJqHPjyfqvtQZatN3oj",
+        "lastValidBlockHeight": 300000100,
+        "computeUnitLimit": 400001,
+        "computeUnitPriceMicroLamports": "2500000"
+      },
+      "tokenIn": {
+        "mint": "So11111111111111111111111111111111111111112",
+        "symbol": "wSOL",
+        "decimals": 9
+      },
+      "amountIn": "100",
+      "programIds": [
+        "11111111111111111111111111111111",
+        "ComputeBudget111111111111111111111111111111",
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      ]
+    },
+    "configProfile": {},
+    "expected": {
+      "deny": "SOL_DENY_COMPUTE_BUDGET_CAP"
+    }
+  },
+  {
+    "id": "price-over-cap",
+    "provenance": "hand-built",
+    "messageHex": "800100030522df37c1a446aeebe8d68fe306dfb34af4f24f692eb5a321f5e23ea60b6b9563ceea64965f0cf4512af5e2f76ead4367b70fadf51ff1fbea7ea590b6ba0125a80306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a40000000000000000000000000000000000000000000000000000000000000000000000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a92390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760402000502801a060002000903a125260000000000030200010c020000006400000000000000040101011100",
+    "intent": {
+      "version": "1",
+      "intentId": "pr3-offline-vector",
+      "nonce": "1",
+      "createdAt": 1793542500000,
+      "expiresAt": 1793542590000,
+      "wallet": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+      "chainId": "solana:mainnet",
+      "action": "transfer",
+      "venue": "system",
+      "routeHash": "0x27325cc416beff58bcd53f16c63f6a6e8ede52ea72fa1e8730d48b34524fc5e8",
+      "tx": {
+        "serializedMessage": "gAEAAwUi3zfBpEau6+jWj+MG37NK9PJPaS61oyH14j6mC2uVY87qZJZfDPRRKvXi926tQ2e3D631H/H76n6lkLa6ASWoAwZGb+UhFzL/7K26csOb57yM5bvF9xJrLEObOkAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAbd9uHXZaGT2cvhRs7reawctIXtX1s3kTqM9YV+/wCpI5DmCsCxRFXlfjPC3Mw1AxLIpUmF6yuEEC3CXYtMbHYEAgAFAoAaBgACAAkDoSUmAAAAAAADAgABDAIAAABkAAAAAAAAAAQBAQERAA==",
+        "recentBlockhash": "3PqRGmMhL119BM3BNhzVES4okxJqHPjyfqvtQZatN3oj",
+        "lastValidBlockHeight": 300000100,
+        "computeUnitLimit": 400000,
+        "computeUnitPriceMicroLamports": "2500001"
+      },
+      "tokenIn": {
+        "mint": "So11111111111111111111111111111111111111112",
+        "symbol": "wSOL",
+        "decimals": 9
+      },
+      "amountIn": "100",
+      "programIds": [
+        "11111111111111111111111111111111",
+        "ComputeBudget111111111111111111111111111111",
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      ]
+    },
+    "configProfile": {},
+    "expected": {
+      "deny": "SOL_DENY_COMPUTE_BUDGET_CAP"
+    }
+  },
+  {
+    "id": "priority-rounding",
+    "provenance": "hand-built",
+    "messageHex": "800100030522df37c1a446aeebe8d68fe306dfb34af4f24f692eb5a321f5e23ea60b6b9563ceea64965f0cf4512af5e2f76ead4367b70fadf51ff1fbea7ea590b6ba0125a80306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a40000000000000000000000000000000000000000000000000000000000000000000000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a92390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c76040200050201000000020009030100000000000000030200010c020000006400000000000000040101011100",
+    "intent": {
+      "version": "1",
+      "intentId": "pr3-offline-vector",
+      "nonce": "1",
+      "createdAt": 1793542500000,
+      "expiresAt": 1793542590000,
+      "wallet": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+      "chainId": "solana:mainnet",
+      "action": "transfer",
+      "venue": "system",
+      "routeHash": "0xf5a80e6f73d17eea7ac92f4df362e6f3048001c5ee44557e3f9b7a8ba1e011e2",
+      "tx": {
+        "serializedMessage": "gAEAAwUi3zfBpEau6+jWj+MG37NK9PJPaS61oyH14j6mC2uVY87qZJZfDPRRKvXi926tQ2e3D631H/H76n6lkLa6ASWoAwZGb+UhFzL/7K26csOb57yM5bvF9xJrLEObOkAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAbd9uHXZaGT2cvhRs7reawctIXtX1s3kTqM9YV+/wCpI5DmCsCxRFXlfjPC3Mw1AxLIpUmF6yuEEC3CXYtMbHYEAgAFAgEAAAACAAkDAQAAAAAAAAADAgABDAIAAABkAAAAAAAAAAQBAQERAA==",
+        "recentBlockhash": "3PqRGmMhL119BM3BNhzVES4okxJqHPjyfqvtQZatN3oj",
+        "lastValidBlockHeight": 300000100,
+        "computeUnitLimit": 1,
+        "computeUnitPriceMicroLamports": "1"
+      },
+      "tokenIn": {
+        "mint": "So11111111111111111111111111111111111111112",
+        "symbol": "wSOL",
+        "decimals": 9
+      },
+      "amountIn": "100",
+      "programIds": [
+        "11111111111111111111111111111111",
+        "ComputeBudget111111111111111111111111111111",
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      ]
+    },
+    "configProfile": {
+      "fees": {
+        "maxPriorityFeeLamports": "0"
+      }
+    },
+    "expected": {
+      "deny": "SOL_DENY_COMPUTE_BUDGET_CAP"
+    }
+  },
+  {
+    "id": "lowered-unit-cap",
+    "provenance": "hand-built",
+    "messageHex": "800100030522df37c1a446aeebe8d68fe306dfb34af4f24f692eb5a321f5e23ea60b6b9563ceea64965f0cf4512af5e2f76ead4367b70fadf51ff1fbea7ea590b6ba0125a80306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a40000000000000000000000000000000000000000000000000000000000000000000000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a92390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760402000502801a060002000903a025260000000000030200010c020000006400000000000000040101011100",
+    "intent": {
+      "version": "1",
+      "intentId": "pr3-offline-vector",
+      "nonce": "1",
+      "createdAt": 1793542500000,
+      "expiresAt": 1793542590000,
+      "wallet": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+      "chainId": "solana:mainnet",
+      "action": "transfer",
+      "venue": "system",
+      "routeHash": "0x5ef1812df919d241b1117ce2a6c655dd85ed5e630f0c51a1b3b48c15539ec000",
+      "tx": {
+        "serializedMessage": "gAEAAwUi3zfBpEau6+jWj+MG37NK9PJPaS61oyH14j6mC2uVY87qZJZfDPRRKvXi926tQ2e3D631H/H76n6lkLa6ASWoAwZGb+UhFzL/7K26csOb57yM5bvF9xJrLEObOkAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAbd9uHXZaGT2cvhRs7reawctIXtX1s3kTqM9YV+/wCpI5DmCsCxRFXlfjPC3Mw1AxLIpUmF6yuEEC3CXYtMbHYEAgAFAoAaBgACAAkDoCUmAAAAAAADAgABDAIAAABkAAAAAAAAAAQBAQERAA==",
+        "recentBlockhash": "3PqRGmMhL119BM3BNhzVES4okxJqHPjyfqvtQZatN3oj",
+        "lastValidBlockHeight": 300000100,
+        "computeUnitLimit": 400000,
+        "computeUnitPriceMicroLamports": "2500000"
+      },
+      "tokenIn": {
+        "mint": "So11111111111111111111111111111111111111112",
+        "symbol": "wSOL",
+        "decimals": 9
+      },
+      "amountIn": "100",
+      "programIds": [
+        "11111111111111111111111111111111",
+        "ComputeBudget111111111111111111111111111111",
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      ]
+    },
+    "configProfile": {
+      "fees": {
+        "maxComputeUnitLimit": 399999
+      }
+    },
+    "expected": {
+      "deny": "SOL_DENY_COMPUTE_BUDGET_CAP"
+    }
+  },
+  {
+    "id": "lowered-price-cap",
+    "provenance": "hand-built",
+    "messageHex": "800100030522df37c1a446aeebe8d68fe306dfb34af4f24f692eb5a321f5e23ea60b6b9563ceea64965f0cf4512af5e2f76ead4367b70fadf51ff1fbea7ea590b6ba0125a80306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a40000000000000000000000000000000000000000000000000000000000000000000000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a92390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760402000502801a060002000903a025260000000000030200010c020000006400000000000000040101011100",
+    "intent": {
+      "version": "1",
+      "intentId": "pr3-offline-vector",
+      "nonce": "1",
+      "createdAt": 1793542500000,
+      "expiresAt": 1793542590000,
+      "wallet": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+      "chainId": "solana:mainnet",
+      "action": "transfer",
+      "venue": "system",
+      "routeHash": "0x5ef1812df919d241b1117ce2a6c655dd85ed5e630f0c51a1b3b48c15539ec000",
+      "tx": {
+        "serializedMessage": "gAEAAwUi3zfBpEau6+jWj+MG37NK9PJPaS61oyH14j6mC2uVY87qZJZfDPRRKvXi926tQ2e3D631H/H76n6lkLa6ASWoAwZGb+UhFzL/7K26csOb57yM5bvF9xJrLEObOkAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAbd9uHXZaGT2cvhRs7reawctIXtX1s3kTqM9YV+/wCpI5DmCsCxRFXlfjPC3Mw1AxLIpUmF6yuEEC3CXYtMbHYEAgAFAoAaBgACAAkDoCUmAAAAAAADAgABDAIAAABkAAAAAAAAAAQBAQERAA==",
+        "recentBlockhash": "3PqRGmMhL119BM3BNhzVES4okxJqHPjyfqvtQZatN3oj",
+        "lastValidBlockHeight": 300000100,
+        "computeUnitLimit": 400000,
+        "computeUnitPriceMicroLamports": "2500000"
+      },
+      "tokenIn": {
+        "mint": "So11111111111111111111111111111111111111112",
+        "symbol": "wSOL",
+        "decimals": 9
+      },
+      "amountIn": "100",
+      "programIds": [
+        "11111111111111111111111111111111",
+        "ComputeBudget111111111111111111111111111111",
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      ]
+    },
+    "configProfile": {
+      "fees": {
+        "maxComputeUnitPriceMicroLamports": "2499999"
+      }
+    },
+    "expected": {
+      "deny": "SOL_DENY_COMPUTE_BUDGET_CAP"
+    }
+  },
+  {
+    "id": "lowered-priority-cap",
+    "provenance": "hand-built",
+    "messageHex": "800100030522df37c1a446aeebe8d68fe306dfb34af4f24f692eb5a321f5e23ea60b6b9563ceea64965f0cf4512af5e2f76ead4367b70fadf51ff1fbea7ea590b6ba0125a80306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a40000000000000000000000000000000000000000000000000000000000000000000000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a92390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760402000502801a060002000903a025260000000000030200010c020000006400000000000000040101011100",
+    "intent": {
+      "version": "1",
+      "intentId": "pr3-offline-vector",
+      "nonce": "1",
+      "createdAt": 1793542500000,
+      "expiresAt": 1793542590000,
+      "wallet": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+      "chainId": "solana:mainnet",
+      "action": "transfer",
+      "venue": "system",
+      "routeHash": "0x5ef1812df919d241b1117ce2a6c655dd85ed5e630f0c51a1b3b48c15539ec000",
+      "tx": {
+        "serializedMessage": "gAEAAwUi3zfBpEau6+jWj+MG37NK9PJPaS61oyH14j6mC2uVY87qZJZfDPRRKvXi926tQ2e3D631H/H76n6lkLa6ASWoAwZGb+UhFzL/7K26csOb57yM5bvF9xJrLEObOkAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAbd9uHXZaGT2cvhRs7reawctIXtX1s3kTqM9YV+/wCpI5DmCsCxRFXlfjPC3Mw1AxLIpUmF6yuEEC3CXYtMbHYEAgAFAoAaBgACAAkDoCUmAAAAAAADAgABDAIAAABkAAAAAAAAAAQBAQERAA==",
+        "recentBlockhash": "3PqRGmMhL119BM3BNhzVES4okxJqHPjyfqvtQZatN3oj",
+        "lastValidBlockHeight": 300000100,
+        "computeUnitLimit": 400000,
+        "computeUnitPriceMicroLamports": "2500000"
+      },
+      "tokenIn": {
+        "mint": "So11111111111111111111111111111111111111112",
+        "symbol": "wSOL",
+        "decimals": 9
+      },
+      "amountIn": "100",
+      "programIds": [
+        "11111111111111111111111111111111",
+        "ComputeBudget111111111111111111111111111111",
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      ]
+    },
+    "configProfile": {
+      "fees": {
+        "maxPriorityFeeLamports": "999999"
+      }
+    },
+    "expected": {
+      "deny": "SOL_DENY_COMPUTE_BUDGET_CAP"
+    }
+  },
+  {
+    "id": "token-cap-plus-one",
+    "provenance": "hand-built",
+    "messageHex": "800100040622df37c1a446aeebe8d68fe306dfb34af4f24f692eb5a321f5e23ea60b6b956314f594795403a863c52a5eabd3b72799469949e7e2afc7bd8ea04b1688ef9c850306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a40000000c6fa7af3bedbad3a3d65f36aabc97431b1bbe4c2d2f6e0e47ca60203452f5d61d0c776f307eff78b900e5ef1a1d0da4da904e3af129dea8e4787273bb11a2ded06ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a92390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760302000502801a060002000903a0252600000000000504010304000a0d01e1f505000000000600",
+    "intent": {
+      "version": "1",
+      "intentId": "pr3-offline-vector",
+      "nonce": "1",
+      "createdAt": 1793542500000,
+      "expiresAt": 1793542590000,
+      "wallet": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+      "chainId": "solana:mainnet",
+      "action": "approve",
+      "venue": "spl-token",
+      "routeHash": "0x38351c6cdd54b96f9dd9dd9308c13eb60e61f4441ac7bdd5d49ca6f362e0cf77",
+      "tx": {
+        "serializedMessage": "gAEABAYi3zfBpEau6+jWj+MG37NK9PJPaS61oyH14j6mC2uVYxT1lHlUA6hjxSpeq9O3J5lGmUnn4q/HvY6gSxaI75yFAwZGb+UhFzL/7K26csOb57yM5bvF9xJrLEObOkAAAADG+nrzvtutOj1l82qryXQxsbvkwtL24OR8pgIDRS9dYdDHdvMH7/eLkA5e8aHQ2k2pBOOvEp3qjkeHJzuxGi3tBt324ddloZPZy+FGzut5rBy0he1fWzeROoz1hX7/AKkjkOYKwLFEVeV+M8LczDUDEsilSYXrK4QQLcJdi0xsdgMCAAUCgBoGAAIACQOgJSYAAAAAAAUEAQMEAAoNAeH1BQAAAAAGAA==",
+        "recentBlockhash": "3PqRGmMhL119BM3BNhzVES4okxJqHPjyfqvtQZatN3oj",
+        "lastValidBlockHeight": 300000100,
+        "computeUnitLimit": 400000,
+        "computeUnitPriceMicroLamports": "2500000"
+      },
+      "tokenIn": {
+        "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "symbol": "USDC",
+        "decimals": 6
+      },
+      "amountIn": "100000001",
+      "programIds": [
+        "ComputeBudget111111111111111111111111111111",
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      ]
+    },
+    "configProfile": {},
+    "expected": {
+      "deny": "SOL_DENY_TOKEN_CAP"
+    }
+  },
+  {
+    "id": "native-cap-plus-one",
+    "provenance": "hand-built",
+    "messageHex": "800100030522df37c1a446aeebe8d68fe306dfb34af4f24f692eb5a321f5e23ea60b6b9563ceea64965f0cf4512af5e2f76ead4367b70fadf51ff1fbea7ea590b6ba0125a80306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a40000000000000000000000000000000000000000000000000000000000000000000000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a92390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760402000502801a060002000903a025260000000000030200010c0200000001ca9a3b00000000040101011100",
+    "intent": {
+      "version": "1",
+      "intentId": "pr3-offline-vector",
+      "nonce": "1",
+      "createdAt": 1793542500000,
+      "expiresAt": 1793542590000,
+      "wallet": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+      "chainId": "solana:mainnet",
+      "action": "transfer",
+      "venue": "system",
+      "routeHash": "0x46f96d5d84bf6a578b6094ce5baa9636eb10ff3bff8ccb37d7b497cc3fc9be09",
+      "tx": {
+        "serializedMessage": "gAEAAwUi3zfBpEau6+jWj+MG37NK9PJPaS61oyH14j6mC2uVY87qZJZfDPRRKvXi926tQ2e3D631H/H76n6lkLa6ASWoAwZGb+UhFzL/7K26csOb57yM5bvF9xJrLEObOkAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAbd9uHXZaGT2cvhRs7reawctIXtX1s3kTqM9YV+/wCpI5DmCsCxRFXlfjPC3Mw1AxLIpUmF6yuEEC3CXYtMbHYEAgAFAoAaBgACAAkDoCUmAAAAAAADAgABDAIAAAABypo7AAAAAAQBAQERAA==",
+        "recentBlockhash": "3PqRGmMhL119BM3BNhzVES4okxJqHPjyfqvtQZatN3oj",
+        "lastValidBlockHeight": 300000100,
+        "computeUnitLimit": 400000,
+        "computeUnitPriceMicroLamports": "2500000"
+      },
+      "tokenIn": {
+        "mint": "So11111111111111111111111111111111111111112",
+        "symbol": "wSOL",
+        "decimals": 9
+      },
+      "amountIn": "1000000001",
+      "programIds": [
+        "11111111111111111111111111111111",
+        "ComputeBudget111111111111111111111111111111",
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      ]
+    },
+    "configProfile": {},
+    "expected": {
+      "deny": "SOL_DENY_TOKEN_CAP"
+    }
+  },
+  {
+    "id": "token-zero-cap",
+    "provenance": "hand-built",
+    "messageHex": "800100040622df37c1a446aeebe8d68fe306dfb34af4f24f692eb5a321f5e23ea60b6b956314f594795403a863c52a5eabd3b72799469949e7e2afc7bd8ea04b1688ef9c850306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a40000000c6fa7af3bedbad3a3d65f36aabc97431b1bbe4c2d2f6e0e47ca60203452f5d61d0c776f307eff78b900e5ef1a1d0da4da904e3af129dea8e4787273bb11a2ded06ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a92390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760302000502801a060002000903a0252600000000000504010304000a0d64000000000000000600",
+    "intent": {
+      "version": "1",
+      "intentId": "pr3-offline-vector",
+      "nonce": "1",
+      "createdAt": 1793542500000,
+      "expiresAt": 1793542590000,
+      "wallet": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+      "chainId": "solana:mainnet",
+      "action": "approve",
+      "venue": "spl-token",
+      "routeHash": "0x03cf60a3a83bc9bd2d714cdf811a3f9a18b8c0404b7d3b17d3c38726de91ae48",
+      "tx": {
+        "serializedMessage": "gAEABAYi3zfBpEau6+jWj+MG37NK9PJPaS61oyH14j6mC2uVYxT1lHlUA6hjxSpeq9O3J5lGmUnn4q/HvY6gSxaI75yFAwZGb+UhFzL/7K26csOb57yM5bvF9xJrLEObOkAAAADG+nrzvtutOj1l82qryXQxsbvkwtL24OR8pgIDRS9dYdDHdvMH7/eLkA5e8aHQ2k2pBOOvEp3qjkeHJzuxGi3tBt324ddloZPZy+FGzut5rBy0he1fWzeROoz1hX7/AKkjkOYKwLFEVeV+M8LczDUDEsilSYXrK4QQLcJdi0xsdgMCAAUCgBoGAAIACQOgJSYAAAAAAAUEAQMEAAoNZAAAAAAAAAAGAA==",
+        "recentBlockhash": "3PqRGmMhL119BM3BNhzVES4okxJqHPjyfqvtQZatN3oj",
+        "lastValidBlockHeight": 300000100,
+        "computeUnitLimit": 400000,
+        "computeUnitPriceMicroLamports": "2500000"
+      },
+      "tokenIn": {
+        "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "symbol": "USDC",
+        "decimals": 6
+      },
+      "amountIn": "100",
+      "programIds": [
+        "ComputeBudget111111111111111111111111111111",
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      ]
+    },
+    "configProfile": {
+      "tokenCaps": {
+        "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v": "0"
+      }
+    },
+    "expected": {
+      "deny": "SOL_DENY_TOKEN_CAP"
+    }
+  },
+  {
+    "id": "native-zero-cap",
+    "provenance": "hand-built",
+    "messageHex": "800100030522df37c1a446aeebe8d68fe306dfb34af4f24f692eb5a321f5e23ea60b6b9563ceea64965f0cf4512af5e2f76ead4367b70fadf51ff1fbea7ea590b6ba0125a80306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a40000000000000000000000000000000000000000000000000000000000000000000000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a92390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760402000502801a060002000903a025260000000000030200010c020000006400000000000000040101011100",
+    "intent": {
+      "version": "1",
+      "intentId": "pr3-offline-vector",
+      "nonce": "1",
+      "createdAt": 1793542500000,
+      "expiresAt": 1793542590000,
+      "wallet": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+      "chainId": "solana:mainnet",
+      "action": "transfer",
+      "venue": "system",
+      "routeHash": "0x5ef1812df919d241b1117ce2a6c655dd85ed5e630f0c51a1b3b48c15539ec000",
+      "tx": {
+        "serializedMessage": "gAEAAwUi3zfBpEau6+jWj+MG37NK9PJPaS61oyH14j6mC2uVY87qZJZfDPRRKvXi926tQ2e3D631H/H76n6lkLa6ASWoAwZGb+UhFzL/7K26csOb57yM5bvF9xJrLEObOkAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAbd9uHXZaGT2cvhRs7reawctIXtX1s3kTqM9YV+/wCpI5DmCsCxRFXlfjPC3Mw1AxLIpUmF6yuEEC3CXYtMbHYEAgAFAoAaBgACAAkDoCUmAAAAAAADAgABDAIAAABkAAAAAAAAAAQBAQERAA==",
+        "recentBlockhash": "3PqRGmMhL119BM3BNhzVES4okxJqHPjyfqvtQZatN3oj",
+        "lastValidBlockHeight": 300000100,
+        "computeUnitLimit": 400000,
+        "computeUnitPriceMicroLamports": "2500000"
+      },
+      "tokenIn": {
+        "mint": "So11111111111111111111111111111111111111112",
+        "symbol": "wSOL",
+        "decimals": 9
+      },
+      "amountIn": "100",
+      "programIds": [
+        "11111111111111111111111111111111",
+        "ComputeBudget111111111111111111111111111111",
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      ]
+    },
+    "configProfile": {
+      "tokenCaps": {
+        "native": "0"
+      }
+    },
+    "expected": {
+      "deny": "SOL_DENY_TOKEN_CAP"
+    }
+  },
+  {
+    "id": "cap-missing",
+    "provenance": "hand-built",
+    "messageHex": "800100040622df37c1a446aeebe8d68fe306dfb34af4f24f692eb5a321f5e23ea60b6b956314f594795403a863c52a5eabd3b72799469949e7e2afc7bd8ea04b1688ef9c850306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a40000000c6fa7af3bedbad3a3d65f36aabc97431b1bbe4c2d2f6e0e47ca60203452f5d61d0c776f307eff78b900e5ef1a1d0da4da904e3af129dea8e4787273bb11a2ded06ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a92390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760302000502801a060002000903a0252600000000000504010304000a0d64000000000000000600",
+    "intent": {
+      "version": "1",
+      "intentId": "pr3-offline-vector",
+      "nonce": "1",
+      "createdAt": 1793542500000,
+      "expiresAt": 1793542590000,
+      "wallet": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+      "chainId": "solana:mainnet",
+      "action": "approve",
+      "venue": "spl-token",
+      "routeHash": "0x03cf60a3a83bc9bd2d714cdf811a3f9a18b8c0404b7d3b17d3c38726de91ae48",
+      "tx": {
+        "serializedMessage": "gAEABAYi3zfBpEau6+jWj+MG37NK9PJPaS61oyH14j6mC2uVYxT1lHlUA6hjxSpeq9O3J5lGmUnn4q/HvY6gSxaI75yFAwZGb+UhFzL/7K26csOb57yM5bvF9xJrLEObOkAAAADG+nrzvtutOj1l82qryXQxsbvkwtL24OR8pgIDRS9dYdDHdvMH7/eLkA5e8aHQ2k2pBOOvEp3qjkeHJzuxGi3tBt324ddloZPZy+FGzut5rBy0he1fWzeROoz1hX7/AKkjkOYKwLFEVeV+M8LczDUDEsilSYXrK4QQLcJdi0xsdgMCAAUCgBoGAAIACQOgJSYAAAAAAAUEAQMEAAoNZAAAAAAAAAAGAA==",
+        "recentBlockhash": "3PqRGmMhL119BM3BNhzVES4okxJqHPjyfqvtQZatN3oj",
+        "lastValidBlockHeight": 300000100,
+        "computeUnitLimit": 400000,
+        "computeUnitPriceMicroLamports": "2500000"
+      },
+      "tokenIn": {
+        "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "symbol": "USDC",
+        "decimals": 6
+      },
+      "amountIn": "100",
+      "programIds": [
+        "ComputeBudget111111111111111111111111111111",
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      ]
+    },
+    "configProfile": {
+      "resolvedMutation": {
+        "removeCap": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+      }
+    },
+    "expected": {
+      "deny": "SOL_DENY_CAP_MISSING"
+    }
+  },
+  {
+    "id": "wallet-not-treasury",
+    "provenance": "hand-built",
+    "messageHex": "800100040622df37c1a446aeebe8d68fe306dfb34af4f24f692eb5a321f5e23ea60b6b956314f594795403a863c52a5eabd3b72799469949e7e2afc7bd8ea04b1688ef9c850306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a40000000c6fa7af3bedbad3a3d65f36aabc97431b1bbe4c2d2f6e0e47ca60203452f5d61d0c776f307eff78b900e5ef1a1d0da4da904e3af129dea8e4787273bb11a2ded06ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a92390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760302000502801a060002000903a0252600000000000504010304000a0d64000000000000000600",
+    "intent": {
+      "version": "1",
+      "intentId": "pr3-offline-vector",
+      "nonce": "1",
+      "createdAt": 1793542500000,
+      "expiresAt": 1793542590000,
+      "wallet": "vEPLpwWSKhruuDnTigtXkXDArfkQfQfQimbXF4fLGRg",
+      "chainId": "solana:mainnet",
+      "action": "approve",
+      "venue": "spl-token",
+      "routeHash": "0x03cf60a3a83bc9bd2d714cdf811a3f9a18b8c0404b7d3b17d3c38726de91ae48",
+      "tx": {
+        "serializedMessage": "gAEABAYi3zfBpEau6+jWj+MG37NK9PJPaS61oyH14j6mC2uVYxT1lHlUA6hjxSpeq9O3J5lGmUnn4q/HvY6gSxaI75yFAwZGb+UhFzL/7K26csOb57yM5bvF9xJrLEObOkAAAADG+nrzvtutOj1l82qryXQxsbvkwtL24OR8pgIDRS9dYdDHdvMH7/eLkA5e8aHQ2k2pBOOvEp3qjkeHJzuxGi3tBt324ddloZPZy+FGzut5rBy0he1fWzeROoz1hX7/AKkjkOYKwLFEVeV+M8LczDUDEsilSYXrK4QQLcJdi0xsdgMCAAUCgBoGAAIACQOgJSYAAAAAAAUEAQMEAAoNZAAAAAAAAAAGAA==",
+        "recentBlockhash": "3PqRGmMhL119BM3BNhzVES4okxJqHPjyfqvtQZatN3oj",
+        "lastValidBlockHeight": 300000100,
+        "computeUnitLimit": 400000,
+        "computeUnitPriceMicroLamports": "2500000"
+      },
+      "tokenIn": {
+        "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "symbol": "USDC",
+        "decimals": 6
+      },
+      "amountIn": "100",
+      "programIds": [
+        "ComputeBudget111111111111111111111111111111",
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      ]
+    },
+    "configProfile": {},
+    "expected": {
+      "deny": "SOL_DENY_AUTHORITY_NOT_TREASURY"
+    }
+  },
+  {
+    "id": "non-wsol-close-positive-amount",
+    "provenance": "hand-built",
+    "messageHex": "800100020422df37c1a446aeebe8d68fe306dfb34af4f24f692eb5a321f5e23ea60b6b956314f594795403a863c52a5eabd3b72799469949e7e2afc7bd8ea04b1688ef9c850306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a4000000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a92390e60ac0b14455e57e33c2dccc350312c8a54985eb2b84102dc25d8b4c6c760302000502801a060002000903a0252600000000000303010000010900",
+    "intent": {
+      "version": "1",
+      "intentId": "pr3-offline-vector",
+      "nonce": "1",
+      "createdAt": 1793542500000,
+      "expiresAt": 1793542590000,
+      "wallet": "3M8H3jtqa8SHqxatURLao4Zd8CiQBET8ViYZndhTeDbQ",
+      "chainId": "solana:mainnet",
+      "action": "transfer",
+      "venue": "spl-token",
+      "routeHash": "0xe26817ebc262814cef74861c8d4a7cff3c772a0d31aac3d8f91cc2bd2c579463",
+      "tx": {
+        "serializedMessage": "gAEAAgQi3zfBpEau6+jWj+MG37NK9PJPaS61oyH14j6mC2uVYxT1lHlUA6hjxSpeq9O3J5lGmUnn4q/HvY6gSxaI75yFAwZGb+UhFzL/7K26csOb57yM5bvF9xJrLEObOkAAAAAG3fbh12Whk9nL4UbO63msHLSF7V9bN5E6jPWFfv8AqSOQ5grAsURV5X4zwtzMNQMSyKVJhesrhBAtwl2LTGx2AwIABQKAGgYAAgAJA6AlJgAAAAAAAwMBAAABCQA=",
+        "recentBlockhash": "3PqRGmMhL119BM3BNhzVES4okxJqHPjyfqvtQZatN3oj",
+        "lastValidBlockHeight": 300000100,
+        "computeUnitLimit": 400000,
+        "computeUnitPriceMicroLamports": "2500000"
+      },
+      "tokenIn": {
+        "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "symbol": "USDC",
+        "decimals": 6
+      },
+      "amountIn": "1",
+      "programIds": [
+        "ComputeBudget111111111111111111111111111111",
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      ]
+    },
+    "configProfile": {},
+    "expected": {
+      "deny": "SOL_DENY_AMOUNT_MISMATCH",
+      "instructionIndex": 2
+    }
+  },
+  {
+    "id": "policy-R1",
+    "provenance": "mainnet",
+    "signature": "52pvnYHgfsEVrdq1HX8uY6vnMVFvqEfsHQK9kZArHuCyphsbyBXZUqBT1S8vkZZWu9HXCcQQLGzr2iTdyudBDqwK",
+    "slot": 464121701,
+    "messageHex": "800100020449d5edc679fb75911ef546b7c5debd8a7363018634c73f1ce6c9070de602b65fa2715e91ec6fe1470f67e69341c24ddf96d0af7ea8e7dd0ae590f5b9a6fc23740306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a400000000000000000000000000000000000000000000000000000000000000000000000483920190a23c9af2280afc38259724e25288c3870376cb61e5fbaf400a32719030200090350c300000000000002000502400d0300030200010c02000000bb3edd0c0000000000",
+    "intent": {
+      "version": "1",
+      "intentId": "pr3-offline-vector",
+      "nonce": "1",
+      "createdAt": 1793542500000,
+      "expiresAt": 1793542590000,
+      "wallet": "5yDxn2VBgwdVPQAFFbdZWFdoY5Xbyh369QQYgn6N2wLa",
+      "chainId": "solana:mainnet",
+      "action": "transfer",
+      "venue": "system",
+      "routeHash": "0xe234af3c1c1fafb5bd60ff3808e42505999f2b4048c1cf312d6a9ca12afb9bba",
+      "tx": {
+        "serializedMessage": "gAEAAgRJ1e3Geft1kR71RrfF3r2Kc2MBhjTHPxzmyQcN5gK2X6JxXpHsb+FHD2fmk0HCTd+W0K9+qOfdCuWQ9bmm/CN0AwZGb+UhFzL/7K26csOb57yM5bvF9xJrLEObOkAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEg5IBkKI8mvIoCvw4JZck4lKIw4cDdsth5fuvQAoycZAwIACQNQwwAAAAAAAAIABQJADQMAAwIAAQwCAAAAuz7dDAAAAAAA",
+        "recentBlockhash": "5rvspbKKzCY7Sfw61g5hyJYbw6rDpf8uCbEbD2wLs6iU",
+        "lastValidBlockHeight": 300000100,
+        "computeUnitLimit": 200000,
+        "computeUnitPriceMicroLamports": "50000"
+      },
+      "tokenIn": {
+        "mint": "So11111111111111111111111111111111111111112",
+        "symbol": "wSOL",
+        "decimals": 9
+      },
+      "amountIn": "215826107",
+      "programIds": [
+        "11111111111111111111111111111111",
+        "ComputeBudget111111111111111111111111111111"
+      ]
+    },
+    "configProfile": {},
+    "expected": {
+      "deny": "SOL_DENY_RECIPIENT_NOT_TREASURY",
+      "instructionIndex": 2
+    }
+  },
+  {
+    "id": "policy-R2",
+    "provenance": "mainnet",
+    "signature": "5Wjvt6FvZLzgqptjrMaT2AvCMkbndkNNdsHhEWQjQP3jmHp7sbrg4bLm4xLXuJ7D5DEPLs3fsxgquc1nnjLWN1gu",
+    "slot": 464121537,
+    "messageHex": "800100030607b3b6b17e2a8d92c223a41835a889be3e3dc383d24f19da880d05d4217e5a67361c6671de1bb3be34f0647efef958760f710aac6ef3c9412eafb98eedaa3e68f7f65edea7d4ddcb7209a4c8fa204425f7b89144a0fc9d96cbc57109dadf071b0306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a4000000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a9c6fa7af3bedbad3a3d65f36aabc97431b1bbe4c2d2f6e0e47ca60203452f5d61b15292f91a4514321ada6ce94ec42069be17a9ff3a020b5b793593375ba07f77030300050237f800000300090388000000000000000404010502000a0c88130000000000000600",
+    "intent": {
+      "version": "1",
+      "intentId": "pr3-offline-vector",
+      "nonce": "1",
+      "createdAt": 1793542500000,
+      "expiresAt": 1793542590000,
+      "wallet": "X4o2UuVNMxnrgkzVy97kPF5gmS6CLRCVJGB48VastML",
+      "chainId": "solana:mainnet",
+      "action": "transfer",
+      "venue": "spl-token",
+      "routeHash": "0x40a06a17d14baf302bc37a9c7a376ad2b12d43843cb3c1e6db332eb25b7e4c55",
+      "tx": {
+        "serializedMessage": "gAEAAwYHs7axfiqNksIjpBg1qIm+Pj3Dg9JPGdqIDQXUIX5aZzYcZnHeG7O+NPBkfv75WHYPcQqsbvPJQS6vuY7tqj5o9/Ze3qfU3ctyCaTI+iBEJfe4kUSg/J2Wy8VxCdrfBxsDBkZv5SEXMv/srbpyw5vnvIzlu8X3EmssQ5s6QAAAAAbd9uHXZaGT2cvhRs7reawctIXtX1s3kTqM9YV+/wCpxvp6877brTo9ZfNqq8l0MbG75MLS9uDkfKYCA0UvXWGxUpL5GkUUMhrabOlOxCBpvhep/zoCC1t5NZM3W6B/dwMDAAUCN/gAAAMACQOIAAAAAAAAAAQEAQUCAAoMiBMAAAAAAAAGAA==",
+        "recentBlockhash": "CwCC76mX6p8PysXuvnhE22NubcfzYauKGEB93mtwaSaJ",
+        "lastValidBlockHeight": 300000100,
+        "computeUnitLimit": 63543,
+        "computeUnitPriceMicroLamports": "136"
+      },
+      "tokenIn": {
+        "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "symbol": "USDC",
+        "decimals": 6
+      },
+      "amountIn": "5000",
+      "programIds": [
+        "ComputeBudget111111111111111111111111111111",
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      ]
+    },
+    "configProfile": {},
+    "expected": {
+      "deny": "SOL_DENY_RECIPIENT_NOT_TREASURY",
+      "instructionIndex": 2
+    }
+  },
+  {
+    "id": "policy-R3",
+    "provenance": "mainnet",
+    "signature": "4TqGpMuipwJCmhaBKvaN9iRd33vKQwHNM28yJTuTfVstzjjUqyqt7kRx33nekK3KBJJD1qGksJH2cw9oLqQDkxJQ",
+    "slot": 464121532,
+    "messageHex": "800100060a0be007dcbcb58d6e1daf55ac86b2a06f9c2f7344d20c823e3dd8706dad609f8afa6697a2909abc990ced6d36fa78eba0fc0c886dbcccdc0a4923762f532158c69c376aedcbf51dbb5de0c4ebc38e2e76260a9918d366727462dac8c32134bb732026101ec20328964a32abab136c5405b91f3ae38ee4f64cb6bde879b86838d20306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a400000008c97258f4e2489f1bb3d1029148e0d830b5a1399daff1084048e7bd8dbe9f859062a4b3f728b79f11ddfac7ab7c4b59b7c4be59e808b6d63faa777811acc2860c6fa7af3bedbad3a3d65f36aabc97431b1bbe4c2d2f6e0e47ca60203452f5d61000000000000000000000000000000000000000000000000000000000000000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a94c5eca13721cd084efbc5e7667670e04c1a2d685729fcf957ae47ba2d9a1bd4a05040005022b4a000004000903f049020000000000050600010607080901010904020701000a0ce5e005000000000006080200030c02000000102700000000000000",
+    "intent": {
+      "version": "1",
+      "intentId": "pr3-offline-vector",
+      "nonce": "1",
+      "createdAt": 1793542500000,
+      "expiresAt": 1793542590000,
+      "wallet": "oMcssxWxgooErb8bsRA4QN34VHhvfeEbdDjrwF6WH45",
+      "chainId": "solana:mainnet",
+      "action": "transfer",
+      "venue": "spl-token",
+      "routeHash": "0xced748a43745902b99651eb4b5757e70fcfe2360315ab22851b35cf7ef07435f",
+      "tx": {
+        "serializedMessage": "gAEABgoL4AfcvLWNbh2vVayGsqBvnC9zRNIMgj492HBtrWCfivpml6KQmryZDO1tNvp466D8DIhtvMzcCkkjdi9TIVjGnDdq7cv1Hbtd4MTrw44udiYKmRjTZnJ0YtrIwyE0u3MgJhAewgMolkoyq6sTbFQFuR86447k9ky2veh5uGg40gMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAAjJclj04kifG7PRApFI4NgwtaE5na/xCEBI572Nvp+FkGKks/cot58R3frHq3xLWbfEvlnoCLbWP6p3eBGswoYMb6evO+2606PWXzaqvJdDGxu+TC0vbg5HymAgNFL11hAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAG3fbh12Whk9nL4UbO63msHLSF7V9bN5E6jPWFfv8AqUxeyhNyHNCE77xedmdnDgTBotaFcp/PlXrke6LZob1KBQQABQIrSgAABAAJA/BJAgAAAAAABQYAAQYHCAkBAQkEAgcBAAoM5eAFAAAAAAAGCAIAAwwCAAAAECcAAAAAAAAA",
+        "recentBlockhash": "697pQ8N94jnuHfAyb62EvGsaoLHPDG4WsK8n2brwfE7j",
+        "lastValidBlockHeight": 300000100,
+        "computeUnitLimit": 18987,
+        "computeUnitPriceMicroLamports": "150000"
+      },
+      "tokenIn": {
+        "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "symbol": "USDC",
+        "decimals": 6
+      },
+      "amountIn": "385253",
+      "programIds": [
+        "11111111111111111111111111111111",
+        "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
+        "ComputeBudget111111111111111111111111111111",
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      ]
+    },
+    "configProfile": {},
+    "expected": {
+      "deny": "SOL_DENY_ATA_OWNER_NOT_TREASURY",
+      "instructionIndex": 2
+    }
+  }
+]
