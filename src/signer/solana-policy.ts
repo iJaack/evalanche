@@ -1,5 +1,6 @@
 /** Offline Solana configuration and decoded-evidence policy. No custody or RPC. */
 import { isAbsolute } from 'node:path';
+import { SOLANA_PHASE1_CEILINGS, SOLANA_HARD_DENIED_PROGRAMS } from './solana-decode/constants';
 import { decodeBase58 } from './base58';
 import { SOLANA_CLUSTERS, type SolanaChainId } from './solana-intent';
 import { EvalancheError, EvalancheErrorCode } from '../utils/errors';
@@ -55,7 +56,7 @@ export interface SolanaPolicyInput {
 export interface ResolvedSolanaCluster extends SolanaClusterConfig {
   enabled: boolean; killSwitch: boolean; alt: { enabled: false }; allowWsol: boolean;
   jupiter: { enabled: boolean; allowPoolTransfers: boolean; pools: SolanaPoolConfig[]; apiBaseUrl?: string };
-  fees: SolanaFeesConfig & { maxFeeUsd: string };
+  fees: SolanaFeesConfig;
 }
 export interface ResolvedSolanaConfig {
   enabled: boolean; secretKeyPath?: string;
@@ -163,7 +164,7 @@ function resolveCluster(value: unknown, cluster: SolanaChainId): ResolvedSolanaC
   const result: ResolvedSolanaCluster = {
     enabled: flag(r, 'enabled'), killSwitch: flag(r, 'killSwitch'), alt: { enabled: false }, allowWsol: flag(r, 'allowWsol'),
     jupiter: { enabled: flag(j, 'enabled'), allowPoolTransfers: flag(j, 'allowPoolTransfers'), pools: [] },
-    fees: { maxFeeUsd: Object.hasOwn(f, 'maxFeeUsd') ? decimal(f.maxFeeUsd, 'maxFeeUsd', true) : '0.50' },
+    fees: Object.hasOwn(f, 'maxFeeUsd') ? { maxFeeUsd: decimal(f.maxFeeUsd, 'maxFeeUsd', true) } : {},
   };
   // Flag-only PR1 profiles remain valid. Explicit policy requires an explicit value cap.
   if (Object.keys(r).some((name) => name !== 'enabled' && name !== 'killSwitch') && !Object.hasOwn(r, 'maxPerTxUsd')) fail('maxPerTxUsd is required for policy-bearing clusters');
@@ -232,6 +233,19 @@ function resolveCluster(value: unknown, cluster: SolanaChainId): ResolvedSolanaC
     }
   }
   if (result.jupiter.enabled && (!result.jupiter.pools.length || !result.innerPrograms?.length)) fail('Jupiter requires reviewed pools and inner programs');
+  for (const name of ['maxComputeUnitLimit', 'maxComputeUnitPriceMicroLamports', 'maxPriorityFeeLamports', 'maxRentLamports', 'maxFeeUsd'] as const) {
+    const value = name === 'maxRentLamports' ? result.maxRentLamports : result.fees[name];
+    if (value === undefined) continue;
+    const above = name === 'maxFeeUsd'
+      ? BigInt(String(value).split('.')[0]) * 1000000n + BigInt((String(value).split('.')[1] ?? '').padEnd(6, '0')) > 2000000n
+      : BigInt(value) > BigInt(SOLANA_PHASE1_CEILINGS[name]);
+    if (above) fail(`SOL_DENY_CONFIG_ABOVE_CEILING: ${name} exceeds phase-1 ceiling`);
+  }
+  for (const program of [...(result.programs ?? []), ...(result.innerPrograms ?? [])]) {
+    if (SOLANA_HARD_DENIED_PROGRAMS.some(p => p.status === 'verified' && p.programId === program)) {
+      fail('SOL_DENY_PROGRAM_HARD_DENIED: hard-denied program in config');
+    }
+  }
   return result;
 }
 

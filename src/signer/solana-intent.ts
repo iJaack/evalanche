@@ -1,5 +1,6 @@
 /** Offline Solana schema, approval domain and static-key v0 message checks. */
 import { createHash } from 'node:crypto';
+import { decodeComputeBudget } from './solana-decode/compute-budget';
 import { decodeBase58, encodeBase58 } from './base58';
 import type { ApprovalDecision, ApprovalMode, VerifierApproval } from './intent';
 
@@ -239,27 +240,26 @@ export function solanaPriorityFeeLamports(limit: number, price: string | bigint)
   return (BigInt(limit) * value + 999999n) / 1000000n;
 }
 
-/**
- * Additional PR2 binding; PR1 schema-only callers intentionally remain unchanged.
- * Only an intent that declares `tx.durableNonce` is rejected here. PR2 does not decode
- * System instructions, so a message whose first instruction is AdvanceNonceAccount is
- * not detected. Rejecting durable-nonce messages (AdvanceNonceAccount) at the message
- * level is required in PR3, before any signing is enabled.
- */
+/** Bind the PR2 message fields and fee budget; reject durable nonces at every index. */
 export function assertSolanaMessageMatchesIntent(value: unknown, options: { caps?: SolanaComputeBudgetCaps } = {}): ParsedSolanaMessage {
   const intent = assertSolanaIntentShape(value);
   const message = parseSolanaMessage(intent.tx.serializedMessage);
-  if ('durableNonce' in intent.tx) reject('Solana durable nonce messages are disabled');
+  if ('durableNonce' in intent.tx || message.instructions.some(ix =>
+    ix.programId === '11111111111111111111111111111111' && ix.data.length >= 4
+      && Buffer.from(ix.data).readUInt32LE(0) === 4)) reject('Solana durable nonce messages are disabled');
   if (message.staticAccountKeys[0] !== intent.wallet || intent.wallet === '11111111111111111111111111111111'
     || message.recentBlockhash !== intent.tx.recentBlockhash) reject('Solana message payer or blockhash mismatch');
   let limit: number | undefined;
   let price: bigint | undefined;
-  for (const ix of message.instructions) {
+  for (const [instructionIndex, ix] of message.instructions.entries()) {
     if (ix.programId !== 'ComputeBudget111111111111111111111111111111') continue;
-    const data = Buffer.from(ix.data);
     if (ix.accountIndices.length) reject('ComputeBudget instruction must have no accounts');
-    if (data[0] === 2 && data.length === 5 && limit === undefined) limit = data.readUInt32LE(1);
-    else if (data[0] === 3 && data.length === 9 && price === undefined) price = data.readBigUInt64LE(1);
+    // Share byte decoding while preserving the established PR2 error strings.
+    let decoded: ReturnType<typeof decodeComputeBudget>;
+    try { decoded = decodeComputeBudget({ message, accounts: [], instructionIndex, instruction: ix }); }
+    catch { reject('Unsupported, malformed or duplicate ComputeBudget instruction'); }
+    if (decoded.kind === 'computeBudget.setComputeUnitLimit' && limit === undefined) limit = decoded.units;
+    else if (decoded.kind === 'computeBudget.setComputeUnitPrice' && price === undefined) price = decoded.microLamports;
     else reject('Unsupported, malformed or duplicate ComputeBudget instruction');
   }
   if (limit === undefined || price === undefined || limit === 0
