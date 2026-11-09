@@ -1,0 +1,15 @@
+{
+  "evalanche (sito, solo scuro)": {
+    "dark": {
+      "bg": "#12100e",
+      "surface": "#1a1714",
+      "ink": "#ede8e0",
+      "ink2": "#bdb5aa",
+      "t2": "rgba(237,232,224,0.72)",
+      "t3": "rgba(237,232,224,0.60)",
+      "accent": "#e2485c",
+      "accentText": "#f07c8a",
+      "onAccent": "#12100e"
+    }
+  }
+}

@@ -1,54 +1,30 @@
 <svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <linearGradient id="bg" x1="88" y1="44" x2="1110" y2="586" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#090C12"/>
-      <stop offset="1" stop-color="#151B27"/>
-    </linearGradient>
-    <linearGradient id="frame" x1="98" y1="58" x2="1092" y2="576" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#F87171"/>
-      <stop offset="0.5" stop-color="#FB7185"/>
-      <stop offset="1" stop-color="#F59E0B"/>
-    </linearGradient>
-    <linearGradient id="logoFill" x1="172" y1="120" x2="356" y2="304" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#FB7185"/>
-      <stop offset="1" stop-color="#EF4444"/>
-    </linearGradient>
-    <linearGradient id="codeGlow" x1="708" y1="322" x2="1042" y2="486" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#FB7185" stop-opacity="0.28"/>
-      <stop offset="1" stop-color="#F59E0B" stop-opacity="0.1"/>
-    </linearGradient>
-  </defs>
+  <rect width="1200" height="630" fill="#12100e"/>
+  <rect x="40" y="40" width="1120" height="550" rx="36" fill="#1a1714" stroke="#e2485c" stroke-width="2"/>
 
-  <rect width="1200" height="630" fill="#06080D"/>
-  <rect x="40" y="40" width="1120" height="550" rx="36" fill="url(#bg)" stroke="url(#frame)" stroke-width="2"/>
+  <rect x="96" y="96" width="420" height="438" rx="28" fill="#1a1714" stroke="rgba(237,232,224,0.08)"/>
+  <rect x="138" y="140" width="96" height="96" rx="22" fill="#e2485c"/>
+  <text x="186" y="203" text-anchor="middle" fill="#12100e" font-family="Inter, Arial, sans-serif" font-size="54" font-weight="800">E</text>
 
-  <circle cx="1044" cy="110" r="126" fill="#EF4444" fill-opacity="0.08"/>
-  <circle cx="154" cy="550" r="118" fill="#F59E0B" fill-opacity="0.08"/>
-  <circle cx="1018" cy="520" r="132" fill="#FB7185" fill-opacity="0.08"/>
+  <text x="138" y="300" fill="#ede8e0" font-family="Inter, Arial, sans-serif" font-size="68" font-weight="800">Evalanche</text>
+  <text x="138" y="346" fill="#bdb5aa" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="600">Multi-EVM agent wallet SDK</text>
 
-  <rect x="96" y="96" width="420" height="438" rx="28" fill="#0C111A" stroke="rgba(255,255,255,0.08)"/>
-  <rect x="138" y="140" width="96" height="96" rx="22" fill="url(#logoFill)"/>
-  <text x="186" y="203" text-anchor="middle" fill="#FFFFFF" font-family="Inter, Arial, sans-serif" font-size="54" font-weight="800">E</text>
+  <rect x="138" y="386" width="160" height="42" rx="21" fill="rgba(158,204,163,0.12)" stroke="rgba(158,204,163,0.35)"/>
+  <text x="218" y="413" text-anchor="middle" fill="#9ecca3" font-family="Inter, Arial, sans-serif" font-size="20" font-weight="800">NOW SHIPPING v1.14.0</text>
 
-  <text x="138" y="300" fill="#F8FAFC" font-family="Inter, Arial, sans-serif" font-size="68" font-weight="800">Evalanche</text>
-  <text x="138" y="346" fill="#94A3B8" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="600">Multi-EVM agent wallet SDK</text>
+  <text x="138" y="470" fill="#bdb5aa" font-family="Inter, Arial, sans-serif" font-size="26">Official Avalanche SDK</text>
+  <text x="138" y="504" fill="#bdb5aa" font-family="Inter, Arial, sans-serif" font-size="26">Avalanche L1 discovery</text>
+  <text x="138" y="538" fill="#bdb5aa" font-family="Inter, Arial, sans-serif" font-size="26">Node.js 20 required</text>
 
-  <rect x="138" y="386" width="160" height="42" rx="21" fill="rgba(34,197,94,0.12)" stroke="rgba(34,197,94,0.35)"/>
-  <text x="218" y="413" text-anchor="middle" fill="#86EFAC" font-family="Inter, Arial, sans-serif" font-size="20" font-weight="800">NOW SHIPPING v1.14.0</text>
+  <rect x="580" y="120" width="526" height="382" rx="26" fill="#1a1714" stroke="rgba(237,232,224,0.08)"/>
+  <rect x="580" y="120" width="526" height="56" rx="26" fill="#12100e"/>
+  <circle cx="620" cy="148" r="8" fill="rgba(237,232,224,0.12)"/>
+  <circle cx="648" cy="148" r="8" fill="rgba(237,232,224,0.12)"/>
+  <circle cx="676" cy="148" r="8" fill="rgba(237,232,224,0.12)"/>
+  <text x="1040" y="154" text-anchor="end" fill="rgba(237,232,224,0.60)" font-family="JetBrains Mono, monospace" font-size="18">evalanche-v1.14.0.ts</text>
 
-  <text x="138" y="470" fill="#CBD5E1" font-family="Inter, Arial, sans-serif" font-size="26">Official Avalanche SDK</text>
-  <text x="138" y="504" fill="#CBD5E1" font-family="Inter, Arial, sans-serif" font-size="26">Avalanche L1 discovery</text>
-  <text x="138" y="538" fill="#CBD5E1" font-family="Inter, Arial, sans-serif" font-size="26">Node.js 20 required</text>
-
-  <rect x="580" y="120" width="526" height="382" rx="26" fill="#0B1018" stroke="rgba(255,255,255,0.08)"/>
-  <rect x="580" y="120" width="526" height="56" rx="26" fill="#111827"/>
-  <circle cx="620" cy="148" r="8" fill="#F87171"/>
-  <circle cx="648" cy="148" r="8" fill="#FBBF24"/>
-  <circle cx="676" cy="148" r="8" fill="#4ADE80"/>
-  <text x="1040" y="154" text-anchor="end" fill="#64748B" font-family="JetBrains Mono, monospace" font-size="18">evalanche-v1.14.0.ts</text>
-
-  <rect x="622" y="218" width="432" height="220" rx="18" fill="url(#codeGlow)"/>
-  <text x="626" y="246" fill="#E2E8F0" font-family="JetBrains Mono, monospace" font-size="15">
+  <rect x="622" y="218" width="432" height="220" rx="18" fill="#12100e"/>
+  <text x="626" y="246" fill="#ede8e0" font-family="JetBrains Mono, monospace" font-size="15">
     <tspan x="626" dy="0">const network = await</tspan>
     <tspan x="626" dy="24">  getAvalancheL1Network(4337);</tspan>
     <tspan x="626" dy="24">const agent = new Evalanche({</tspan>
@@ -58,5 +34,5 @@
     <tspan x="626" dy="24">// BEAM native token, not AVAX</tspan>
   </text>
 
-  <text x="582" y="562" fill="#94A3B8" font-family="Inter, Arial, sans-serif" font-size="24">Avalanche-first roots • Multi-EVM execution • Open-source infra</text>
+  <text x="582" y="562" fill="#bdb5aa" font-family="Inter, Arial, sans-serif" font-size="24">Avalanche-first roots • Multi-EVM execution • Open-source infra</text>
 </svg>
