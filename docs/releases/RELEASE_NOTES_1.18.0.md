@@ -47,6 +47,6 @@ Provision `evalanche-1.18.0.tgz` as a new pin and pass its recorded sha256. Leav
 
 ## Validation and limitations
 
-The offline tests inject the info reader, use throwaway keys, and cover the independent SDK vector cross-checked with eth-account 0.13.7 and ethers v6, schema/domain denials, balance failure handling, replay persistence, and audit chaining. Run typecheck, build, release-doc tests, and the full Vitest suite for release validation. A pre-existing Node 26 Ed25519 JWK failure in `test/signer/remote-signer.test.ts` is outside this change.
+The offline tests inject the info reader, use throwaway keys, and cover the independent SDK vector cross-checked with eth-account 0.13.7 and ethers v6, schema/domain denials, balance failure handling, replay persistence, and audit chaining. Run typecheck, build, release-doc tests, and the full Vitest suite for release validation. One pre-existing local failure, `test/signer/remote-signer.test.ts` > "rejects a decoded transaction that does not match the request" (Ed25519 JWK signing error on local Node 24 and Node 26), also fails on v1.17.0 and is outside this change.
 
 Orders, cancels, leverage changes, spot sends, USD sends, class transfers, agent/builder approvals, vault/sub-account actions, token delegation, cDeposit, sendAsset, and unknown Hyperliquid typed data remain denied, including with the flag enabled. Solana signing remains unavailable.
