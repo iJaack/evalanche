@@ -122,7 +122,8 @@ describe('Hyperliquid withdraw3', () => {
     const result = await h.server.handle(request(h, typed));
     expect(verifyTypedData(typed.domain, { [TYPE]: typed.types[TYPE] }, typed.value, result.signature!)).toBe(wallet.address);
   });
-  it.each([DEST.toLowerCase(), `0x${DEST.slice(2).toUpperCase()}`, getAddress(DEST.toLowerCase())])('accepts valid address encoding %s', async (destination) => {
+  it.each([DEST])('accepts exact lowercase destination %s', async (destination) => {
+    expect(DEST).toBe('0x0fe61780bd5508b3c99e420662050e5560608ca4');
     const h = await boot();
     const typed = payload(); typed.value.destination = destination;
     expect((await h.server.handle(request(h, typed))).signature).toBeDefined();
@@ -188,7 +189,8 @@ describe('Hyperliquid withdraw3', () => {
     ['wrong primaryType', t => { Object.assign(t, { primaryType: 'HyperliquidTransaction:UsdSend' }); }],
     ['wrong domain name', t => { t.domain.name = 'Foo'; }],
     ['wrong domain version', t => { t.domain.version = '2'; }],
-    ...[42161, '0xa4b1', 1337, 999, '0x66eee', '421614'].map(chainId => [`domain chainId ${chainId}`, (t: TypedDataPayload) => { t.domain.chainId = chainId; }] as [string, (t: TypedDataPayload) => void]),
+    ...[42161, 0xa4b1, 1, 0, 421613, 421615, 1337, 999, 8453, '0xa4b1', '0x66eee', '421614', null].map(chainId => [`domain chainId ${chainId}`, (t: TypedDataPayload) => { t.domain.chainId = chainId; }] as [string, (t: TypedDataPayload) => void]),
+    ['missing domain chainId', t => { delete t.domain.chainId; }],
     ['nonzero contract', t => { t.domain.verifyingContract = wallet.address; }],
     ['extra domain key', t => { t.domain.salt = `0x${'00'.repeat(32)}`; }],
     ['missing domain key', t => { delete t.domain.version; }],
@@ -205,7 +207,17 @@ describe('Hyperliquid withdraw3', () => {
     const h = await boot(); const typed = payload(); typed.value.hyperliquidChain = chain;
     await denied(h, request(h, typed), 'Hyperliquid withdraw3: hyperliquidChain must be Mainnet');
   });
-  it.each([`0x${'22'.repeat(20)}`, wallet.address, '0x123', `0x${'gg'.repeat(20)}`, '0x0Fe61780bd5508b3c99e420662050e5560608ca4', ` ${DEST}`, `${DEST} `])('denies destination %s', async destination => {
+  it('denies bigint domain chainId even when route canonicalisation rejects it first', async () => {
+    const h = await boot();
+    const typed = payload(); const req = request(h, typed);
+    typed.domain.chainId = 421614n;
+    expect(() => computeTypedDataRouteHash(typed)).toThrow();
+    expect(() => assertHyperliquidWithdraw3(req, req.structuredIntent!)).toThrow('domain must exactly match');
+    const before = await stored(h);
+    await expect(h.server.handle(req)).rejects.toThrow();
+    expect(await stored(h)).toBe(before); expect(h.info).not.toHaveBeenCalled();
+  });
+  it.each([getAddress(DEST), `0x${DEST.slice(2).toUpperCase()}`, DEST.slice(2), `0x${'22'.repeat(20)}`, wallet.address, '0x123', `0x${'gg'.repeat(20)}`, '0x0Fe61780bd5508b3c99e420662050e5560608ca4', ` ${DEST}`, `${DEST} `])('denies destination %s', async destination => {
     const h = await boot(); const typed = payload(); typed.value.destination = destination;
     await denied(h, request(h, typed)); expect(h.info).not.toHaveBeenCalled();
   });
@@ -218,6 +230,36 @@ describe('Hyperliquid withdraw3', () => {
     const audit = JSON.parse((await readFile(h.options.auditLogPath, 'utf8')).trim());
     expect(audit.hyperliquid.withdrawable).toBe('32.375424');
     expect(JSON.parse(await readFile(h.options.nonceStorePath, 'utf8')).wallets).toEqual({});
+  });
+  it.each([
+    ['default', undefined, '35'], ['number', 10, '10'], ['string', '12.5', '12.5'],
+    ['zero', 0, '35'], ['negative', -1, '35'], ['NaN', NaN, '35'], ['Infinity', Infinity, '35'],
+    ['negative Infinity', -Infinity, '35'], ['exponent string', '1e1', '35'], ['invalid string', 'abc', '35'],
+    ['above hard cap', 36, '35'], ['large string', '100', '35'], ['null', null, '35'], ['object', {}, '35'],
+    ['boolean', true, '35'], ['array', [], '35'], ['bigint', 10n, '35'], ['zero string', '0', '35'],
+    ['negative string', '-1', '35'], ['excess decimal string', '12.5000001', '35'],
+    ['number truncated', 12.3456789, '12.345678'], ['number near boundary', 1.000000999999, '1'],
+    ['number six decimals', 1.000001, '1.000001'], ['small exponent number', 1e-6, '0.000001'],
+  ])('enforces lower-only cap: %s', async (_, config, cap) => {
+    const h = await boot({ hyperliquidWithdrawMaxUsdc: config } as SignerServerOptions,
+      async () => ({ withdrawable: '40', assetPositions: [], time: Date.now() }));
+    const time = Date.now();
+    expect((await h.server.handle(request(h, payload(time, cap)))).signature).toBeDefined();
+    const [whole, fraction = ''] = (cap as string).split('.');
+    const overMicros = BigInt(whole) * 1_000_000n + BigInt(fraction.padEnd(6, '0')) + 1n;
+    const over = `${overMicros / 1_000_000n}.${String(overMicros % 1_000_000n).padStart(6, '0')}`;
+    await denied(h, request(h, payload(time + 1, over), { nonce: '2' }), 'Hyperliquid withdraw3: amount exceeds the per-withdrawal cap');
+  });
+  it.each([undefined, 25])('uses fresh withdrawable when it is below cap %s', async config => {
+    const h = await boot({ hyperliquidWithdrawMaxUsdc: config },
+      async () => ({ withdrawable: '20', assetPositions: [], time: Date.now() }));
+    const time = Date.now();
+    expect((await h.server.handle(request(h, payload(time, '20')))).signature).toBeDefined();
+    await denied(h, request(h, payload(time + 1, '20.000001'), { nonce: '2' }), 'Hyperliquid withdraw3: amount exceeds withdrawable balance');
+  });
+  it('rounds a positive sub-micro numeric cap down to zero', async () => {
+    const h = await boot({ hyperliquidWithdrawMaxUsdc: 1e-7 });
+    await denied(h, request(h, payload(Date.now(), '0.000001')), 'Hyperliquid withdraw3: amount exceeds the per-withdrawal cap');
   });
   it.each([['old', () => Date.now() - 300_001], ['future', () => Date.now() + 60_001], ['fractional', () => Date.now() + 0.1], ['negative', () => -1], ['unsafe', () => Number.MAX_SAFE_INTEGER + 1], ['string', () => String(Date.now())]])('denies time %s', async (_, time) => {
     const h = await boot();

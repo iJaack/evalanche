@@ -7,10 +7,10 @@ This is the active roadmap for the repository.
 
 - Latest release: [v1.18.0](docs/releases/RELEASE_NOTES_1.18.0.md)
 - Shipped in `v1.18.0`:
-  - Add an opt-in Hyperliquid withdraw3 signer path with a fixed treasury destination, exact SDK typed-data schema, and explicit verifier intent binding.
-  - Require a timestamp from five minutes ago through sixty seconds ahead and a fresh clearinghouseState read with no open positions and sufficient withdrawable balance.
-  - Persist Hyperliquid timestamps in a separate durable nonce file before any signature, including dry-run; include withdrawal details in the existing hash-chained audit log.
-  - Keep all other Hyperliquid actions denied and preserve CCTP, Polymarket, caps, allowlist rules, and Solana behavior.
+  - Include the rc.8 CCTP V2 Avalanche <-> Base treasury bridge, with native-USDC burns on Avalanche/Base and receives on Avalanche/Base/Polygon.
+  - Add opt-in Hyperliquid withdraw3 with an exact lowercase treasury destination, JS-number domain chainId 421614, and verifier-bound request/intent chainId 421614.
+  - Limit each withdrawal to 35 USDC or a lower `hyperliquidWithdrawMaxUsdc`, and to fresh withdrawable balance with no open positions and a timestamp within T-5min..T+60s.
+  - Persist Hyperliquid timestamps before signatures, including dry-run, audit withdrawal details, and escrow/restore the optional HL nonce file with shape validation and raise-only wallet timestamps.
 
 ## Current Focus
 

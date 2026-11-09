@@ -2,11 +2,14 @@
 
 ## 1.18.0
 
+- Includes the CCTP V2 Avalanche <-> Base work live in 1.17.0-rc.8 (#36): Avalanche and Base can burn native USDC treasury to treasury, and Avalanche, Base and Polygon can receive. Exact approvals, finality 2000, fee bounds, no hooks, enabled chain/domain checks, and Base-to-Avalanche-only burns remain enforced. CCTP stays off until configured; enabling Avalanche <-> Base requires a separate config change and verifier update. `buildCctpBurn` now requires an explicit `destinationDomain`.
 - The npm tarball cap moved from 1,000,000 to 1,050,000 bytes because the withdraw3 module pushed the pack to about 1,000,700 bytes.
-- Adds a withdraw3-only Hyperliquid typed-data carve-out, off by default through `explicitAllows: ["hyperliquid-withdraw3"]`. The destination is pinned to treasury `0x0fe61780bd5508b3C99e420662050e5560608cA4`; SDK signatureChainId is `0x66eee` / 421614, not Arbitrum 42161 or HyperEVM 999. Enabling it requires separate Ops approval.
+- Adds a withdraw3-only Hyperliquid typed-data carve-out, off by default through `explicitAllows: ["hyperliquid-withdraw3"]`. Destination must exactly equal lowercase treasury `0x0fe61780bd5508b3c99e420662050e5560608ca4`; domain chainId must be the JS number 421614 (SDK signatureChainId `0x66eee`), as must request and intent chainId. Enabling it requires separate Ops approval.
+- Enforces a 35 USDC per-withdrawal hard cap (`HL_WITHDRAW_MAX_USDC`), lowerable with `hyperliquidWithdrawMaxUsdc` as a number or decimal string. Invalid or above-35 config falls back to 35 without refusing startup; finite numeric values round down to six decimals. Amount cannot exceed either the cap or fresh withdrawable balance, compared with integer arithmetic.
 - Requires the exact SDK Withdraw schema, Mainnet intent binding, a timestamp from five minutes ago through sixty seconds ahead, and a fresh `clearinghouseState` read with no open positions and enough withdrawable balance. Only the fixed read-only `/info` endpoint is used; the signer returns a signature and never submits an exchange action.
 - Persists monotonic Hyperliquid timestamps before signing, including dry-run, in `<nonceStorePath>.hyperliquid.json`; adds withdrawal details to the existing hash-chained audit log. Approval and EVM transaction nonce semantics stay unchanged.
-- All other Hyperliquid typed data remains denied. No change to CCTP, Polymarket, caps, allowlist rules, or Solana. 1.18.0 does not include the unreleased CCTP V2 Avalanche <-> Base work from `release/1.17.0` (rc.8).
+- Box escrow/restore includes optional `nonces.json.hyperliquid.json` with manifest hashes and signer ownership/mode 0600 on restore. Corrupt state, lower wallet timestamps, or missing current wallets are refused before writes; an older escrow without HL state leaves the current HL file in place.
+- All other Hyperliquid typed data remains denied. Polymarket, existing caps, allowlist rules, and Solana behavior are unchanged.
 
 ## 1.17.0-rc.8
 

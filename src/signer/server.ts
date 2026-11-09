@@ -231,6 +231,8 @@ export interface SignerServerOptions {
   messageAllowlist?: string[];
   typedDataAllow?: TypedDataAllow[];
   explicitAllows?: ExplicitAllow[];
+  /** Lower-only withdraw3 cap; invalid values fall back to the 35 USDC hard cap. */
+  hyperliquidWithdrawMaxUsdc?: number | string;
   keyId?: string;
 }
 
@@ -517,7 +519,7 @@ export class EvalancheSignerServer {
       if (hlWithdraw) {
         this.hyperliquidNonces.assertFresh(this.address, request.typedData!.value.time as number);
         await assertHyperliquidBalance(this.hyperliquidInfo, this.address, request.typedData!.value.amount as string, hyperliquid!);
-        assertHyperliquidWithdraw3(request, checked);
+        assertHyperliquidWithdraw3(request, checked, Date.now(), this.options.hyperliquidWithdrawMaxUsdc);
       }
       const decoded = request.kind === 'transaction' ? this.decode(request, checked) : [];
       await this.enforceEconomics(request, decoded);
@@ -769,7 +771,7 @@ export class EvalancheSignerServer {
     }
     if (isHyperliquidTypedData(typed)) {
       if (isHyperliquidWithdraw3(request, this.explicitAllows.has('hyperliquid-withdraw3'))) {
-        assertHyperliquidWithdraw3(request, intent);
+        assertHyperliquidWithdraw3(request, intent, Date.now(), this.options.hyperliquidWithdrawMaxUsdc);
         return;
       }
       deny('Hyperliquid typed data is denied by domain and type', EvalancheErrorCode.SIGNER_REJECTED);
@@ -1545,7 +1547,7 @@ const SIGNER_OPTION_KEYS = new Set([
   'initNonces', 'chainId', 'chainIds', 'allow', 'host', 'port', 'socketPath', 'dryRun', 'allowNonLoopback',
   'rpcUrl', 'simulate', 'policy', 'maxPerTxUsd', 'prices', 'tokenCaps', 'priceSourceUrl', 'priceFeed',
   'priceTtlMs', 'maxGasCostWei', 'slippageCaps', 'kyberExecutors', 'rpcUrls', 'chains', 'messageAllowlist',
-  'typedDataAllow', 'explicitAllows', 'keyId', 'solana',
+  'typedDataAllow', 'explicitAllows', 'keyId', 'solana', 'hyperliquidWithdrawMaxUsdc',
 ]);
 
 function indexAllow(allow: Record<string, AllowEntry[]>): Map<number, AllowEntry[]> {

@@ -10,6 +10,8 @@
 # provision recreates the user, /opt, and /etc from the persistent directory.
 # It does not regenerate keys or reset nonces. There is no boot hook.
 # escrow and restore are opt-in. provision and start do not call them.
+# They include optional nonces.json.hyperliquid.json; restore validates its
+# wallet timestamps and never lowers an existing Hyperliquid high-water mark.
 # Order is escrow, then restore, then provision, then start. restore creates
 # the signer user when it is missing. It does not chmod the live state dir.
 # A symlink above a configured signer directory is allowed. A symlink inside
@@ -92,6 +94,7 @@ usage() {
   echo "It bind-mounts state and log, chowns the persistent files, and does not regenerate a key or reset a nonce store." >&2
   echo "escrow and restore are off unless those commands are passed. Run escrow before a reset, then restore, then provision, then start." >&2
   echo "restore creates the signer user when it is missing. It refuses a running signer and a nonce state below the floor." >&2
+  echo "escrow includes optional nonces.json.hyperliquid.json; restore validates it and never lowers current wallet timestamps. If absent from escrow, current HL state is kept." >&2
   echo "When the current nonce file is missing, pass --min-approval-nonce N, --min-tx-nonce CHAIN=N for every chain in the file, and/or --floor PATH." >&2
   echo "The floor file must be a nonce state file and must sit outside the escrow directory. --min-nonce was removed." >&2
   echo "The escrow manifest detects accidental corruption. It is not a tamper seal." >&2
@@ -876,9 +879,11 @@ assert_trusted_files() {
   assert_one "$STATE_SRC" "$SIGNER_USER" "$SIGNER_GROUP" 700 0
   assert_one "$STATE" "$SIGNER_USER" "$SIGNER_GROUP" 700 0
   assert_one "$NONCE_FILE" "$SIGNER_USER" "$SIGNER_GROUP" 600 1
+  assert_one "$NONCE_FILE.hyperliquid.json" "$SIGNER_USER" "$SIGNER_GROUP" 600 1
   assert_one "$AUDIT_FILE" "$SIGNER_USER" "$SIGNER_GROUP" 600 1
   if [ "$STATE" != "$STATE_SRC" ]; then
     assert_one "$STATE_SRC/nonces.json" "$SIGNER_USER" "$SIGNER_GROUP" 600 1
+    assert_one "$STATE_SRC/nonces.json.hyperliquid.json" "$SIGNER_USER" "$SIGNER_GROUP" 600 1
     assert_one "$STATE_SRC/audit.jsonl" "$SIGNER_USER" "$SIGNER_GROUP" 600 1
   fi
 }
@@ -1729,6 +1734,7 @@ function atomicWrite(dest, data) {
 function allowedName(name) {
   return name === 'token'
     || name === 'nonces.json'
+    || name === 'nonces.json.hyperliquid.json'
     || name === 'nonces.json.bak'
     || name === 'audit.jsonl'
     || /^nonces\.json\.bak\.[0-9]{1,4}$/.test(name);
@@ -2156,6 +2162,44 @@ function loadBaseline(filePath, role) {
   return parsed;
 }
 
+function hyperliquidState(data) {
+  const bad = 'Hyperliquid nonce store is corrupt';
+  let file;
+  try {
+    file = JSON.parse(data.toString('utf8'));
+  } catch {
+    refuse(bad, 3);
+  }
+  function exactKeys(value, keys) {
+    return value !== null && typeof value === 'object' && !Array.isArray(value)
+      && Object.keys(value).length === keys.length
+      && keys.every((key) => Object.prototype.hasOwnProperty.call(value, key));
+  }
+  if (!exactKeys(file, ['version', 'wallets']) || file.version !== 1
+    || file.wallets === null || typeof file.wallets !== 'object' || Array.isArray(file.wallets)) refuse(bad, 3);
+  for (const [wallet, entry] of Object.entries(file.wallets)) {
+    if (!/^0x[0-9a-f]{40}$/.test(wallet) || !exactKeys(entry, ['lastTime', 'used'])
+      || !unsignedDecimal(entry.lastTime) || !Array.isArray(entry.used)
+      || entry.used.length < 1 || entry.used.length > 100
+      || entry.used.some((time, i, all) => !unsignedDecimal(time)
+        || BigInt(time) > BigInt(entry.lastTime) || (i > 0 && BigInt(time) <= BigInt(all[i - 1])))
+      || entry.used[entry.used.length - 1] !== entry.lastTime) refuse(bad, 3);
+  }
+  return file;
+}
+
+function compareHyperliquid(currentPath, data) {
+  const incoming = data ? hyperliquidState(data) : null;
+  if (!currentPath || currentPath === '-') return;
+  const current = hyperliquidState(readRegular(currentPath));
+  // Old escrows have no HL file. Leave any current file in place.
+  if (!incoming) return;
+  for (const [wallet, entry] of Object.entries(current.wallets)) {
+    if (!Object.prototype.hasOwnProperty.call(incoming.wallets, wallet)
+      || BigInt(incoming.wallets[wallet].lastTime) < BigInt(entry.lastTime)) belowMark();
+  }
+}
+
 function restoreAll() {
   const dir = process.argv[3];
   const currentPath = process.argv[4];
@@ -2163,12 +2207,13 @@ function restoreAll() {
   const approvalRaw = process.argv[6];
   const txSpec = process.argv[7];
   const currentAudit = process.argv[8];
-  if (!dir || process.argv.length < 9) refuse('refusing to copy');
+  const currentHyperliquid = process.argv[9];
+  if (!dir || process.argv.length < 10) refuse('refusing to copy');
   const approval = approvalRaw && approvalRaw !== '-' ? approvalRaw : '';
   if (approval && !unsignedDecimal(approval)) refuse('min-approval-nonce must be a decimal', 3);
   const txFloors = parseTxSpec(txSpec);
   const pairs = [];
-  for (let i = 9; i < process.argv.length; i += 2) {
+  for (let i = 10; i < process.argv.length; i += 2) {
     const name = process.argv[i];
     const dest = process.argv[i + 1];
     if (!name || !dest || !allowedName(name)) refuse('refusing escrow name');
@@ -2190,6 +2235,7 @@ function restoreAll() {
   }
   enforceCoverage(escrowed, approval, txFloors, hasBaseline);
   auditOk(buffers.get('audit.jsonl'), currentAudit);
+  compareHyperliquid(currentHyperliquid, buffers.get('nonces.json.hyperliquid.json'));
   for (const pair of pairs) {
     const data = buffers.get(pair.name);
     if (!data) refuse('escrow manifest entry is invalid');
@@ -2279,6 +2325,7 @@ escrow_signer() {
   fi
   require_regular_file "$TOKEN_FILE" "missing bearer token file"
   require_regular_file "$NONCE_FILE" "missing nonce file"
+  refuse_special_file "$NONCE_FILE.hyperliquid.json"
   audit_src=$(escrow_audit_source)
   if [ -e "$dir" ] && [ ! -d "$dir" ]; then
     echo "escrow path is not a directory" >&2
@@ -2318,7 +2365,7 @@ escrow_signer() {
       [ -n "$entry" ] || continue
       name=${entry##*/}
       case "$name" in
-        manifest.json|manifest.json.new|token|nonces.json|audit.jsonl|nonces.json.bak|nonces.json.bak.[0-9]|nonces.json.bak.[0-9][0-9]|nonces.json.bak.[0-9][0-9][0-9]|nonces.json.bak.[0-9][0-9][0-9][0-9]) ;;
+        manifest.json|manifest.json.new|token|nonces.json|nonces.json.hyperliquid.json|audit.jsonl|nonces.json.bak|nonces.json.bak.[0-9]|nonces.json.bak.[0-9][0-9]|nonces.json.bak.[0-9][0-9][0-9]|nonces.json.bak.[0-9][0-9][0-9][0-9]) ;;
         *)
           echo "escrow directory has an unexpected file" >&2
           rm -f "$list" "$unexpected"
@@ -2332,6 +2379,11 @@ escrow_signer() {
   copy_owned "$NONCE_FILE" "$dir/nonces.json" "$BOX_USER" "$BOX_GROUP" 600
   count=2
   args="token $dir/token nonces.json $dir/nonces.json"
+  if [ -f "$NONCE_FILE.hyperliquid.json" ]; then
+    copy_owned "$NONCE_FILE.hyperliquid.json" "$dir/nonces.json.hyperliquid.json" "$BOX_USER" "$BOX_GROUP" 600
+    args="$args nonces.json.hyperliquid.json $dir/nonces.json.hyperliquid.json"
+    count=$((count + 1))
+  fi
   if [ -n "$audit_src" ]; then
     copy_owned "$audit_src" "$dir/audit.jsonl" "$BOX_USER" "$BOX_GROUP" 600
     args="$args audit.jsonl $dir/audit.jsonl"
@@ -2411,6 +2463,7 @@ assert_restored_modes() {
   assert_one "$LOG_SRC" "$SIGNER_USER" "$SIGNER_GROUP" 700 0
   assert_one "$TOKEN_FILE" root "$SIGNER_GROUP" 640 0
   assert_one "$STATE_SRC/nonces.json" "$SIGNER_USER" "$SIGNER_GROUP" 600 0
+  assert_one "$STATE_SRC/nonces.json.hyperliquid.json" "$SIGNER_USER" "$SIGNER_GROUP" 600 1
   if [ -e "$STATE_SRC/audit.jsonl" ]; then
     assert_one "$STATE_SRC/audit.jsonl" "$SIGNER_USER" "$SIGNER_GROUP" 600 0
   fi
@@ -2457,8 +2510,8 @@ tx_nonce_spec() {
 
 restore_signer() {
   local dir="" approval="" tx_spec="" floor="" current="" current_audit=""
-  local current_arg floor_arg approval_arg tx_arg audit_arg
-  local name base dir_resolved pairs restore_audit
+  local current_arg floor_arg approval_arg tx_arg audit_arg hl_arg current_hl
+  local name base dir_resolved pairs restore_audit restore_hl
   while [ $# -gt 0 ]; do
     case "$1" in
       --min-nonce)
@@ -2569,7 +2622,23 @@ restore_signer() {
     require_regular_file "$dir/audit.jsonl" "refusing to copy"
     restore_audit=1
   fi
+  current_hl=""
+  refuse_special_file "$STATE_SRC/nonces.json.hyperliquid.json"
+  refuse_special_file "$NONCE_FILE.hyperliquid.json"
+  if [ -f "$STATE_SRC/nonces.json.hyperliquid.json" ]; then
+    current_hl=$STATE_SRC/nonces.json.hyperliquid.json
+  elif [ -f "$NONCE_FILE.hyperliquid.json" ]; then
+    current_hl=$NONCE_FILE.hyperliquid.json
+  fi
+  restore_hl=0
+  if [ -e "$dir/nonces.json.hyperliquid.json" ] || [ -L "$dir/nonces.json.hyperliquid.json" ]; then
+    require_regular_file "$dir/nonces.json.hyperliquid.json" "refusing to copy"
+    restore_hl=1
+  fi
   pairs="token $TOKEN_FILE nonces.json $STATE_SRC/nonces.json"
+  if [ "$restore_hl" = 1 ]; then
+    pairs="$pairs nonces.json.hyperliquid.json $STATE_SRC/nonces.json.hyperliquid.json"
+  fi
   if [ "$restore_audit" = 1 ]; then
     pairs="$pairs audit.jsonl $STATE_SRC/audit.jsonl"
   fi
@@ -2597,10 +2666,14 @@ restore_signer() {
   approval_arg=${approval:--}
   tx_arg=${tx_spec:--}
   audit_arg=${current_audit:--}
+  hl_arg=${current_hl:--}
   # shellcheck disable=SC2086
-  signer_fs_tool restore-all "$dir" "$current_arg" "$floor_arg" "$approval_arg" "$tx_arg" "$audit_arg" $pairs || exit 1
+  signer_fs_tool restore-all "$dir" "$current_arg" "$floor_arg" "$approval_arg" "$tx_arg" "$audit_arg" "$hl_arg" $pairs || exit 1
   claim_one "$TOKEN_FILE" root "$SIGNER_GROUP" 640
   claim_one "$STATE_SRC/nonces.json" "$SIGNER_USER" "$SIGNER_GROUP" 600
+  if [ "$restore_hl" = 1 ]; then
+    claim_one "$STATE_SRC/nonces.json.hyperliquid.json" "$SIGNER_USER" "$SIGNER_GROUP" 600
+  fi
   if [ "$restore_audit" = 1 ]; then
     claim_one "$STATE_SRC/audit.jsonl" "$SIGNER_USER" "$SIGNER_GROUP" 600
   fi

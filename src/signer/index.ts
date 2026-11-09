@@ -82,7 +82,7 @@ export type { SolanaPolicyInput, ResolvedSolanaPolicy, SolanaClusterConfig, Reso
   SolanaFeesConfig, SolanaPriceConfig, SolanaMintConfig, SolanaPoolConfig, SolanaPoolTransferInput } from './chain-policy';
 
 export { HYPERLIQUID_WITHDRAW_DESTINATION, HYPERLIQUID_SIGNATURE_CHAIN_ID, HYPERLIQUID_WITHDRAW_TYPE,
-  HYPERLIQUID_INFO_URL, HL_WITHDRAW_MAX_AGE_MS, HL_WITHDRAW_MAX_FUTURE_MS,
+  HYPERLIQUID_INFO_URL, HL_WITHDRAW_MAX_AGE_MS, HL_WITHDRAW_MAX_FUTURE_MS, HL_WITHDRAW_MAX_USDC,
   assertHyperliquidWithdraw3, isHyperliquidWithdraw3, assertHyperliquidBalance,
   fetchHyperliquidInfo, hyperliquidNoncePath, HyperliquidNonceStore } from './hyperliquid-withdraw';
 export type { HyperliquidInfoFetcher, HyperliquidWithdrawAudit } from './hyperliquid-withdraw';

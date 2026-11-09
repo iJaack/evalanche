@@ -4,13 +4,14 @@ import { EvalancheError, EvalancheErrorCode } from '../utils/errors';
 import type { CanonicalSigningRequest, SigningIntent, TypedDataPayload } from './intent';
 import { writeDurable } from './nonce-store';
 
-export const HYPERLIQUID_WITHDRAW_DESTINATION = '0x0fe61780bd5508b3C99e420662050e5560608cA4';
+export const HYPERLIQUID_WITHDRAW_DESTINATION = '0x0fe61780bd5508b3c99e420662050e5560608ca4';
 export const HYPERLIQUID_SIGNATURE_CHAIN_ID = 421614;
 export const HYPERLIQUID_WITHDRAW_TYPE = 'HyperliquidTransaction:Withdraw';
 export const HYPERLIQUID_INFO_URL = 'https://api.hyperliquid.xyz/info';
 // HL accepts T-2d..T+1d; signer approvals deliberately use a much tighter window.
 export const HL_WITHDRAW_MAX_AGE_MS = 300_000;
 export const HL_WITHDRAW_MAX_FUTURE_MS = 60_000;
+export const HL_WITHDRAW_MAX_USDC = '35';
 const WITHDRAW_FIELDS = [
   { name: 'hyperliquidChain', type: 'string' },
   { name: 'destination', type: 'string' },
@@ -86,18 +87,14 @@ export function isHyperliquidWithdraw3(request: CanonicalSigningRequest, enabled
   try { assertSchema(request.typedData); return true; } catch { return false; }
 }
 
-export function assertHyperliquidWithdraw3(request: CanonicalSigningRequest, intent: SigningIntent, now = Date.now()): void {
+export function assertHyperliquidWithdraw3(request: CanonicalSigningRequest, intent: SigningIntent, now = Date.now(), maxUsdc?: unknown): void {
   if (!request.typedData) reject('typedData is required');
   assertSchema(request.typedData);
   const value = request.typedData.value;
   if (value.hyperliquidChain !== 'Mainnet') reject('hyperliquidChain must be Mainnet');
-  let destination: string;
-  try {
-    if (typeof value.destination !== 'string') reject('destination must be an address');
-    destination = getAddress(value.destination);
-  } catch { reject('destination must be a valid checksummed address'); }
-  if (destination.toLowerCase() !== HYPERLIQUID_WITHDRAW_DESTINATION.toLowerCase()) reject('destination must be the pinned treasury');
+  if (value.destination !== HYPERLIQUID_WITHDRAW_DESTINATION) reject('destination must be the exact lowercase pinned treasury');
   if (typeof value.amount !== 'string' || !AMOUNT.test(value.amount) || units(value.amount) === 0n) reject('amount must be a positive decimal string with at most 6 decimals');
+  if (units(value.amount) > withdrawCapUnits(maxUsdc)) reject('amount exceeds the per-withdrawal cap');
   if (typeof value.time !== 'number' || !Number.isSafeInteger(value.time) || value.time < 0) reject('time must be a safe non-negative integer number');
   if (value.time < now - HL_WITHDRAW_MAX_AGE_MS || value.time > now + HL_WITHDRAW_MAX_FUTURE_MS) reject('time is outside the freshness window');
   if (intent.venue !== 'hyperliquid' || intent.action !== 'hyperliquid-withdraw') reject('intent must bind hyperliquid / hyperliquid-withdraw');
@@ -107,6 +104,24 @@ export function assertHyperliquidWithdraw3(request: CanonicalSigningRequest, int
 function units(value: string): bigint {
   const [whole, fraction = ''] = value.split('.');
   return BigInt(whole) * 100_000_000n + BigInt(fraction.padEnd(8, '0'));
+}
+
+function withdrawCapUnits(value: unknown): bigint {
+  const hardCap = units(HL_WITHDRAW_MAX_USDC);
+  if (typeof value === 'string') {
+    if (!AMOUNT.test(value)) return hardCap;
+    const cap = units(value);
+    return cap > 0n && cap <= hardCap ? cap : hardCap;
+  }
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0 || value > Number(HL_WITHDRAW_MAX_USDC)) return hardCap;
+  // Work from the decimal representation, including small exponential numbers.
+  // Integer division truncates to six decimals without floating-point rounding up.
+  const [mantissa, exponent = '0'] = String(value).split('e');
+  const [whole, fraction = ''] = mantissa.split('.');
+  const digits = BigInt(whole + fraction);
+  const scale = 6 + Number(exponent) - fraction.length;
+  const micros = scale >= 0 ? digits * 10n ** BigInt(scale) : digits / 10n ** BigInt(-scale);
+  return micros * 100n;
 }
 
 export async function assertHyperliquidBalance(fetcher: HyperliquidInfoFetcher, wallet: string, amount: string, audit: HyperliquidWithdrawAudit): Promise<void> {
