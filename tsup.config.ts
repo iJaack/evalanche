@@ -10,7 +10,7 @@ export default defineConfig([
     clean: false,
     target: 'node20',
     shims: true,
-    // The published tarball cap is 1_000_000 bytes. Embedded sources in the
+    // The published tarball cap is 1_050_000 bytes. Embedded sources in the
     // maps push a single helper copy over that cap. Mappings stay relative
     // to the package so two build directories pack to the same bytes. Do not
     // turn sourcesContent back on. The shim path is rewritten so a symlinked
@@ -32,7 +32,7 @@ export default defineConfig([
     target: 'node20',
     banner: { js: '#!/usr/bin/env node' },
     outDir: 'dist/mcp',
-    // Keeps the published tarball under the 1_000_000-byte cap (the CLI ships without a sourcemap).
+    // Keeps the published tarball under the 1_050_000-byte cap (the CLI ships without a sourcemap).
     esbuildOptions(options) {
       options.minifyWhitespace = true;
       options.minifySyntax = true;

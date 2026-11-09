@@ -5,13 +5,13 @@ Avalanche-first agent wallet and execution SDK for AI agents, with multi-EVM sup
 <!-- GENERATED:release-summary:start -->
 ## Current Release
 
-- Latest release: [v1.17.0](docs/releases/RELEASE_NOTES_1.17.0.md)
-- Published package: `evalanche@1.17.0`
+- Latest release: [v1.18.0](docs/releases/RELEASE_NOTES_1.18.0.md)
+- Published package: `evalanche@1.18.0`
 - Current package surface:
-  - Add a pluggable signer so an agent can sign without a private key in the Evalanche process. `EvalancheConfig.signer` accepts a local ethers wallet, a `SigningProvider`, or a remote signer config. `EvalancheConfig.address` starts an address-only agent that cannot sign.
-  - Add `evalanche-signer`, a reference signing server. It holds the key, checks a pinned Ed25519 verifier approval, recomputes the intent hash, and enforces a monotonic single-use nonce, expiry, a deny list, SpendingPolicy, token caps, and simulation. It binds to `127.0.0.1` or a unix socket and writes a hash-chained JSONL audit log. Dry-run never signs.
-  - Let `evalanche-mcp` run keyless with `--signer-url` / `EVALANCHE_SIGNER_URL` and `--signer-address` / `EVALANCHE_SIGNER_ADDRESS`, or read-only with `EVALANCHE_ADDRESS`. Polymarket CLI and Avalanche X/P-chain paths fail with `REMOTE_SIGNER_UNSUPPORTED` in those modes and never fall back to an environment private key.
-  - Add a per-chain signer policy for nineteen mainnets. Avalanche C-Chain stays on unless disabled. Every other chain, and every testnet, stays off until config enables it. Each enabled chain prices and caps itself.
+  - Include the rc.8 CCTP V2 Avalanche <-> Base treasury bridge, with native-USDC burns on Avalanche/Base and receives on Avalanche/Base/Polygon.
+  - Add opt-in Hyperliquid withdraw3 with an exact lowercase treasury destination, JS-number domain chainId 421614, and verifier-bound request/intent chainId 421614.
+  - Limit each withdrawal to 35 USDC or a lower `hyperliquidWithdrawMaxUsdc`, and to fresh withdrawable balance with no open positions and a timestamp within T-5min..T+60s.
+  - Persist Hyperliquid timestamps before signatures, including dry-run, audit withdrawal details, and escrow/restore the optional HL nonce file with shape validation and raise-only wallet timestamps.
 - Docs:
   - [Release notes](docs/releases/README.md)
   - [Roadmap](ROADMAP.md)

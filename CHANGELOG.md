@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.18.0
+
+- Includes the CCTP V2 Avalanche <-> Base work live in 1.17.0-rc.8 (#36): Avalanche and Base can burn native USDC treasury to treasury, and Avalanche, Base and Polygon can receive. Exact approvals, finality 2000, fee bounds, no hooks, enabled chain/domain checks, and Base-to-Avalanche-only burns remain enforced. CCTP stays off until configured; enabling Avalanche <-> Base requires a separate config change and verifier update. `buildCctpBurn` now requires an explicit `destinationDomain`.
+- The npm tarball cap moved from 1,000,000 to 1,050,000 bytes because the withdraw3 module pushed the pack to about 1,000,700 bytes.
+- Adds a withdraw3-only Hyperliquid typed-data carve-out, off by default through `explicitAllows: ["hyperliquid-withdraw3"]`. Destination must exactly equal lowercase treasury `0x0fe61780bd5508b3c99e420662050e5560608ca4`; domain chainId must be the JS number 421614 (SDK signatureChainId `0x66eee`), as must request and intent chainId. Enabling it requires separate Ops approval.
+- Enforces a 35 USDC per-withdrawal hard cap (`HL_WITHDRAW_MAX_USDC`), lowerable with `hyperliquidWithdrawMaxUsdc` as a number or decimal string. Invalid or above-35 config falls back to 35 without refusing startup; finite numeric values round down to six decimals. Amount cannot exceed either the cap or fresh withdrawable balance, compared with integer arithmetic.
+- Requires the exact SDK Withdraw schema, Mainnet intent binding, a timestamp from five minutes ago through sixty seconds ahead, and a fresh `clearinghouseState` read with no open positions and enough withdrawable balance. Only the fixed read-only `/info` endpoint is used; the signer returns a signature and never submits an exchange action.
+- Persists monotonic Hyperliquid timestamps before signing, including dry-run, in `<nonceStorePath>.hyperliquid.json`; adds withdrawal details to the existing hash-chained audit log. Approval and EVM transaction nonce semantics stay unchanged.
+- Box escrow/restore includes optional `nonces.json.hyperliquid.json` with manifest hashes and signer ownership/mode 0600 on restore. Corrupt state, lower wallet timestamps, or missing current wallets are refused before writes; an older escrow without HL state leaves the current HL file in place.
+- All other Hyperliquid typed data remains denied. Polymarket, existing caps, allowlist rules, and Solana behavior are unchanged.
+
+## 1.17.0-rc.8
+
+- Release candidate, 1 November 2026. Provision `evalanche-1.17.0-rc.8.tgz` as a new pin. Leave `evalanche-1.17.0-rc.1.tgz` through `evalanche-1.17.0-rc.7.tgz` in place. Provisioning again under one of those filenames would overwrite a rollback pin. npm 1.17.0 is unaffected.
+- CCTP V2 adds Base 8453 (domain 6). Avalanche and Base may burn their native USDC with an exact approval to TokenMessengerV2, and Avalanche, Base and Polygon may receive. Treasury to treasury only: `mintRecipient` and the burn caller are the treasury, `destinationCaller` is zero unless pinned, finality is 2000, `maxFee` defaults to 0, and hooks are denied. Base native USDC is `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`.
+- Each burning chain has a code-level `allowedDestinationDomains`: Base 8453 may burn only to Avalanche 1, and Avalanche keeps 6 and 7. A config `destinationDomains` outside that list fails startup, and such a burn is denied at request time. `destinationCaller` stays unset by default and can still be pinned.
+- Chains and domains are a `CCTP_CHAINS` table. Arbitrum 42161 (domain 3) is listed but disabled. A burn destination or receive source must be an enabled row, so a domain that is on Circle's list but not in the table (for example 0) now fails startup. Polygon stays receive-only and now fails startup if `destinationDomains` is set.
+- `buildCctpApprove(amount, chainId?)` and `buildCctpBurn({ chainId? })` default to Avalanche, as before. **Breaking:** `buildCctpBurn` now requires `destinationDomain` and throws when it is missing; the old default to Polygon 7 is gone.
+- `sourceDomains` entries must be enabled chains that can burn (Avalanche 1, Base 6). Listing receive-only Polygon 7 as a source, which rc.7 allowed, now fails startup, and a receive from a non-burning source is denied at request time.
+- Live Standard messages from Iris (1 November 2026) carry `expirationBlock` 0 in both directions; they are new test vectors. The expiry rule is unchanged.
+- CCTP stays off until config enables it. Enabling Avalanche ↔ Base needs a separate config change and verifier update.
+
 ## 1.17.0
 
 - First npm release after 1.14.0. 1.15.0, 1.16.0, and 1.17.0-rc.1 through 1.17.0-rc.7 were release candidates for the Grok Bot box signer. They were never published to npm or tagged, and their entries below stay as history. See `docs/releases/RELEASE_NOTES_1.17.0.md` for the consolidated notes.

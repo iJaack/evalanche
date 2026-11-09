@@ -13,7 +13,7 @@ import {
 } from './release-helpers.mjs';
 
 const execFileAsync = promisify(execFile);
-const DEFAULT_MAX_TARBALL_BYTES = 1_000_000;
+const DEFAULT_MAX_TARBALL_BYTES = 1_050_000;
 
 function collectExportTargets(exportsField) {
   const targets = [];

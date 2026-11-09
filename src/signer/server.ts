@@ -75,6 +75,7 @@ import { PM_CHAIN_ID, PM_CLOB_AUTH_DOMAIN } from './polymarket-addresses';
 import { assertCctpConfig, cctpModuleHandles } from './cctp';
 import { assertRevokeOnlyConfig, isKnownRevokeToken, isRevokeOnlySelector, revokeOnlyEnabled } from './revoke-only';
 import type { SpendRecord } from '../economy/types';
+import { assertHyperliquidWithdraw3, isHyperliquidWithdraw3, assertHyperliquidBalance, fetchHyperliquidInfo, HyperliquidNonceStore, hyperliquidNoncePath, HYPERLIQUID_WITHDRAW_TYPE, type HyperliquidInfoFetcher, type HyperliquidWithdrawAudit } from './hyperliquid-withdraw';
 import { bearerEquals } from './remote-client';
 
 /** One native token. Config may lower this. It cannot raise it. */
@@ -117,7 +118,7 @@ export interface TypedDataAllow {
   verifyingContract?: string;
 }
 
-export type ExplicitAllow = 'permit' | 'permit2' | 'increaseAllowance';
+export type ExplicitAllow = 'permit' | 'permit2' | 'increaseAllowance' | 'hyperliquid-withdraw3';
 
 /** Default Li.Fi V3 slippage caps, in basis points, by bought-token class. */
 export const DEFAULT_STABLE_SLIPPAGE_BPS = 50;
@@ -230,6 +231,8 @@ export interface SignerServerOptions {
   messageAllowlist?: string[];
   typedDataAllow?: TypedDataAllow[];
   explicitAllows?: ExplicitAllow[];
+  /** Lower-only withdraw3 cap; invalid values fall back to the 35 USDC hard cap. */
+  hyperliquidWithdrawMaxUsdc?: number | string;
   keyId?: string;
 }
 
@@ -254,6 +257,7 @@ interface AuditEntry {
   approvalSignature?: string;
   /** Present for a polymarket-order or clob-auth signature. */
   orderHash?: string;
+  hyperliquid?: HyperliquidWithdrawAudit;
 }
 
 class SignerRejection extends Error {
@@ -287,6 +291,7 @@ export class EvalancheSignerServer {
   private readonly gasCap: bigint;
   private readonly chainPolicy: SignerPolicy;
   private readonly nonces: NonceStore;
+  private readonly hyperliquidNonces: HyperliquidNonceStore;
   private prevHash = AUDIT_ROOT;
   private queue: Promise<void> = Promise.resolve();
   private http: ReturnType<typeof createServer> | null = null;
@@ -298,11 +303,12 @@ export class EvalancheSignerServer {
   private readonly rpcSimulators = new Map<number, (tx: PendingTransaction) => Promise<SimulationResult>>();
   private priceCache = new Map<string, { fetchedAt: number; prices: Record<string, number> }>();
 
-  private constructor(wallet: Wallet | HDNodeWallet, options: SignerServerOptions, nonces: NonceStore) {
+  private constructor(wallet: Wallet | HDNodeWallet, options: SignerServerOptions, nonces: NonceStore, private readonly hyperliquidInfo: HyperliquidInfoFetcher) {
     this.wallet = wallet;
     this.address = wallet.address;
     this.options = options;
     this.nonces = nonces;
+    this.hyperliquidNonces = new HyperliquidNonceStore(hyperliquidNoncePath(options.nonceStorePath));
     this.stateStartedAt = nonces.startedAt;
     this.policy = options.policy ? new PolicyEngine(options.policy) : null;
     this.chainPolicy = resolveSignerPolicy(options, {
@@ -317,7 +323,7 @@ export class EvalancheSignerServer {
     this.injectedSimulate = options.simulate ?? null;
   }
 
-  static async create(options: SignerServerOptions): Promise<EvalancheSignerServer> {
+  static async create(options: SignerServerOptions, hyperliquidInfo: HyperliquidInfoFetcher = fetchHyperliquidInfo): Promise<EvalancheSignerServer> {
     takeSignerEnvToken();
     const resolved = await resolveVerifierKey(options);
     assertStartup(resolved);
@@ -341,10 +347,11 @@ export class EvalancheSignerServer {
         else process.exit(1);
       },
     });
-    const server = new EvalancheSignerServer(wallet, options, nonces);
+    const server = new EvalancheSignerServer(wallet, options, nonces, hyperliquidInfo);
     bridge.server = server;
     try {
       if (server.policy) server.policy.restore(await readBudget(options.nonceStorePath));
+      await server.hyperliquidNonces.load();
       await server.loadAudit();
     } catch (error) {
       await nonces.close();
@@ -484,7 +491,14 @@ export class EvalancheSignerServer {
   }
 
   private async handleLocked(request: CanonicalSigningRequest): Promise<SigningResult> {
+    const hyperliquid: HyperliquidWithdrawAudit | undefined = request?.kind === 'typed-data' && request.typedData?.types?.[HYPERLIQUID_WITHDRAW_TYPE]
+      ? { action: 'withdraw3',
+        ...(typeof request.typedData.value?.destination === 'string' ? { destination: request.typedData.value.destination.toLowerCase() } : {}),
+        ...(typeof request.typedData.value?.amount === 'string' ? { amount: request.typedData.value.amount } : {}),
+        ...(typeof request.typedData.value?.time === 'number' ? { time: request.typedData.value.time } : {}),
+      } : undefined;
     const base = {
+      ...(hyperliquid ? { hyperliquid } : {}),
       requestId: request?.requestId ?? 'missing',
       wallet: request?.from ?? '',
       chainId: request?.chainId,
@@ -501,6 +515,12 @@ export class EvalancheSignerServer {
     };
     try {
       const checked = this.evaluate(request);
+      const hlWithdraw = isHyperliquidWithdraw3(request, this.explicitAllows.has('hyperliquid-withdraw3'));
+      if (hlWithdraw) {
+        this.hyperliquidNonces.assertFresh(this.address, request.typedData!.value.time as number);
+        await assertHyperliquidBalance(this.hyperliquidInfo, this.address, request.typedData!.value.amount as string, hyperliquid!);
+        assertHyperliquidWithdraw3(request, checked, Date.now(), this.options.hyperliquidWithdrawMaxUsdc);
+      }
       const decoded = request.kind === 'transaction' ? this.decode(request, checked) : [];
       await this.enforceEconomics(request, decoded);
       if (request.kind === 'transaction') await this.simulate(request);
@@ -510,6 +530,7 @@ export class EvalancheSignerServer {
       if (request.kind === 'transaction' && request.nonce !== undefined && request.nonce !== null) {
         this.nonces.noteTxNonce(walletKey, Number(request.chainId), String(request.nonce));
       }
+      if (hlWithdraw) await this.hyperliquidNonces.record(walletKey, request.typedData!.value.time as number);
       await this.nonces.persist();
       if (this.options.dryRun) {
         this.assertRunning();
@@ -579,7 +600,8 @@ export class EvalancheSignerServer {
     if (from !== this.address) {
       deny(`Signer is ${this.address} and will not sign for ${from}`, EvalancheErrorCode.SIGNER_REJECTED);
     }
-    if (!this.allowedChains.includes(Number(request.chainId))) {
+    const hlWithdraw = isHyperliquidWithdraw3(request, this.explicitAllows.has('hyperliquid-withdraw3'));
+    if (!hlWithdraw && !this.allowedChains.includes(Number(request.chainId))) {
       const known = this.chainPolicy.chains.has(Number(request.chainId));
       if (known || this.allowedChains.length > 0) {
         deny(`chainId ${request.chainId} is not allowed`, EvalancheErrorCode.SIGNER_REJECTED);
@@ -748,6 +770,10 @@ export class EvalancheSignerServer {
       deny('routeHash does not match the typed data', EvalancheErrorCode.APPROVAL_INVALID);
     }
     if (isHyperliquidTypedData(typed)) {
+      if (isHyperliquidWithdraw3(request, this.explicitAllows.has('hyperliquid-withdraw3'))) {
+        assertHyperliquidWithdraw3(request, intent, Date.now(), this.options.hyperliquidWithdrawMaxUsdc);
+        return;
+      }
       deny('Hyperliquid typed data is denied by domain and type', EvalancheErrorCode.SIGNER_REJECTED);
     }
     if (isPolymarketTypedData(typed) || isClobAuthTypedData(typed)) {
@@ -1359,7 +1385,10 @@ export class EvalancheSignerServer {
     const typed = request.typedData;
     if (!typed) deny('typedData is required', EvalancheErrorCode.INVALID_PARAMS);
     this.assertRunning();
-    const signature = await this.wallet.signTypedData(typed.domain as never, typed.types as never, typed.value);
+    const types = isHyperliquidWithdraw3(request, this.explicitAllows.has('hyperliquid-withdraw3'))
+      ? Object.fromEntries(Object.entries(typed.types).filter(([name]) => name !== 'EIP712Domain'))
+      : typed.types;
+    const signature = await this.wallet.signTypedData(typed.domain as never, types as never, typed.value);
     return { requestId: request.requestId, signature };
   }
 
@@ -1518,7 +1547,7 @@ const SIGNER_OPTION_KEYS = new Set([
   'initNonces', 'chainId', 'chainIds', 'allow', 'host', 'port', 'socketPath', 'dryRun', 'allowNonLoopback',
   'rpcUrl', 'simulate', 'policy', 'maxPerTxUsd', 'prices', 'tokenCaps', 'priceSourceUrl', 'priceFeed',
   'priceTtlMs', 'maxGasCostWei', 'slippageCaps', 'kyberExecutors', 'rpcUrls', 'chains', 'messageAllowlist',
-  'typedDataAllow', 'explicitAllows', 'keyId', 'solana',
+  'typedDataAllow', 'explicitAllows', 'keyId', 'solana', 'hyperliquidWithdrawMaxUsdc',
 ]);
 
 function indexAllow(allow: Record<string, AllowEntry[]>): Map<number, AllowEntry[]> {
@@ -1753,6 +1782,7 @@ async function assertFilePermissions(options: SignerServerOptions): Promise<stri
   await assertStateFileIfExists(options.nonceStorePath, stateOptions);
   await assertStateFileIfExists(options.auditLogPath, stateOptions);
   await assertStateFileIfExists(budgetPath(options.nonceStorePath), stateOptions);
+  await assertStateFileIfExists(hyperliquidNoncePath(options.nonceStorePath), stateOptions);
   await assertStateFileIfExists(`${options.nonceStorePath}.lock`, stateOptions);
   if (options.socketPath) await assertSocketDirectory(dirname(options.socketPath));
   return keystore;

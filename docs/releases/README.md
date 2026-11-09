@@ -4,6 +4,8 @@ Versioned release notes live in this folder.
 
 Latest releases:
 
+- [v1.18.0](RELEASE_NOTES_1.18.0.md)
+- [v1.17.0-rc.8](RELEASE_NOTES_1.17.0-rc.8.md)
 - [v1.17.0](RELEASE_NOTES_1.17.0.md)
 - [v1.17.0-rc.7](RELEASE_NOTES_1.17.0-rc.7.md)
 - [v1.17.0-rc.6](RELEASE_NOTES_1.17.0-rc.6.md)

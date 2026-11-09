@@ -915,7 +915,7 @@ chmod 755 "$prefix/node_modules/.bin/evalanche-signer"
     expect(same.stdout + same.stderr).not.toContain('token-keep-not-logged');
   });
 
-  async function escrowFixture() {
+  async function escrowFixture(includeHyperliquid = false) {
     const box = await provisionLayout();
     const signer = '4242';
     const boxUser = '1000';
@@ -949,6 +949,9 @@ chmod 755 "$prefix/node_modules/.bin/evalanche-signer"
     const token = 'token-keep-not-logged\n';
     await writeFile(join(box.durable, 'token'), token, { mode: 0o600 });
     await writeFile(join(state, 'nonces.json'), nonceBody('10'), { mode: 0o600 });
+    const hlPath = join(state, 'nonces.json.hyperliquid.json');
+    const hlBody = (last: string) => `${JSON.stringify({ version: 1, wallets: { [wallet]: { lastTime: last, used: [last] } } })}\n`;
+    if (includeHyperliquid) await writeFile(hlPath, hlBody('10'), { mode: 0o600 });
     await writeFile(join(state, 'audit.jsonl'), '{"decision":"allow"}\n', { mode: 0o600 });
     give(box, box.durable);
     give(box, stub);
@@ -958,7 +961,7 @@ chmod 755 "$prefix/node_modules/.bin/evalanche-signer"
     const saved = run(['escrow', escrow]);
     expect(saved.status, saved.stderr + saved.stdout).toBe(0);
     expect(saved.stdout + saved.stderr).not.toContain('token-keep-not-logged');
-    return { box, run, state, escrow, wallet, nonceBody, token };
+    return { box, run, state, escrow, wallet, nonceBody, token, hlPath, hlBody, stub };
   }
 
   async function replaceEscrow(escrow: string, name: string, body: string) {
@@ -972,6 +975,84 @@ chmod 755 "$prefix/node_modules/.bin/evalanche-signer"
     entry!.sha256 = createHash('sha256').update(body).digest('hex');
     await writeFile(manifestPath, `${JSON.stringify(manifest)}\n`);
   }
+
+  it('round-trips the optional Hyperliquid nonce file with manifest and signer ownership', async () => {
+    const fix = await escrowFixture(true);
+    const name = 'nonces.json.hyperliquid.json';
+    expect(readFileSync(join(fix.escrow, name), 'utf8')).toBe(fix.hlBody('10'));
+    const manifest = JSON.parse(readFileSync(join(fix.escrow, 'manifest.json'), 'utf8'));
+    expect(manifest.files).toContainEqual({ name, mode: '600', sha256: createHash('sha256').update(fix.hlBody('10')).digest('hex') });
+    expectOwner(fix.stub, join(fix.escrow, name), '1000', '1000', '600');
+    await rm(fix.hlPath);
+    const restored = fix.run(['restore', fix.escrow]);
+    expect(restored.status, restored.stderr + restored.stdout).toBe(0);
+    expect(readFileSync(fix.hlPath, 'utf8')).toBe(fix.hlBody('10'));
+    expectOwner(fix.stub, fix.hlPath, '4242', '4242', '600');
+    const same = fix.run(['restore', fix.escrow]);
+    expect(same.status, same.stderr + same.stdout).toBe(0);
+  });
+
+  it.each(['lower timestamp', 'missing wallet'])('refuses Hyperliquid rollback: %s', async variant => {
+    const fix = await escrowFixture(true);
+    const current = variant === 'lower timestamp' ? fix.hlBody('11') : JSON.stringify({
+      version: 1, wallets: { [fix.wallet]: { lastTime: '10', used: ['10'] },
+        ['0x' + '22'.repeat(20)]: { lastTime: '1', used: ['1'] } },
+    });
+    await writeFile(fix.hlPath, current);
+    give(fix.box, fix.hlPath);
+    const refused = fix.run(['restore', fix.escrow]);
+    expect(refused.status).not.toBe(0);
+    expect(refused.stderr).toMatch(/nonce high-water mark below the current one/);
+    expect(readFileSync(fix.hlPath, 'utf8')).toBe(current);
+    expect(readFileSync(join(fix.state, 'nonces.json'), 'utf8')).toBe(fix.nonceBody('10'));
+  });
+
+  it.each([
+    '{broken', '{}', '{"version":2,"wallets":{}}', '{"version":1,"wallets":[]}',
+    '{"version":1,"wallets":{},"extra":true}',
+    ...[
+      { lastTime: '10', used: [] }, { lastTime: '10', used: Array(101).fill('10') },
+      { lastTime: '10', used: ['9'] }, { lastTime: '10', used: ['10', '10'] },
+      { lastTime: '10', used: ['11', '10'] }, { lastTime: '010', used: ['010'] },
+      { lastTime: '-1', used: ['-1'] }, { lastTime: 10, used: ['10'] },
+      { lastTime: '10', used: [10] }, { lastTime: '10', used: ['10'], extra: true },
+    ].map(entry => JSON.stringify({ version: 1, wallets: { ['0x' + '22'.repeat(20)]: entry } })),
+    JSON.stringify({ version: 1, wallets: { ['0x' + 'AB'.repeat(20)]: { lastTime: '10', used: ['10'] } } }),
+  ])('refuses corrupt escrowed Hyperliquid state %s before writing', async body => {
+    const fix = await escrowFixture(true);
+    await replaceEscrow(fix.escrow, 'nonces.json.hyperliquid.json', body);
+    give(fix.box, fix.escrow);
+    const refused = fix.run(['restore', fix.escrow]);
+    expect(refused.status).not.toBe(0);
+    expect(refused.stderr).toMatch(/Hyperliquid nonce store is corrupt/);
+    expect(readFileSync(fix.hlPath, 'utf8')).toBe(fix.hlBody('10'));
+    expect(readFileSync(join(fix.state, 'nonces.json'), 'utf8')).toBe(fix.nonceBody('10'));
+  });
+
+  it('refuses a corrupt current Hyperliquid file', async () => {
+    const fix = await escrowFixture(true);
+    await writeFile(fix.hlPath, '{}'); give(fix.box, fix.hlPath);
+    const refused = fix.run(['restore', fix.escrow]);
+    expect(refused.status).not.toBe(0);
+    expect(refused.stderr).toMatch(/Hyperliquid nonce store is corrupt/);
+    expect(readFileSync(fix.hlPath, 'utf8')).toBe('{}');
+  });
+
+  it('keeps the current Hyperliquid file when the escrow has none', async () => {
+    const fix = await escrowFixture(true);
+    const manifestPath = join(fix.escrow, 'manifest.json');
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+    manifest.files = manifest.files.filter((file: { name: string }) => file.name !== 'nonces.json.hyperliquid.json');
+    await writeFile(manifestPath, `${JSON.stringify(manifest)}\n`);
+    await rm(join(fix.escrow, 'nonces.json.hyperliquid.json'));
+    give(fix.box, fix.escrow);
+    const before = statSync(fix.hlPath);
+    const restored = fix.run(['restore', fix.escrow]);
+    expect(restored.status, restored.stderr + restored.stdout).toBe(0);
+    expect(readFileSync(fix.hlPath, 'utf8')).toBe(fix.hlBody('10'));
+    expect(statSync(fix.hlPath).ino).toBe(before.ino);
+    expectOwner(fix.stub, fix.hlPath, '4242', '4242', '600');
+  });
 
   it('requires a nonce floor when the current file is gone and honors separate approval and tx floors', async () => {
     const { box, run, state, escrow, token } = await escrowFixture();
@@ -1888,14 +1969,17 @@ mkdir -p "$persist/state" /var/lib/evalanche-signer/state
 printf '%s\\n' 'token-keep-not-logged' > "$persist/token"
 printf '%s\\n' '{"version":1,"startedAt":1,"wallets":{"0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266":{"lastNonce":"42","used":["42"]}},"txNonces":{"0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266":{"43114":"42"}}}' > /var/lib/evalanche-signer/state/nonces.json
 printf '%s\\n' '{"decision":"allow"}' > /var/lib/evalanche-signer/state/audit.jsonl
+printf '%s\\n' '{"version":1,"wallets":{"0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266":{"lastTime":"42","used":["41","42"]}}}' > /var/lib/evalanche-signer/state/nonces.json.hyperliquid.json
 export EVALANCHE_BOX_DURABLE=/tmp/decoy-durable
 export EVALANCHE_BOX_STATE=/tmp/decoy-state
 export EVALANCHE_BOX_USER=not-a-signer
 "$SCRIPT" escrow /home/box/agent-data/evalanche-escrow
 test -f /home/box/agent-data/evalanche-escrow/manifest.json
 test -f /home/box/agent-data/evalanche-escrow/audit.jsonl
+test -f /home/box/agent-data/evalanche-escrow/nonces.json.hyperliquid.json
 test ! -e /tmp/decoy-durable
 rm -f /var/lib/evalanche-signer/state/nonces.json /var/lib/evalanche-signer/state/audit.jsonl
+rm -f /var/lib/evalanche-signer/state/nonces.json.hyperliquid.json
 rm -f "$persist/state/nonces.json"
 if id evalanche-signer >/dev/null 2>&1; then
   echo 'signer user existed before restore' >&2
@@ -1938,6 +2022,9 @@ test "$(stat -c %u "$persist/state")" = "$uid"
 test "$(stat -c %a "$persist/state")" = 700
 test "$(stat -c %u "$persist/state/nonces.json")" = "$uid"
 test "$(stat -c %a "$persist/state/nonces.json")" = 600
+test "$(stat -c %u "$persist/state/nonces.json.hyperliquid.json")" = "$uid"
+test "$(stat -c %a "$persist/state/nonces.json.hyperliquid.json")" = 600
+grep -q '"used":[[]"41","42"[]]' "$persist/state/nonces.json.hyperliquid.json"
 test "$(stat -c %u "$persist/state/audit.jsonl")" = "$uid"
 test "$(stat -c %a "$persist/state/audit.jsonl")" = 600
 test "$(stat -c %u "$persist/token")" = 0
@@ -1950,6 +2037,36 @@ test ! -e /var/lib/evalanche-signer/state/nonces.json
 test ! -e /var/lib/evalanche-signer/state/audit.jsonl
 grep -q '"lastNonce":"42"' "$persist/state/nonces.json"
 test ! -e /tmp/decoy-state
+# The current HL high-water mark is independent of approval/transaction floors.
+escrow=/home/box/agent-data/evalanche-escrow
+hl="$persist/state/nonces.json.hyperliquid.json"
+printf '%s\\n' '{"version":1,"wallets":{"0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266":{"lastTime":"43","used":["42","43"]}}}' > "$hl"
+set +e
+lower=$("$SCRIPT" restore "$escrow" 2>&1)
+lower_rc=$?
+set -e
+test "$lower_rc" -ne 0
+printf '%s\\n' "$lower" | grep -q 'nonce high-water mark below the current one'
+grep -q '"lastTime":"43"' "$hl"
+# Rehash corrupt bytes so this exercises shape validation after manifest checks.
+printf '%s\\n' '{}' > "$escrow/nonces.json.hyperliquid.json"
+node -e 'const fs = require("node:fs"), crypto = require("node:crypto"), dir = process.argv[1]; const m = JSON.parse(fs.readFileSync(dir + "/manifest.json")); m.files.find(f => f.name === "nonces.json.hyperliquid.json").sha256 = crypto.createHash("sha256").update(fs.readFileSync(dir + "/nonces.json.hyperliquid.json")).digest("hex"); fs.writeFileSync(dir + "/manifest.json", JSON.stringify(m));' "$escrow"
+set +e
+corrupt=$("$SCRIPT" restore "$escrow" 2>&1)
+corrupt_rc=$?
+set -e
+test "$corrupt_rc" -ne 0
+printf '%s\\n' "$corrupt" | grep -q 'Hyperliquid nonce store is corrupt'
+grep -q '"lastTime":"43"' "$hl"
+# An old escrow without HL state keeps the current file and inode.
+node -e 'const fs = require("node:fs"), dir = process.argv[1]; const m = JSON.parse(fs.readFileSync(dir + "/manifest.json")); m.files = m.files.filter(f => f.name !== "nonces.json.hyperliquid.json"); fs.writeFileSync(dir + "/manifest.json", JSON.stringify(m));' "$escrow"
+rm "$escrow/nonces.json.hyperliquid.json"
+hl_ino=$(stat -c %i "$hl")
+"$SCRIPT" restore "$escrow"
+grep -q '"lastTime":"43"' "$hl"
+test "$(stat -c %i "$hl")" = "$hl_ino"
+test "$(stat -c %u "$hl")" = "$uid"
+test "$(stat -c %a "$hl")" = 600
 printf '%s\\n' 'root-restore-ok'
 `;
     const file = join(tmpdir(), `gbs-root-restore-${process.pid}.sh`);
