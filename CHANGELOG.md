@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.18.0
+
+- Adds a withdraw3-only Hyperliquid typed-data carve-out, off by default through `explicitAllows: ["hyperliquid-withdraw3"]`. The destination is pinned to treasury `0x0fe61780bd5508b3C99e420662050e5560608cA4`; SDK signatureChainId is `0x66eee` / 421614, not Arbitrum 42161 or HyperEVM 999. Enabling it requires separate Ops approval.
+- Requires the exact SDK Withdraw schema, Mainnet intent binding, a timestamp from five minutes ago through sixty seconds ahead, and a fresh `clearinghouseState` read with no open positions and enough withdrawable balance. Only the fixed read-only `/info` endpoint is used; the signer returns a signature and never submits an exchange action.
+- Persists monotonic Hyperliquid timestamps before signing, including dry-run, in `<nonceStorePath>.hyperliquid.json`; adds withdrawal details to the existing hash-chained audit log. Approval and EVM transaction nonce semantics stay unchanged.
+- All other Hyperliquid typed data remains denied. No change to CCTP, Polymarket, caps, allowlist rules, or Solana. 1.18.0 does not include the unreleased CCTP V2 Avalanche <-> Base work from `release/1.17.0` (rc.8).
+
 ## 1.17.0
 
 - First npm release after 1.14.0. 1.15.0, 1.16.0, and 1.17.0-rc.1 through 1.17.0-rc.7 were release candidates for the Grok Bot box signer. They were never published to npm or tagged, and their entries below stay as history. See `docs/releases/RELEASE_NOTES_1.17.0.md` for the consolidated notes.

@@ -5,12 +5,12 @@ This is the active roadmap for the repository.
 <!-- GENERATED:roadmap-release:start -->
 ## Latest Shipped Release
 
-- Latest release: [v1.17.0](docs/releases/RELEASE_NOTES_1.17.0.md)
-- Shipped in `v1.17.0`:
-  - Add a pluggable signer so an agent can sign without a private key in the Evalanche process. `EvalancheConfig.signer` accepts a local ethers wallet, a `SigningProvider`, or a remote signer config. `EvalancheConfig.address` starts an address-only agent that cannot sign.
-  - Add `evalanche-signer`, a reference signing server. It holds the key, checks a pinned Ed25519 verifier approval, recomputes the intent hash, and enforces a monotonic single-use nonce, expiry, a deny list, SpendingPolicy, token caps, and simulation. It binds to `127.0.0.1` or a unix socket and writes a hash-chained JSONL audit log. Dry-run never signs.
-  - Let `evalanche-mcp` run keyless with `--signer-url` / `EVALANCHE_SIGNER_URL` and `--signer-address` / `EVALANCHE_SIGNER_ADDRESS`, or read-only with `EVALANCHE_ADDRESS`. Polymarket CLI and Avalanche X/P-chain paths fail with `REMOTE_SIGNER_UNSUPPORTED` in those modes and never fall back to an environment private key.
-  - Add a per-chain signer policy for nineteen mainnets. Avalanche C-Chain stays on unless disabled. Every other chain, and every testnet, stays off until config enables it. Each enabled chain prices and caps itself.
+- Latest release: [v1.18.0](docs/releases/RELEASE_NOTES_1.18.0.md)
+- Shipped in `v1.18.0`:
+  - Add an opt-in Hyperliquid withdraw3 signer path with a fixed treasury destination, exact SDK typed-data schema, and explicit verifier intent binding.
+  - Require a timestamp from five minutes ago through sixty seconds ahead and a fresh clearinghouseState read with no open positions and sufficient withdrawable balance.
+  - Persist Hyperliquid timestamps in a separate durable nonce file before any signature, including dry-run; include withdrawal details in the existing hash-chained audit log.
+  - Keep all other Hyperliquid actions denied and preserve CCTP, Polymarket, caps, allowlist rules, and Solana behavior.
 
 ## Current Focus
 
