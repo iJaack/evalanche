@@ -52,7 +52,12 @@ test('local contrast.py passes all Evalanche dark text and mark pairs', () => {
   assert.match(result.stderr, /FAIL: 0\b/);
 });
 
-test('flat effects, warm shadow, hairline dots and accessible primary states remain', () => {
+test('code window has no window-control dots', () => {
+  assert.doesNotMatch(read('index.html'), /ev-dot/);
+  assert.doesNotMatch(css, /\.ev-dot\b/);
+});
+
+test('flat effects, warm shadow and accessible primary states remain', () => {
   for (const asset of assets) {
     assert.doesNotMatch(read(asset), /gradient\(|<(?:linear|radial)Gradient/i, asset);
   }
@@ -60,8 +65,6 @@ test('flat effects, warm shadow, hairline dots and accessible primary states rem
   assert.doesNotMatch(css, /box-shadow:\s*0\s+0\s/);
   assert.doesNotMatch(css, /rgba\(0,\s*0,\s*0,/);
   assert.match(css, /box-shadow:[^;]*rgba\(8,6,4,/);
-  assert.match(css, /\.ev-dot\s*\{[^}]*background:\s*var\(--jk-hair\)/);
-  assert.doesNotMatch(css, /\.ev-dot:nth-child/);
   assert.match(css, /\.ev-btn-primary\s*\{[^}]*color:\s*var\(--jk-on-accent\)/);
   assert.match(css, /\.ev-btn-primary:hover\s*\{\s*background:\s*#ec6a7a;\s*color:\s*var\(--jk-on-accent\)/);
   assert.match(css, /color:\s*#9ecca3/);

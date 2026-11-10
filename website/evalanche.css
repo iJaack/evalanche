@@ -296,16 +296,9 @@ img, svg, video { max-width: 100%; height: auto; }
   gap: 0.4rem;
   padding: 0.75rem 1rem;
   background: rgba(237,232,224,0.04);
-  border-bottom: 1px solid rgba(237,232,224,0.06);
-}
-.ev-dot {
-  width: 10px; height: 10px;
-  border-radius: 50%;
-  background: var(--jk-hair);
-  flex: none;
+  border-bottom: 1px solid var(--jk-hair);
 }
 .ev-code-title {
-  margin-left: auto;
   font-size: 0.75rem;
   color: var(--jk-t3);
   font-family: monospace;
