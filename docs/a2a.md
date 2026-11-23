@@ -70,6 +70,7 @@ Limits (all configurable through `limits`):
 | `maxRetainedTasks` | 100 | oldest finished tasks evicted when a new task starts |
 | `taskRetentionMs` | 10 min | finished tasks forgotten |
 | `maxParts` | 16 per message | `InvalidParams` |
+| `maxResultBytes` | 256 KiB per task result | task `TASK_STATE_FAILED` with `Result too large` |
 
 Cancellation aborts the handler's `signal`, and any result that arrives afterwards is discarded. A handler counts against `maxConcurrentTasks` until it actually returns, so handlers must stop when `signal` fires.
 

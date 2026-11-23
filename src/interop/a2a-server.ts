@@ -102,6 +102,8 @@ export interface A2AServerLimits {
   /** How long finished tasks stay readable */
   taskRetentionMs: number;
   maxParts: number;
+  /** Serialized size of a task result; larger results fail the task */
+  maxResultBytes: number;
 }
 
 export interface A2AServerOptions {
@@ -131,6 +133,7 @@ const DEFAULT_LIMITS: A2AServerLimits = {
   maxRetainedTasks: 100,
   taskRetentionMs: 10 * 60_000,
   maxParts: 16,
+  maxResultBytes: 256 * 1024,
 };
 const MODES = ['text/plain', 'application/json'];
 const MIN_TOKEN_LENGTH = 32;
@@ -211,7 +214,7 @@ function accepts(accepted: string[], mode: string): boolean {
 }
 
 /** Skill output as parts in a mode the caller accepts: JSON text for data, or a JSON string for text. */
-function toParts(output: A2ASkillOutput, accepted: string[]): A2APart[] | undefined {
+function toParts(output: A2ASkillOutput, accepted: string[], maxBytes: number): A2APart[] | undefined {
   const value = typeof output === 'string' ? { text: output } : output;
   const parts: A2APart[] = [];
   if (value?.text !== undefined) {
@@ -223,7 +226,7 @@ function toParts(output: A2ASkillOutput, accepted: string[]): A2APart[] | undefi
       ? { data: value.data, mediaType: 'application/json' }
       : { text: JSON.stringify(value.data) });
   }
-  JSON.stringify(parts);
+  if (Buffer.byteLength(JSON.stringify(parts)) > maxBytes) throw new A2ASkillError('Result too large');
   return parts.length ? parts : undefined;
 }
 
@@ -568,7 +571,7 @@ export class A2AServer {
     const data = message.parts.filter((part) => part.text === undefined).map((part) => part.data);
     Promise.resolve()
       .then(() => skill.handler({ principal, taskId: id, contextId, message: input, text, data, signal: record.controller.signal }))
-      .then((output) => toParts(output, accepted))
+      .then((output) => toParts(output, accepted, this.limits.maxResultBytes))
       .then(
         (parts) => this.settle(record, 'TASK_STATE_COMPLETED', undefined, parts),
         (error) => this.settle(record, 'TASK_STATE_FAILED', error instanceof A2ASkillError ? error.message : 'Skill execution failed'),

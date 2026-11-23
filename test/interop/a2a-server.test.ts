@@ -388,6 +388,22 @@ describe('A2AServer resource bounds', () => {
     expect(calls).toBe(0);
   });
 
+  it('fails tasks whose result exceeds the size limit without keeping it', async () => {
+    const big: A2ASkill = { id: 'big', name: 'Big', description: 'Returns its size in bytes', handler: ({ text }) => 'x'.repeat(Number(text)) };
+    const server = await start({
+      skills: [big],
+      auth: { tokens: [{ token: DESK, principal: 'desk', scopes: ['skill:big'] }] },
+      limits: { maxResultBytes: 1_000 },
+    });
+    const ok = await rpc(server, 'SendMessage', { message: userMessage('900') });
+    expect(ok.body.result.task.status.state).toBe('TASK_STATE_COMPLETED');
+    const tooBig = await rpc(server, 'SendMessage', { message: userMessage('2000') });
+    expect(tooBig.body.result.task.status.state).toBe('TASK_STATE_FAILED');
+    expect(tooBig.body.result.task.status.message.parts).toEqual([{ text: 'Result too large' }]);
+    expect(tooBig.body.result.task.artifacts).toBeUndefined();
+    expect(JSON.stringify((await rpc(server, 'GetTask', { id: tooBig.body.result.task.id })).body).length).toBeLessThan(1_000);
+  });
+
   it('limits the number of parts', async () => {
     const server = await start({ limits: { maxParts: 2 } });
     const res = await rpc(server, 'SendMessage', { message: { ...userMessage(), parts: [{ text: 'a' }, { text: 'b' }, { text: 'c' }] } });
