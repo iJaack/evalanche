@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { A2AServer, A2ASkillError, type A2AServerOptions, type A2ASkill } from '../../src/interop/a2a-server';
 import { A2A_ERROR_CODES as E } from '../../src/interop/a2a-protocol';
 
@@ -412,6 +412,23 @@ describe('A2AServer resource bounds', () => {
     const stored = (await rpc(server, 'GetTask', { id: sent.id })).body.result;
     expect(sent.artifacts[0].parts).toEqual([{ data: { when: '1970-01-01T00:00:00.000Z' }, mediaType: 'application/json' }]);
     expect(stored.artifacts).toEqual(sent.artifacts);
+  });
+
+  it('rejects oversized data before copying it', async () => {
+    const bulky: A2ASkill = { id: 'bulky', name: 'Bulky', description: 'Returns big data', handler: () => ({ data: { blob: 'x'.repeat(50_000) } }) };
+    const server = await start({
+      skills: [bulky],
+      auth: { tokens: [{ token: DESK, principal: 'desk', scopes: ['skill:bulky'] }] },
+      limits: { maxResultBytes: 1_000 },
+    });
+    const parse = vi.spyOn(JSON, 'parse');
+    try {
+      const task = (await rpc(server, 'SendMessage', { message: userMessage() })).body.result.task;
+      expect(task.status.message.parts).toEqual([{ text: 'Result too large' }]);
+      expect(parse.mock.calls.some(([text]) => typeof text === 'string' && text.length > 40_000 && !text.includes('"jsonrpc"'))).toBe(false);
+    } finally {
+      parse.mockRestore();
+    }
   });
 
   it('fails tasks whose result exceeds the size limit without keeping it', async () => {

@@ -219,14 +219,22 @@ function accepts(accepted: string[], mode: string): boolean {
 function toParts(output: A2ASkillOutput, accepted: string[], maxBytes: number): A2APart[] | undefined {
   const value = typeof output === 'string' ? { text: output } : output;
   const parts: A2APart[] = [];
+  let size = 0;
+  // Counted as each piece is serialized, so an oversized result fails before it is copied.
+  const fit = (piece: string) => {
+    size += Buffer.byteLength(piece);
+    if (size > maxBytes) throw new A2ASkillError('Result too large');
+  };
   if (value?.text !== undefined) {
     const text = String(value.text);
+    fit(text);
     parts.push(accepts(accepted, 'text/plain') ? { text } : { data: text, mediaType: 'application/json' });
   }
   if (value?.data !== undefined) {
     // Keep exactly what is sent: plain JSON. A value JSON cannot hold at all (a function) fails the task.
     const json = JSON.stringify(value.data);
     if (json === undefined) throw new A2ASkillError('Skill returned data that is not JSON');
+    fit(json);
     parts.push(accepts(accepted, 'application/json')
       ? { data: JSON.parse(json), mediaType: 'application/json' }
       : { text: json });
