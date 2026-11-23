@@ -323,6 +323,14 @@ describe('A2AServer tasks', () => {
     expect(safe.body.result.task.status.message.parts).toEqual([{ text: 'amount must be positive' }]);
   });
 
+  it('cuts long skill error messages to 500 characters', async () => {
+    const loud: A2ASkill = { id: 'loud', name: 'Loud', description: 'Throws a long message', handler: () => { throw new A2ASkillError('e'.repeat(5_000)); } };
+    const server = await start({ skills: [loud], auth: { tokens: [{ token: DESK, principal: 'desk', scopes: ['skill:loud'] }] } });
+    const task = (await rpc(server, 'SendMessage', { message: userMessage() })).body.result.task;
+    expect(task.status.state).toBe('TASK_STATE_FAILED');
+    expect(task.status.message.parts[0].text).toBe(`${'e'.repeat(500)}…`);
+  });
+
   it('rejects messages that try to continue a task', async () => {
     const server = await start();
     const res = await rpc(server, 'SendMessage', { message: { ...userMessage(), taskId: 'abc' } });

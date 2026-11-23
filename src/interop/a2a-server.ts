@@ -139,6 +139,8 @@ const MODES = ['text/plain', 'application/json'];
 const MIN_TOKEN_LENGTH = 32;
 const MAX_ID_LENGTH = 256;
 const MAX_LIST_ITEMS = 32;
+/** Longest A2ASkillError message passed to callers; longer ones are cut. */
+const MAX_ERROR_CHARS = 500;
 /** Largest delay Node timers accept; longer ones fire after 1 ms. */
 const MAX_LIMIT = 2_147_483_647;
 const SKILL_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
@@ -577,7 +579,9 @@ export class A2AServer {
       .then((output) => toParts(output, accepted, this.limits.maxResultBytes))
       .then(
         (parts) => this.settle(record, 'TASK_STATE_COMPLETED', undefined, parts),
-        (error) => this.settle(record, 'TASK_STATE_FAILED', error instanceof A2ASkillError ? error.message : 'Skill execution failed'),
+        (error) => this.settle(record, 'TASK_STATE_FAILED', error instanceof A2ASkillError && error.message
+          ? (error.message.length > MAX_ERROR_CHARS ? `${error.message.slice(0, MAX_ERROR_CHARS)}…` : error.message)
+          : 'Skill execution failed'),
       )
       .finally(() => {
         clearTimeout(timer);

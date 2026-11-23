@@ -56,7 +56,7 @@ Security:
 - **Capabilities.** Only registered skills can run. A caller needs `skill:<id>` (or `skill:*`). A skill that declares `permissions: ['sign']` or `['spend']` also needs those scopes, granted separately, so `skill:*` alone never signs or spends. Missing scopes get HTTP 403 with `insufficient_scope`.
 - **Exposure.** The server binds to `127.0.0.1`. Any other host needs `allowRemote: true` and an `https` `publicUrl`, with TLS terminated in front of the server.
 - **Task isolation.** Tasks are visible only to the principal that created them. Other callers get `TaskNotFoundError`.
-- **Errors.** Handler errors are reported as `Skill execution failed`. Only messages thrown as `A2ASkillError` reach the caller.
+- **Errors.** Handler errors are reported as `Skill execution failed`. Only messages thrown as `A2ASkillError` reach the caller, cut to 500 characters.
 - The MCP server does not start A2A listeners. Skills, and any signing or spending they do, are wired in code.
 
 Limits (all configurable through `limits`):
