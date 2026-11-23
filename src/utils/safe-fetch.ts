@@ -148,11 +148,31 @@ function isPrivateIpv4(hostname: string): boolean {
     || (a === 192 && b === 168);
 }
 
+/**
+ * Bracketed IPv6 hosts: unspecified, loopback, unique-local fc00::/7, link-local fe80::/10,
+ * site-local fec0::/10, and IPv4-mapped private addresses (WHATWG URL writes those in hex).
+ */
+function isPrivateIpv6(hostname: string): boolean {
+  const address = /^\[([0-9a-f:.]+)\]$/.exec(hostname)?.[1];
+  if (!address) return false;
+  if (address === '::' || address === '::1') return true;
+  const mapped = /^::ffff:(?:([0-9a-f]{1,4}):([0-9a-f]{1,4})|(\d+\.\d+\.\d+\.\d+))$/.exec(address);
+  if (mapped) {
+    const ipv4 = mapped[3] ?? [mapped[1], mapped[2]]
+      .flatMap((hex) => [parseInt(hex, 16) >> 8, parseInt(hex, 16) & 255])
+      .join('.');
+    return isPrivateIpv4(ipv4) || ipv4.startsWith('0.');
+  }
+  const head = parseInt(address.split(':')[0] || '0', 16);
+  return (head & 0xfe00) === 0xfc00 || (head & 0xffc0) === 0xfe80 || (head & 0xffc0) === 0xfec0;
+}
+
 function isBlockedHostname(hostname: string): boolean {
   const normalized = hostname.toLowerCase();
   return PRIVATE_HOSTS.has(normalized)
     || normalized.endsWith('.local')
     || isPrivateIpv4(normalized)
+    || isPrivateIpv6(normalized)
     || normalized === '0.0.0.0';
 }
 

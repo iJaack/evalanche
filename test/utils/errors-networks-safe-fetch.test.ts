@@ -68,6 +68,18 @@ describe('safe-fetch', () => {
     expect(() => assertSafeUrl('https://internal.local/test', { blockPrivateNetwork: true })).toThrow(/Blocked private or loopback/);
   });
 
+  it('assertSafeUrl blocks private IPv6 targets when enabled', () => {
+    for (const host of [
+      '[::]', '[::1]', '[fd00::1]', '[FC00::abcd]', '[fe80::1]', '[febf::1]', '[fec0::1]',
+      '[::ffff:127.0.0.1]', '[::ffff:10.1.2.3]', '[::ffff:192.168.0.1]', '[::ffff:169.254.169.254]', '[::ffff:0.0.0.0]',
+    ]) {
+      expect(() => assertSafeUrl(`https://${host}/a2a`, { blockPrivateNetwork: true }), host).toThrow(/Blocked private or loopback/);
+    }
+    for (const host of ['[2001:4860:4860::8888]', '[2606:4700::1111]', '[::ffff:8.8.8.8]', '[fe7f::1]', '[fbff::1]']) {
+      expect(() => assertSafeUrl(`https://${host}/a2a`, { blockPrivateNetwork: true }), host).not.toThrow();
+    }
+  });
+
   it('allows http only when explicitly enabled', () => {
     expect(() => assertSafeUrl('http://example.com')).toThrow();
     expect(assertSafeUrl('http://example.com', { allowHttp: true }).toString()).toBe('http://example.com/');
