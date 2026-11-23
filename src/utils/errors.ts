@@ -62,6 +62,7 @@ export enum EvalancheErrorCode {
   SIGNER_REJECTED = 'SIGNER_REJECTED',
   SIGNER_RESPONSE_INVALID = 'SIGNER_RESPONSE_INVALID',
   APPROVAL_INVALID = 'APPROVAL_INVALID',
+  A2A_ERROR = 'A2A_ERROR',
 }
 
 export class EvalancheError extends Error {
