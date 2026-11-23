@@ -388,6 +388,24 @@ describe('A2AServer resource bounds', () => {
     expect(calls).toBe(0);
   });
 
+  it('fails tasks whose data is not JSON and stores data as JSON', async () => {
+    const shapes: A2ASkill = {
+      id: 'shapes',
+      name: 'Shapes',
+      description: 'Returns odd data',
+      handler: ({ text }) => (text === 'function' ? { data: () => 1 } : { data: { when: new Date(0), skip: () => 1 } }),
+    };
+    const server = await start({ skills: [shapes], auth: { tokens: [{ token: DESK, principal: 'desk', scopes: ['skill:shapes'] }] } });
+    const bad = (await rpc(server, 'SendMessage', { message: userMessage('function') })).body.result.task;
+    expect(bad.status.state).toBe('TASK_STATE_FAILED');
+    expect(bad.status.message.parts).toEqual([{ text: 'Skill returned data that is not JSON' }]);
+    expect(bad.artifacts).toBeUndefined();
+    const sent = (await rpc(server, 'SendMessage', { message: userMessage('object') })).body.result.task;
+    const stored = (await rpc(server, 'GetTask', { id: sent.id })).body.result;
+    expect(sent.artifacts[0].parts).toEqual([{ data: { when: '1970-01-01T00:00:00.000Z' }, mediaType: 'application/json' }]);
+    expect(stored.artifacts).toEqual(sent.artifacts);
+  });
+
   it('fails tasks whose result exceeds the size limit without keeping it', async () => {
     const big: A2ASkill = { id: 'big', name: 'Big', description: 'Returns its size in bytes', handler: ({ text }) => 'x'.repeat(Number(text)) };
     const server = await start({

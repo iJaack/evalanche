@@ -222,9 +222,12 @@ function toParts(output: A2ASkillOutput, accepted: string[], maxBytes: number): 
     parts.push(accepts(accepted, 'text/plain') ? { text } : { data: text, mediaType: 'application/json' });
   }
   if (value?.data !== undefined) {
+    // Keep exactly what is sent: plain JSON. A value JSON cannot hold at all (a function) fails the task.
+    const json = JSON.stringify(value.data);
+    if (json === undefined) throw new A2ASkillError('Skill returned data that is not JSON');
     parts.push(accepts(accepted, 'application/json')
-      ? { data: value.data, mediaType: 'application/json' }
-      : { text: JSON.stringify(value.data) });
+      ? { data: JSON.parse(json), mediaType: 'application/json' }
+      : { text: json });
   }
   if (Buffer.byteLength(JSON.stringify(parts)) > maxBytes) throw new A2ASkillError('Result too large');
   return parts.length ? parts : undefined;
