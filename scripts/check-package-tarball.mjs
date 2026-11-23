@@ -13,7 +13,8 @@ import {
 } from './release-helpers.mjs';
 
 const execFileAsync = promisify(execFile);
-const DEFAULT_MAX_TARBALL_BYTES = 1_050_000;
+// 1,050,000 -> 1,100,000 for A2A 1.0 (PR #46): CI packs it at about 1,051,200 bytes.
+const DEFAULT_MAX_TARBALL_BYTES = 1_100_000;
 
 function collectExportTargets(exportsField) {
   const targets = [];
