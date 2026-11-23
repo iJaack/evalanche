@@ -17,7 +17,7 @@ import {
 } from '@a2a-js/sdk/server';
 import { A2AClient, A2AError } from '../../src/interop/a2a-client';
 import { A2AServer, type A2ASkill } from '../../src/interop/a2a-server';
-import { A2A_ERROR_CODES as E } from '../../src/interop/a2a-protocol';
+import { A2A_DEFAULT_TASK_TIMEOUT_MS, A2A_ERROR_CODES as E } from '../../src/interop/a2a-protocol';
 
 const TOKEN = 'interop-token-0123456789abcdef0123456789abcdef';
 const closers: Array<() => Promise<void>> = [];
@@ -199,6 +199,28 @@ describe('Evalanche A2AClient', () => {
     await expect(client.sendMessage({ text: 'x' })).rejects.toMatchObject({ rpcCode: E.INVALID_PARAMS });
     const { task } = await client.sendMessage({ data: { n: 1 }, skillId: 'echo' });
     expect(task?.status.state).toBe('TASK_STATE_COMPLETED');
+  });
+
+  it('waits past the server task deadline and receives the failed task', async () => {
+    const policy = (client: A2AClient) => (client as unknown as { policy(url: URL): { timeoutMs: number } }).policy(new URL('http://127.0.0.1'));
+    expect(policy(new A2AClient({ url: 'http://127.0.0.1' })).timeoutMs).toBe(A2A_DEFAULT_TASK_TIMEOUT_MS + 10_000);
+    const server = await startEvalanche();
+    expect((server as unknown as { limits: { taskTimeoutMs: number } }).limits.taskTimeoutMs).toBe(A2A_DEFAULT_TASK_TIMEOUT_MS);
+
+    const quick = new A2AServer({
+      name: 'deadline-agent',
+      description: 'Short task deadline',
+      version: '1.0.0',
+      auth: { tokens: [{ token: TOKEN, principal: 'sdk-client', scopes: ['skill:*'] }] },
+      skills: [skills[1]],
+      limits: { taskTimeoutMs: 100 },
+    });
+    await quick.listen(0);
+    closers.push(() => quick.close());
+    const client = new A2AClient({ url: new URL(quick.url!).origin, token: TOKEN, timeoutMs: 1_000 });
+    const { task } = await client.sendMessage({ text: 'wait' });
+    expect(task?.status.state).toBe('TASK_STATE_FAILED');
+    expect(task?.status.message?.parts).toEqual([{ text: 'Task timed out' }]);
   });
 
   it('will not send its token to an endpoint on another origin', async () => {

@@ -13,6 +13,7 @@ import { EvalancheError, EvalancheErrorCode } from '../utils/errors';
 import { assertSafeUrl, safeFetch, type SafeFetchOptions } from '../utils/safe-fetch';
 import {
   A2A_AGENT_CARD_PATH,
+  A2A_DEFAULT_TASK_TIMEOUT_MS,
   A2A_ERROR_CODES,
   A2A_JSONRPC_BINDING,
   A2A_PROTOCOL_VERSION,
@@ -39,7 +40,7 @@ export interface A2AClientOptions {
   url: string;
   /** Bearer token. Sent only to the agent card's own origin. */
   token?: string;
-  /** Default 30 seconds per request */
+  /** Default 40 seconds per request: 10 s past A2AServer's default 30 s task deadline */
   timeoutMs?: number;
   /** Default 1 MB per response */
   maxResponseBytes?: number;
@@ -145,7 +146,7 @@ export class A2AClient {
 
   private policy(url: URL): SafeFetchOptions {
     return {
-      timeoutMs: this.options.timeoutMs ?? 30_000,
+      timeoutMs: this.options.timeoutMs ?? A2A_DEFAULT_TASK_TIMEOUT_MS + 10_000,
       maxBytes: this.options.maxResponseBytes ?? 1_000_000,
       allowHttp: this.options.allowHttp ?? isLoopbackHost(url.hostname),
       blockPrivateNetwork: this.options.blockPrivateNetwork ?? false,

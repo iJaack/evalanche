@@ -8,6 +8,8 @@ export const A2A_PROTOCOL_VERSION = '1.0';
 export const A2A_VERSION_HEADER = 'A2A-Version';
 export const A2A_AGENT_CARD_PATH = '/.well-known/agent-card.json';
 export const A2A_JSONRPC_BINDING = 'JSONRPC';
+/** A2AServer's default task deadline. A2AClient waits 10 s longer by default to receive the result. */
+export const A2A_DEFAULT_TASK_TIMEOUT_MS = 30_000;
 
 export type A2ATaskState =
   | 'TASK_STATE_SUBMITTED'

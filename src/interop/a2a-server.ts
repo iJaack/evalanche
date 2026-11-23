@@ -18,6 +18,7 @@ import { isIP, type AddressInfo } from 'net';
 import { EvalancheError, EvalancheErrorCode } from '../utils/errors';
 import {
   A2A_AGENT_CARD_PATH,
+  A2A_DEFAULT_TASK_TIMEOUT_MS,
   A2A_ERROR_CODES as E,
   A2A_JSONRPC_BINDING,
   A2A_PROTOCOL_VERSION,
@@ -125,7 +126,7 @@ export interface A2AServerOptions {
 const DEFAULT_LIMITS: A2AServerLimits = {
   maxBodyBytes: 64 * 1024,
   requestTimeoutMs: 10_000,
-  taskTimeoutMs: 30_000,
+  taskTimeoutMs: A2A_DEFAULT_TASK_TIMEOUT_MS,
   maxConcurrentTasks: 4,
   maxRetainedTasks: 100,
   taskRetentionMs: 10 * 60_000,
