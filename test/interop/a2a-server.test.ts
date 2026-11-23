@@ -259,6 +259,16 @@ describe('A2AServer tasks', () => {
     expect(sent.body.result.task.history[0].parts).toEqual(parts);
   });
 
+  it('keeps message reference task ids and extensions', async () => {
+    let seen: unknown;
+    const inspect: A2ASkill = { id: 'inspect', name: 'Inspect', description: 'Reads the message', handler: ({ message }) => { seen = message; return 'ok'; } };
+    const server = await start({ skills: [inspect], auth: { tokens: [{ token: DESK, principal: 'desk', scopes: ['skill:inspect'] }] } });
+    const extra = { referenceTaskIds: ['task-1', 'task-2'], extensions: ['https://example.com/a2a/ext/v1'] };
+    const sent = await rpc(server, 'SendMessage', { message: { ...userMessage(), ...extra } });
+    expect(seen).toMatchObject(extra);
+    expect(sent.body.result.task.history[0]).toMatchObject(extra);
+  });
+
   it('cancels running work through the abort signal', async () => {
     const server = await start({ skills: [slow] });
     const sent = await rpc(server, 'SendMessage', { message: userMessage(), configuration: { returnImmediately: true } });
@@ -403,6 +413,9 @@ describe('A2AServer malformed requests', () => {
     ['part with two kinds', { method: 'SendMessage', params: { message: { ...userMessage(), parts: [{ text: 'a', data: 1 }] } } }, E.INVALID_PARAMS],
     ['part metadata not an object', { method: 'SendMessage', params: { message: { ...userMessage(), parts: [{ text: 'a', metadata: 'x' }] } } }, E.INVALID_PARAMS],
     ['non-string filename', { method: 'SendMessage', params: { message: { ...userMessage(), parts: [{ data: 1, filename: 2 }] } } }, E.INVALID_PARAMS],
+    ['referenceTaskIds not a list', { method: 'SendMessage', params: { message: { ...userMessage(), referenceTaskIds: 'task-1' } } }, E.INVALID_PARAMS],
+    ['empty extension', { method: 'SendMessage', params: { message: { ...userMessage(), extensions: [''] } } }, E.INVALID_PARAMS],
+    ['too many reference ids', { method: 'SendMessage', params: { message: { ...userMessage(), referenceTaskIds: Array(33).fill('t') } } }, E.INVALID_PARAMS],
     ['non-string text', { method: 'SendMessage', params: { message: { ...userMessage(), parts: [{ text: 5 }] } } }, E.INVALID_PARAMS],
     ['url part', { method: 'SendMessage', params: { message: { ...userMessage(), parts: [{ url: 'https://x' }] } } }, E.CONTENT_TYPE_NOT_SUPPORTED],
     ['raw part', { method: 'SendMessage', params: { message: { ...userMessage(), parts: [{ raw: 'AAAA' }] } } }, E.CONTENT_TYPE_NOT_SUPPORTED],

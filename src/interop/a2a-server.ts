@@ -135,6 +135,7 @@ const DEFAULT_LIMITS: A2AServerLimits = {
 const MODES = ['text/plain', 'application/json'];
 const MIN_TOKEN_LENGTH = 32;
 const MAX_ID_LENGTH = 256;
+const MAX_LIST_ITEMS = 32;
 const SKILL_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
 interface TaskRecord {
@@ -502,7 +503,7 @@ export class A2AServer {
 
   private parseMessage(value: unknown): A2AMessage {
     if (!isPlainObject(value)) throw invalid('message is required');
-    const { messageId, role, parts, contextId, taskId, metadata } = value;
+    const { messageId, role, parts, contextId, taskId, metadata, referenceTaskIds, extensions } = value;
     if (!isId(messageId)) throw invalid('message.messageId is required');
     if (role !== 'ROLE_USER') throw invalid('message.role must be ROLE_USER');
     if (!Array.isArray(parts) || parts.length === 0 || parts.length > this.limits.maxParts) {
@@ -511,6 +512,11 @@ export class A2AServer {
     if (contextId !== undefined && !isId(contextId)) throw invalid('message.contextId must be a non-empty string');
     if (taskId !== undefined && !isId(taskId)) throw invalid('message.taskId must be a non-empty string');
     if (metadata !== undefined && !isPlainObject(metadata)) throw invalid('message.metadata must be an object');
+    for (const [name, list] of [['referenceTaskIds', referenceTaskIds], ['extensions', extensions]] as const) {
+      if (list !== undefined && (!Array.isArray(list) || list.length > MAX_LIST_ITEMS || !list.every(isId))) {
+        throw invalid(`message.${name} must be a list of up to ${MAX_LIST_ITEMS} non-empty strings`);
+      }
+    }
     return {
       messageId,
       role,
@@ -534,6 +540,8 @@ export class A2AServer {
       ...(contextId !== undefined ? { contextId } : {}),
       ...(taskId !== undefined ? { taskId } : {}),
       ...(metadata !== undefined ? { metadata } : {}),
+      ...(referenceTaskIds !== undefined ? { referenceTaskIds: referenceTaskIds as string[] } : {}),
+      ...(extensions !== undefined ? { extensions: extensions as string[] } : {}),
     };
   }
 

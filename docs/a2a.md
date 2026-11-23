@@ -47,7 +47,7 @@ Protocol:
 - Implements `SendMessage` (blocking by default, or `configuration.returnImmediately`), `GetTask` (with `historyLength`) and `CancelTask`.
 - Requests must carry `A2A-Version: 1.0`, as a header or query parameter. A missing version means 0.3, which is refused with `VersionNotSupportedError` (-32009).
 - Streaming, `ListTasks`, push notifications and the extended card are not offered. Each returns its standard A2A error.
-- Accepts text and data parts, keeping their `mediaType`, `filename` and `metadata`. URL and raw parts return `ContentTypeNotSupportedError`.
+- Accepts text and data parts, keeping their `mediaType`, `filename` and `metadata`. Messages keep `metadata`, `referenceTaskIds` and `extensions` (up to 32 entries each). URL and raw parts return `ContentTypeNotSupportedError`.
 - Results follow `configuration.acceptedOutputModes`. When the caller accepts only `text/plain`, data comes back as JSON text. When it accepts only `application/json`, text comes back as a JSON string.
 - `message.metadata.skillId` (or `metadata.skillId` on the request) selects the skill. It can be omitted when only one skill is registered.
 
