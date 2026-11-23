@@ -232,6 +232,33 @@ describe('A2AServer tasks', () => {
     ]);
   });
 
+  it('converts results to the output modes the caller accepts', async () => {
+    const server = await start();
+    const send = (acceptedOutputModes: string[]) => rpc(server, 'SendMessage', {
+      message: { ...userMessage('p'), parts: [{ text: 'p' }, { data: { amount: 1 } }] },
+      configuration: { acceptedOutputModes },
+    }).then((res) => res.body.result.task.artifacts[0].parts);
+    expect(await send(['text/plain'])).toEqual([{ text: 'echo: p' }, { text: '{"amount":1}' }]);
+    expect(await send(['application/*'])).toEqual([
+      { data: 'echo: p', mediaType: 'application/json' },
+      { data: { amount: 1 }, mediaType: 'application/json' },
+    ]);
+    expect(await send(['*/*'])).toEqual([{ text: 'echo: p' }, { data: { amount: 1 }, mediaType: 'application/json' }]);
+  });
+
+  it('keeps part media types, file names and metadata', async () => {
+    let seen: unknown;
+    const inspect: A2ASkill = { id: 'inspect', name: 'Inspect', description: 'Reads parts', handler: ({ message }) => { seen = message.parts; return 'ok'; } };
+    const server = await start({ skills: [inspect], auth: { tokens: [{ token: DESK, principal: 'desk', scopes: ['skill:inspect'] }] } });
+    const parts = [
+      { text: 'hi', mediaType: 'text/markdown', metadata: { lang: 'en' } },
+      { data: { a: 1 }, mediaType: 'application/vnd.quote+json', filename: 'quote.json' },
+    ];
+    const sent = await rpc(server, 'SendMessage', { message: { ...userMessage(), parts } });
+    expect(seen).toEqual(parts);
+    expect(sent.body.result.task.history[0].parts).toEqual(parts);
+  });
+
   it('cancels running work through the abort signal', async () => {
     const server = await start({ skills: [slow] });
     const sent = await rpc(server, 'SendMessage', { message: userMessage(), configuration: { returnImmediately: true } });
@@ -326,6 +353,17 @@ describe('A2AServer resource bounds', () => {
     expect((await rpc(server, 'GetTask', { id: ids[2] })).body.result.id).toBe(ids[2]);
   });
 
+  it('lets reads leave a full store alone', async () => {
+    const server = await start({ limits: { maxConcurrentTasks: 1, maxRetainedTasks: 2 } });
+    const first = (await rpc(server, 'SendMessage', { message: userMessage() })).body.result.task.id;
+    const second = (await rpc(server, 'SendMessage', { message: userMessage() })).body.result.task.id;
+    for (let i = 0; i < 3; i++) {
+      expect((await rpc(server, 'GetTask', { id: first })).body.result.id).toBe(first);
+      expect((await rpc(server, 'CancelTask', { id: second })).body.error.code).toBe(E.TASK_NOT_CANCELABLE);
+    }
+    expect((await rpc(server, 'GetTask', { id: second })).body.result.id).toBe(second);
+  });
+
   it('forgets finished tasks after the retention period', async () => {
     const server = await start({ limits: { taskRetentionMs: 20 } });
     const id = (await rpc(server, 'SendMessage', { message: userMessage() })).body.result.task.id;
@@ -363,6 +401,8 @@ describe('A2AServer malformed requests', () => {
     ['lowercase role', { method: 'SendMessage', params: { message: { ...userMessage(), role: 'user' } } }, E.INVALID_PARAMS],
     ['empty parts', { method: 'SendMessage', params: { message: { ...userMessage(), parts: [] } } }, E.INVALID_PARAMS],
     ['part with two kinds', { method: 'SendMessage', params: { message: { ...userMessage(), parts: [{ text: 'a', data: 1 }] } } }, E.INVALID_PARAMS],
+    ['part metadata not an object', { method: 'SendMessage', params: { message: { ...userMessage(), parts: [{ text: 'a', metadata: 'x' }] } } }, E.INVALID_PARAMS],
+    ['non-string filename', { method: 'SendMessage', params: { message: { ...userMessage(), parts: [{ data: 1, filename: 2 }] } } }, E.INVALID_PARAMS],
     ['non-string text', { method: 'SendMessage', params: { message: { ...userMessage(), parts: [{ text: 5 }] } } }, E.INVALID_PARAMS],
     ['url part', { method: 'SendMessage', params: { message: { ...userMessage(), parts: [{ url: 'https://x' }] } } }, E.CONTENT_TYPE_NOT_SUPPORTED],
     ['raw part', { method: 'SendMessage', params: { message: { ...userMessage(), parts: [{ raw: 'AAAA' }] } } }, E.CONTENT_TYPE_NOT_SUPPORTED],

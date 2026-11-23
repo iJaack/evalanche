@@ -231,6 +231,7 @@ describe('Evalanche A2AClient', () => {
   it('requires https for remote hosts and can block private networks', () => {
     expect(() => new A2AClient({ url: 'http://agent.example' })).toThrow(/protocol/);
     expect(() => new A2AClient({ url: 'https://127.0.0.1', blockPrivateNetwork: true })).toThrow(/Blocked/);
+    expect(() => new A2AClient({ url: 'https://[fd00::1]', blockPrivateNetwork: true })).toThrow(/Blocked/);
     expect(() => new A2AClient({ url: 'not a url' })).toThrow(/invalid url/);
   });
 });

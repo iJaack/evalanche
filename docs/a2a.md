@@ -47,7 +47,8 @@ Protocol:
 - Implements `SendMessage` (blocking by default, or `configuration.returnImmediately`), `GetTask` (with `historyLength`) and `CancelTask`.
 - Requests must carry `A2A-Version: 1.0`, as a header or query parameter. A missing version means 0.3, which is refused with `VersionNotSupportedError` (-32009).
 - Streaming, `ListTasks`, push notifications and the extended card are not offered. Each returns its standard A2A error.
-- Accepts text and data parts. URL and raw parts return `ContentTypeNotSupportedError`.
+- Accepts text and data parts, keeping their `mediaType`, `filename` and `metadata`. URL and raw parts return `ContentTypeNotSupportedError`.
+- Results follow `configuration.acceptedOutputModes`. When the caller accepts only `text/plain`, data comes back as JSON text. When it accepts only `application/json`, text comes back as a JSON string.
 - `message.metadata.skillId` (or `metadata.skillId` on the request) selects the skill. It can be omitted when only one skill is registered.
 
 Security:
@@ -66,7 +67,7 @@ Limits (all configurable through `limits`):
 | `requestTimeoutMs` | 10 s to receive a request | connection closed |
 | `taskTimeoutMs` | 30 s | handler aborted, task `TASK_STATE_FAILED` |
 | `maxConcurrentTasks` | 4 running handlers | HTTP 429 with `Retry-After` |
-| `maxRetainedTasks` | 100 | oldest finished tasks evicted |
+| `maxRetainedTasks` | 100 | oldest finished tasks evicted when a new task starts |
 | `taskRetentionMs` | 10 min | finished tasks forgotten |
 | `maxParts` | 16 per message | `InvalidParams` |
 
@@ -85,7 +86,7 @@ await agent.cancelTask(task!.id);
 
 - Reads `/.well-known/agent-card.json` and picks the first `JSONRPC` interface with protocol version 1.0.
 - Sends the token only when the endpoint has the same origin as the card.
-- Uses `safeFetch`: https only (plain http is allowed only for loopback, unless `allowHttp` is set), no redirects, and a timeout and response-size cap on every request. Set `blockPrivateNetwork` for URLs that come from untrusted input.
+- Uses `safeFetch`: https only (plain http is allowed only for loopback, unless `allowHttp` is set), no redirects, and a timeout and response-size cap on every request. Set `blockPrivateNetwork` for URLs that come from untrusted input; it refuses private IPv4 and IPv6 hosts, including unique-local, link-local and IPv4-mapped addresses.
 - Failures throw `A2AError` with `rpcCode` (JSON-RPC error code) and `httpStatus`.
 
 ## Interoperability

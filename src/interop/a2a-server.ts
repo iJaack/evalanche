@@ -200,11 +200,25 @@ function readBody(req: IncomingMessage, maxBytes: number): Promise<string | null
   });
 }
 
-function toParts(output: A2ASkillOutput): A2APart[] | undefined {
-  if (typeof output === 'string') return [{ text: output }];
+// True when `accepted` (empty means anything) allows `mode`, counting the any-type and type-wide wildcards.
+function accepts(accepted: string[], mode: string): boolean {
+  return !accepted.length || accepted.some((entry) =>
+    entry === mode || entry === '*/*' || (entry.endsWith('/*') && mode.startsWith(entry.slice(0, -1))));
+}
+
+/** Skill output as parts in a mode the caller accepts: JSON text for data, or a JSON string for text. */
+function toParts(output: A2ASkillOutput, accepted: string[]): A2APart[] | undefined {
+  const value = typeof output === 'string' ? { text: output } : output;
   const parts: A2APart[] = [];
-  if (output?.text !== undefined) parts.push({ text: String(output.text) });
-  if (output?.data !== undefined) parts.push({ data: output.data, mediaType: 'application/json' });
+  if (value?.text !== undefined) {
+    const text = String(value.text);
+    parts.push(accepts(accepted, 'text/plain') ? { text } : { data: text, mediaType: 'application/json' });
+  }
+  if (value?.data !== undefined) {
+    parts.push(accepts(accepted, 'application/json')
+      ? { data: value.data, mediaType: 'application/json' }
+      : { text: JSON.stringify(value.data) });
+  }
   JSON.stringify(parts);
   return parts.length ? parts : undefined;
 }
@@ -456,7 +470,7 @@ export class A2AServer {
     if (returnImmediately !== undefined && typeof returnImmediately !== 'boolean') throw invalid('configuration.returnImmediately must be a boolean');
     if (accepted !== undefined) {
       if (!Array.isArray(accepted) || accepted.some((mode) => typeof mode !== 'string')) throw invalid('configuration.acceptedOutputModes must be strings');
-      if (accepted.length && !accepted.some((mode) => mode === '*/*' || MODES.includes(mode))) {
+      if (!MODES.some((mode) => accepts(accepted, mode))) {
         throw new RpcError(E.CONTENT_TYPE_NOT_SUPPORTED, `Supported output modes: ${MODES.join(', ')}`);
       }
     }
@@ -479,7 +493,8 @@ export class A2AServer {
     }
     if (this.running >= this.limits.maxConcurrentTasks) throw new HttpReject(429, 'too many concurrent tasks', { 'Retry-After': '1' });
 
-    const record = this.start(skill, message, principal);
+    this.pruneTasks(true);
+    const record = this.start(skill, message, principal, accepted ?? []);
     if (!returnImmediately) await record.done;
     return { task: this.snapshot(record, historyLength) };
   }
@@ -504,8 +519,16 @@ export class A2AServer {
         if (kinds.length !== 1) throw invalid('each part must set exactly one of text, data, url or raw');
         if (kinds[0] === 'url' || kinds[0] === 'raw') throw new RpcError(E.CONTENT_TYPE_NOT_SUPPORTED, 'Only text and data parts are accepted');
         if (kinds[0] === 'text' && typeof part.text !== 'string') throw invalid('part.text must be a string');
-        if (part.mediaType !== undefined && typeof part.mediaType !== 'string') throw invalid('part.mediaType must be a string');
-        return kinds[0] === 'text' ? { text: part.text as string } : { data: part.data };
+        const { mediaType, filename, metadata: partMetadata } = part;
+        if (mediaType !== undefined && typeof mediaType !== 'string') throw invalid('part.mediaType must be a string');
+        if (filename !== undefined && typeof filename !== 'string') throw invalid('part.filename must be a string');
+        if (partMetadata !== undefined && !isPlainObject(partMetadata)) throw invalid('part.metadata must be an object');
+        return {
+          ...(kinds[0] === 'text' ? { text: part.text as string } : { data: part.data }),
+          ...(mediaType !== undefined ? { mediaType } : {}),
+          ...(filename !== undefined ? { filename } : {}),
+          ...(partMetadata !== undefined ? { metadata: partMetadata } : {}),
+        };
       }),
       ...(contextId !== undefined ? { contextId } : {}),
       ...(taskId !== undefined ? { taskId } : {}),
@@ -513,7 +536,7 @@ export class A2AServer {
     };
   }
 
-  private start(skill: A2ASkill, message: A2AMessage, principal: A2APrincipal): TaskRecord {
+  private start(skill: A2ASkill, message: A2AMessage, principal: A2APrincipal, accepted: string[]): TaskRecord {
     const id = randomUUID();
     const contextId = message.contextId ?? randomUUID();
     const input: A2AMessage = { ...message, taskId: id, contextId };
@@ -534,7 +557,7 @@ export class A2AServer {
     const data = message.parts.filter((part) => part.text === undefined).map((part) => part.data);
     Promise.resolve()
       .then(() => skill.handler({ principal, taskId: id, contextId, message: input, text, data, signal: record.controller.signal }))
-      .then(toParts)
+      .then((output) => toParts(output, accepted))
       .then(
         (parts) => this.settle(record, 'TASK_STATE_COMPLETED', undefined, parts),
         (error) => this.settle(record, 'TASK_STATE_FAILED', error instanceof A2ASkillError ? error.message : 'Skill execution failed'),
@@ -577,14 +600,14 @@ export class A2AServer {
     return { ...rest, ...(kept.length ? { history: kept } : {}) };
   }
 
-  /** Drops expired finished tasks, then the oldest finished ones while the store is full. */
-  private pruneTasks(): void {
+  /** Drops expired finished tasks. With `makeRoom`, also the oldest finished ones while the store is full. */
+  private pruneTasks(makeRoom = false): void {
     const cutoff = Date.now() - this.limits.taskRetentionMs;
     for (const [id, record] of this.tasks) {
       if (record.finishedAt !== undefined && record.finishedAt < cutoff) this.tasks.delete(id);
     }
     for (const [id, record] of this.tasks) {
-      if (this.tasks.size < this.limits.maxRetainedTasks) break;
+      if (!makeRoom || this.tasks.size < this.limits.maxRetainedTasks) break;
       if (record.finishedAt !== undefined) this.tasks.delete(id);
     }
   }
