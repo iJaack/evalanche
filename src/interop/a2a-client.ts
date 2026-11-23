@@ -27,10 +27,14 @@ import {
   type A2ATask,
 } from './a2a-protocol';
 
-/** An A2A call failed. `rpcCode` is the JSON-RPC error code, `httpStatus` the HTTP status. */
+/**
+ * An A2A call failed. `rpcCode` is the JSON-RPC error code, `httpStatus` the HTTP status.
+ * Transport failures (unreachable host, timeout, oversized or refused response) keep the
+ * original error as `underlying`.
+ */
 export class A2AError extends EvalancheError {
-  constructor(message: string, readonly rpcCode?: number, readonly httpStatus?: number) {
-    super(message, EvalancheErrorCode.A2A_ERROR);
+  constructor(message: string, readonly rpcCode?: number, readonly httpStatus?: number, underlying?: Error) {
+    super(message, EvalancheErrorCode.A2A_ERROR, underlying);
     this.name = 'A2AError';
   }
 }
@@ -89,12 +93,10 @@ export class A2AClient {
   /** Fetches and caches the agent card. */
   async getAgentCard(): Promise<A2AAgentCard> {
     if (this.card) return this.card;
-    const response = await safeFetch(this.cardUrl, {
-      ...this.policy(this.cardUrl),
+    const { response, body: card } = await this.send('Agent card request', this.cardUrl, {
       headers: { Accept: 'application/json', [A2A_VERSION_HEADER]: A2A_PROTOCOL_VERSION },
     });
     if (!response.ok) throw new A2AError(`Agent card request failed: HTTP ${response.status}`, undefined, response.status);
-    const card = await this.readJson(response);
     if (!isPlainObject(card) || typeof card.name !== 'string' || !Array.isArray(card.supportedInterfaces)) {
       throw new A2AError('Invalid agent card');
     }
@@ -103,8 +105,13 @@ export class A2AClient {
       && typeof entry.url === 'string'
       && isSupportedA2AVersion(String(entry.protocolVersion))) as { url: string } | undefined;
     if (!binding) throw new A2AError(`Agent does not offer the A2A ${A2A_PROTOCOL_VERSION} JSON-RPC binding`);
-    const endpoint = new URL(binding.url, this.cardUrl);
-    assertSafeUrl(endpoint, this.policy(endpoint));
+    let endpoint: URL;
+    try {
+      endpoint = new URL(binding.url, this.cardUrl);
+      assertSafeUrl(endpoint, this.policy(endpoint));
+    } catch (error) {
+      throw new A2AError(`Agent endpoint refused: ${error instanceof Error ? error.message : String(error)}`, undefined, undefined, error instanceof Error ? error : undefined);
+    }
     if (this.options.token && endpoint.origin !== this.cardUrl.origin) {
       throw new A2AError('Agent endpoint is on another origin than its card; refusing to send the token there');
     }
@@ -153,12 +160,20 @@ export class A2AClient {
     };
   }
 
-  private async readJson(response: Response): Promise<unknown> {
-    const text = await response.text();
+  /** Fetches with this client's policy. Transport failures become A2AError; a non-JSON body becomes undefined. */
+  private async send(what: string, url: URL, init: SafeFetchOptions): Promise<{ response: Response; body: unknown }> {
+    let response: Response;
+    let text: string;
     try {
-      return JSON.parse(text);
+      response = await safeFetch(url, { ...this.policy(url), ...init });
+      text = await response.text();
+    } catch (error) {
+      throw new A2AError(`${what} failed: ${error instanceof Error ? error.message : String(error)}`, undefined, undefined, error instanceof Error ? error : undefined);
+    }
+    try {
+      return { response, body: JSON.parse(text) };
     } catch {
-      return undefined;
+      return { response, body: undefined };
     }
   }
 
@@ -177,13 +192,11 @@ export class A2AClient {
       [A2A_VERSION_HEADER]: A2A_PROTOCOL_VERSION,
     };
     if (this.options.token) headers.Authorization = `Bearer ${this.options.token}`;
-    const response = await safeFetch(endpoint, {
-      ...this.policy(endpoint),
+    const { response, body } = await this.send(`A2A ${method}`, endpoint, {
       method: 'POST',
       headers,
       body: JSON.stringify({ jsonrpc: '2.0', id, method, params }),
     });
-    const body = await this.readJson(response);
     if (isPlainObject(body) && isPlainObject(body.error)) {
       const { code, message } = body.error;
       throw new A2AError(

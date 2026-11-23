@@ -136,6 +136,8 @@ const MODES = ['text/plain', 'application/json'];
 const MIN_TOKEN_LENGTH = 32;
 const MAX_ID_LENGTH = 256;
 const MAX_LIST_ITEMS = 32;
+/** Largest delay Node timers accept; longer ones fire after 1 ms. */
+const MAX_LIMIT = 2_147_483_647;
 const SKILL_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
 interface TaskRecord {
@@ -239,7 +241,7 @@ export class A2AServer {
   constructor(private readonly options: A2AServerOptions) {
     this.limits = { ...DEFAULT_LIMITS, ...options.limits };
     for (const [key, value] of Object.entries(this.limits)) {
-      if (!Number.isSafeInteger(value) || value <= 0) configError(`limits.${key} must be a positive integer`);
+      if (!Number.isSafeInteger(value) || value <= 0 || value > MAX_LIMIT) configError(`limits.${key} must be an integer from 1 to ${MAX_LIMIT}`);
     }
     if (this.limits.maxRetainedTasks <= this.limits.maxConcurrentTasks) {
       configError('limits.maxRetainedTasks must be greater than limits.maxConcurrentTasks');

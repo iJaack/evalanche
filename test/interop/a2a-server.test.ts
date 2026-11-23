@@ -480,6 +480,8 @@ describe('A2AServer configuration', () => {
       { host: '0.0.0.0', allowRemote: true, publicUrl: 'http://agent.example/a2a' },
       { limits: { maxConcurrentTasks: 10, maxRetainedTasks: 10 } },
       { limits: { taskTimeoutMs: 0 } },
+      { limits: { taskTimeoutMs: 2_147_483_648 } },
+      { limits: { requestTimeoutMs: Number.MAX_SAFE_INTEGER } },
     ];
     for (const overrides of bad) expect(() => new A2AServer(options(overrides)), JSON.stringify(overrides)).toThrow(/A2A server/);
   });

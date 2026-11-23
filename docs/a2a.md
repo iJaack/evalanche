@@ -88,7 +88,7 @@ await agent.cancelTask(task!.id);
 - Sends the token only when the endpoint has the same origin as the card.
 - Waits up to 40 s per request by default (`timeoutMs`), 10 s past the server's default 30 s task deadline, so a blocking `sendMessage` receives a timed-out task as `TASK_STATE_FAILED` rather than a network error.
 - Uses `safeFetch`: https only (plain http is allowed only for loopback, unless `allowHttp` is set), no redirects, and a timeout and response-size cap on every request. Set `blockPrivateNetwork` for URLs that come from untrusted input; it refuses private IPv4 and IPv6 hosts, including unique-local, link-local and IPv4-mapped addresses.
-- Failures throw `A2AError` with `rpcCode` (JSON-RPC error code) and `httpStatus`.
+- Calls throw `A2AError` with `rpcCode` (JSON-RPC error code) and `httpStatus`. Transport failures (unreachable host, timeout, oversized or refused response) are `A2AError` too, with the original error as `underlying`. The constructor throws `EvalancheError` for an invalid or refused URL.
 
 ## Interoperability
 

@@ -223,6 +223,40 @@ describe('Evalanche A2AClient', () => {
     expect(task?.status.message?.parts).toEqual([{ text: 'Task timed out' }]);
   });
 
+  it('reports transport failures as A2AError with the cause attached', async () => {
+    const closed = createServer();
+    await new Promise<void>((resolve) => closed.listen(0, '127.0.0.1', resolve));
+    const port = (closed.address() as AddressInfo).port;
+    await new Promise((resolve) => closed.close(resolve));
+    const unreachable = await new A2AClient({ url: `http://127.0.0.1:${port}` }).getAgentCard().catch((error) => error);
+    expect(unreachable).toBeInstanceOf(A2AError);
+    expect(unreachable.message).toMatch(/^Agent card request failed/);
+    expect(unreachable.underlying).toBeInstanceOf(Error);
+
+    const silent = createServer((req, res) => {
+      if (req.method === 'GET') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ name: 'silent', supportedInterfaces: [{ url: '/rpc', protocolBinding: 'JSONRPC', protocolVersion: '1.0' }] }));
+      }
+    });
+    await new Promise<void>((resolve) => silent.listen(0, '127.0.0.1', resolve));
+    closers.push(() => new Promise((resolve) => { silent.close(() => resolve()); silent.closeAllConnections(); }));
+    const client = new A2AClient({ url: `http://127.0.0.1:${(silent.address() as AddressInfo).port}`, timeoutMs: 100 });
+    const timedOut = await client.sendMessage({ text: 'x' }).catch((error) => error);
+    expect(timedOut).toBeInstanceOf(A2AError);
+    expect(timedOut.message).toMatch(/^A2A SendMessage failed/);
+
+    const card = createServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ name: 'pointer', supportedInterfaces: [{ url: 'http://10.0.0.1/a2a', protocolBinding: 'JSONRPC', protocolVersion: '1.0' }] }));
+    });
+    await new Promise<void>((resolve) => card.listen(0, '127.0.0.1', resolve));
+    closers.push(() => new Promise((resolve) => card.close(() => resolve())));
+    const refused = await new A2AClient({ url: `http://127.0.0.1:${(card.address() as AddressInfo).port}` }).getAgentCard().catch((error) => error);
+    expect(refused).toBeInstanceOf(A2AError);
+    expect(refused.message).toMatch(/^Agent endpoint refused/);
+  });
+
   it('will not send its token to an endpoint on another origin', async () => {
     const sdk = await startSdkServer();
     const decoy = createServer((_req, res) => {
