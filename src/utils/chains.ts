@@ -288,7 +288,8 @@ export const CHAINS: Record<number, ChainConfig> = {
     name: 'Avalanche Fuji Testnet',
     shortName: 'fuji',
     currency: { name: 'Avalanche', symbol: 'AVAX', decimals: 18 },
-    rpc: [routescanTestnetRpc(43113), 'https://api.avax-test.network/ext/bc/C/rpc'],
+    // The Routescan testnet RPC path returns 404, so the official endpoint must come first (rpc[0] is the default).
+    rpc: ['https://api.avax-test.network/ext/bc/C/rpc', routescanTestnetRpc(43113)],
     explorer: 'https://testnet.snowtrace.io',
     isTestnet: true,
   },

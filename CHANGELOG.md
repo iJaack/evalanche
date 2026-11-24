@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Fuji's default C-Chain RPC is now `https://api.avax-test.network/ext/bc/C/rpc`. The Routescan testnet RPC that came first returns 404, so every Fuji call without `rpcOverride` failed.
+- P-Chain and X-Chain balances are summed from UTXOs. Public Avalanche nodes on mainnet and Fuji no longer serve `platform.getBalance`, `platform.getStake` or `avm.getBalance`. Staked AVAX (current and pending) now comes from the Avalanche Data API P-Chain balances endpoint.
+- Cross-chain transfers work again in every direction. X- and P-Chain exports to C go to the wallet's bech32 C-Chain address instead of its EVM address, which the SDK rejected as invalid. C-Chain imports collect from that address and poll it for availability. C-Chain exports are signed with the EVM key, because the SDK signs with its client's X/P key, which the node rejected with an invalid signature.
+
 ## 1.18.0
 
 - Includes the CCTP V2 Avalanche <-> Base work live in 1.17.0-rc.8 (#36): Avalanche and Base can burn native USDC treasury to treasury, and Avalanche, Base and Polygon can receive. Exact approvals, finality 2000, fee bounds, no hooks, enabled chain/domain checks, and Base-to-Avalanche-only burns remain enforced. CCTP stays off until configured; enabling Avalanche <-> Base requires a separate config change and verifier update. `buildCctpBurn` now requires an explicit `destinationDomain`.

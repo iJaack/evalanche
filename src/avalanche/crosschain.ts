@@ -122,9 +122,8 @@ export class CrossChainTransfer {
     const deadline = Date.now() + CrossChainTransfer.IMPORT_POLL_TIMEOUT_MS;
 
     while (Date.now() < deadline) {
-      const address = destination === 'C'
-        ? this.signer.getAddressEVM()
-        : this.signer.getCurrentAddress(destination);
+      // Exported UTXOs are owned by the bech32 address on the destination chain, C included.
+      const address = this.signer.getCurrentAddress(destination);
       if (await this.provider.getAtomicUTXOCount(destination, source, address) > 0) return;
       await new Promise((resolve) => setTimeout(resolve, CrossChainTransfer.IMPORT_POLL_INTERVAL_MS));
     }

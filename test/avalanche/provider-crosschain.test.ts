@@ -73,7 +73,7 @@ describe('Avalanche provider + chain ops', () => {
     await expect(transfer.transfer('C', 'C', 1n)).rejects.toThrow(/must be different/);
   });
 
-  it('polls C-chain import availability at the EVM import address', async () => {
+  it('polls C-chain import availability at the bech32 C-Chain address', async () => {
     const { CrossChainTransfer } = await import('../../src/avalanche/crosschain');
     const signer = {
       getCurrentAddress: vi.fn((chain: string) => `${chain}-addr`),
@@ -86,11 +86,8 @@ describe('Avalanche provider + chain ops', () => {
     const transfer = new CrossChainTransfer(signer, provider) as any;
     await transfer.waitForImportAvailability('C', 'X');
 
-    expect(provider.getAtomicUTXOCount).toHaveBeenCalledWith(
-      'C',
-      'X',
-      '0x0000000000000000000000000000000000000001',
-    );
-    expect(signer.getCurrentAddress).not.toHaveBeenCalledWith('C');
+    // Exported UTXOs belong to the bech32 C-Chain address, not the EVM address they are imported to.
+    expect(provider.getAtomicUTXOCount).toHaveBeenCalledWith('C', 'X', 'C-addr');
+    expect(signer.getAddressEVM).not.toHaveBeenCalled();
   });
 });
