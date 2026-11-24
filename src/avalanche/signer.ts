@@ -1,5 +1,6 @@
 import { createAvalancheWalletClient } from '@avalanche-sdk/client';
-import { mnemonicsToAvalancheAccount } from '@avalanche-sdk/client/accounts';
+import { mnemonicToAccount, mnemonicsToAvalancheAccount, privateKeyToAvalancheAccount } from '@avalanche-sdk/client/accounts';
+import { bytesToHex } from 'viem';
 import { avalanche, avalancheFuji } from 'viem/chains';
 import type { AvalancheProvider } from './provider';
 import { EvalancheError, EvalancheErrorCode } from '../utils/errors';
@@ -29,17 +30,23 @@ export function createAvalancheSigner(
     // The SDK defaults match the established Evalanche derivation paths:
     // EVM m/44'/60'/0'/0/0 and X/P m/44'/9000'/0'/0/0.
     const account = mnemonicsToAvalancheAccount(mnemonic);
-    const client = createAvalancheWalletClient({
-      account,
-      chain: provider.network === 'avalanche' ? avalanche : avalancheFuji,
-      transport: { type: 'http' },
-    });
+    const chain = provider.network === 'avalanche' ? avalanche : avalancheFuji;
+    const client = createAvalancheWalletClient({ account, chain, transport: { type: 'http' } });
+    // Atomic outputs are owned by the X/P key's bech32 address on every chain, C included
+    // ("C-avax1…"); a C-Chain import then credits the EVM address.
     const getCurrentAddress = (chain: 'X' | 'P' | 'C') => (
       account.getXPAddress(chain, provider.hrp)
     );
-    const getImportAddress = (chain: 'X' | 'P' | 'C') => (
-      chain === 'C' ? account.getEVMAddress() : getCurrentAddress(chain)
-    );
+    // A C-Chain export spends from the EVM address, so the EVM key must sign it. The SDK
+    // always signs with its client's X/P key (an account passed to sendXPTransaction is not
+    // used for signing), so C-Chain exports go through a client built on the EVM key.
+    const evmPrivateKey = mnemonicToAccount(mnemonic).getHdKey().privateKey;
+    if (!evmPrivateKey) throw new Error('Could not derive the EVM key');
+    const evmKeyAccount = privateKeyToAvalancheAccount(bytesToHex(evmPrivateKey));
+    if (evmKeyAccount.getEVMAddress().toLowerCase() !== account.getEVMAddress().toLowerCase()) {
+      throw new Error('EVM key does not match the account EVM address');
+    }
+    const evmKeyClient = createAvalancheWalletClient({ account: evmKeyAccount, chain, transport: { type: 'http' } });
     const send = async (prepared: Parameters<typeof client.sendXPTransaction>[0]) => (
       await client.sendXPTransaction(prepared)
     ).txHash;
@@ -52,7 +59,7 @@ export function createAvalancheSigner(
       exportX: async (amount, destination) => send(
         await client.xChain.prepareExportTxn({
           destinationChain: destination,
-          exportedOutputs: [{ addresses: [getImportAddress(destination)], amount }],
+          exportedOutputs: [{ addresses: [getCurrentAddress(destination)], amount }],
         }),
       ),
       importX: async (source) => send(
@@ -64,7 +71,7 @@ export function createAvalancheSigner(
       exportP: async (amount, destination) => send(
         await client.pChain.prepareExportTxn({
           destinationChain: destination,
-          exportedOutputs: [{ addresses: [getImportAddress(destination)], amount }],
+          exportedOutputs: [{ addresses: [getCurrentAddress(destination)], amount }],
         }),
       ),
       importP: async (source) => send(
@@ -82,18 +89,20 @@ export function createAvalancheSigner(
           threshold: 1,
         }),
       ),
-      exportC: async (amount, destination) => send(
-        await client.cChain.prepareExportTxn({
-          destinationChain: destination,
-          fromAddress: account.getEVMAddress(),
-          exportedOutput: { addresses: [getCurrentAddress(destination)], amount },
-        }),
-      ),
+      exportC: async (amount, destination) => (
+        await evmKeyClient.sendXPTransaction(
+          await evmKeyClient.cChain.prepareExportTxn({
+            destinationChain: destination,
+            fromAddress: account.getEVMAddress(),
+            exportedOutput: { addresses: [getCurrentAddress(destination)], amount },
+          }),
+        )
+      ).txHash,
       importC: async (source) => send(
         await client.cChain.prepareImportTxn({
           sourceChain: source,
           toAddress: account.getEVMAddress(),
-          fromAddresses: [getCurrentAddress(source)],
+          fromAddresses: [getCurrentAddress('C')],
         }),
       ),
     };

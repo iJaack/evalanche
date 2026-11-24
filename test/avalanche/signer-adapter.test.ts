@@ -6,8 +6,11 @@ const sdk = vi.hoisted(() => {
     getEVMAddress: vi.fn(() => '0x0000000000000000000000000000000000000001'),
     xpAccount: { signTransaction: vi.fn(async () => '0xsignature') },
   };
-  const client = {
-    sendXPTransaction: vi.fn(async ({ tx }: { tx: string }) => ({ txHash: `sent:${tx}` })),
+  const evmKeyAccount = {
+    getEVMAddress: vi.fn(() => '0x0000000000000000000000000000000000000001'),
+  };
+  const makeClient = (label: string) => ({
+    sendXPTransaction: vi.fn(async ({ tx }: { tx: string }) => ({ txHash: `${label}:${tx}` })),
     xChain: {
       prepareExportTxn: vi.fn(async () => ({ tx: 'x-export', chainAlias: 'X' })),
       prepareImportTxn: vi.fn(async () => ({ tx: 'x-import', chainAlias: 'X' })),
@@ -21,15 +24,19 @@ const sdk = vi.hoisted(() => {
       prepareExportTxn: vi.fn(async () => ({ tx: 'c-export', chainAlias: 'C' })),
       prepareImportTxn: vi.fn(async () => ({ tx: 'c-import', chainAlias: 'C' })),
     },
-  };
-  return { account, client };
+  });
+  return { account, evmKeyAccount, client: makeClient('sent'), evmKeyClient: makeClient('evm-key') };
 });
 
 vi.mock('@avalanche-sdk/client', () => ({
-  createAvalancheWalletClient: vi.fn(() => sdk.client),
+  createAvalancheWalletClient: vi.fn(({ account }: { account: unknown }) => (
+    account === sdk.evmKeyAccount ? sdk.evmKeyClient : sdk.client
+  )),
 }));
 vi.mock('@avalanche-sdk/client/accounts', () => ({
   mnemonicsToAvalancheAccount: vi.fn(() => sdk.account),
+  mnemonicToAccount: vi.fn(() => ({ getHdKey: () => ({ privateKey: new Uint8Array(32).fill(7) }) })),
+  privateKeyToAvalancheAccount: vi.fn(() => sdk.evmKeyAccount),
 }));
 
 import { createAvalancheSigner } from '../../src/avalanche/signer';
@@ -50,7 +57,7 @@ describe('Avalanche SDK signing adapter', () => {
     await expect(signer.exportX(11n, 'C')).resolves.toBe('sent:x-export');
     expect(sdk.client.xChain.prepareExportTxn).toHaveBeenCalledWith({
       destinationChain: 'C',
-      exportedOutputs: [{ addresses: ['0x0000000000000000000000000000000000000001'], amount: 11n }],
+      exportedOutputs: [{ addresses: ['C-fuji-address'], amount: 11n }],
     });
     await expect(signer.importX('C')).resolves.toBe('sent:x-import');
     expect(sdk.client.xChain.prepareImportTxn).toHaveBeenCalledWith({
@@ -60,25 +67,35 @@ describe('Avalanche SDK signing adapter', () => {
     await expect(signer.exportP(20n, 'C')).resolves.toBe('sent:p-export');
     expect(sdk.client.pChain.prepareExportTxn).toHaveBeenCalledWith({
       destinationChain: 'C',
-      exportedOutputs: [{ addresses: ['0x0000000000000000000000000000000000000001'], amount: 20n }],
+      exportedOutputs: [{ addresses: ['C-fuji-address'], amount: 20n }],
     });
     await expect(signer.importP('X')).resolves.toBe('sent:p-import');
     expect(sdk.client.pChain.prepareImportTxn).toHaveBeenCalledWith({
       sourceChain: 'X', importedOutput: { addresses: ['P-fuji-address'] },
     });
 
-    await expect(signer.exportC(30n, 'X')).resolves.toBe('sent:c-export');
-    expect(sdk.client.cChain.prepareExportTxn).toHaveBeenCalledWith({
+    // C-Chain exports spend from the EVM address, so a client on the EVM key prepares and signs them.
+    await expect(signer.exportC(30n, 'X')).resolves.toBe('evm-key:c-export');
+    expect(sdk.evmKeyClient.cChain.prepareExportTxn).toHaveBeenCalledWith({
       destinationChain: 'X',
       fromAddress: '0x0000000000000000000000000000000000000001',
       exportedOutput: { addresses: ['X-fuji-address'], amount: 30n },
     });
+    expect(sdk.client.cChain.prepareExportTxn).not.toHaveBeenCalled();
+    expect(sdk.client.sendXPTransaction).not.toHaveBeenCalledWith(expect.objectContaining({ tx: 'c-export' }));
     await expect(signer.importC('P')).resolves.toBe('sent:c-import');
     expect(sdk.client.cChain.prepareImportTxn).toHaveBeenCalledWith({
       sourceChain: 'P',
       toAddress: '0x0000000000000000000000000000000000000001',
-      fromAddresses: ['P-fuji-address'],
+      fromAddresses: ['C-fuji-address'],
     });
+  });
+
+  it('refuses to start when the EVM key does not match the account', () => {
+    sdk.evmKeyAccount.getEVMAddress.mockReturnValueOnce('0x0000000000000000000000000000000000000002');
+    expect(() => createAvalancheSigner('test mnemonic', {
+      network: 'fuji', hrp: 'fuji', networkID: 5, chainId: 43113,
+    } as any)).toThrow(/Failed to create Avalanche signer/);
   });
 
   it('maps delegation fields and preserves offline signing', async () => {
