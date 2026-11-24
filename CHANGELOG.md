@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Adds private payments through eERC (Ava Labs' Encrypted ERC) in converter mode: `agent.eerc(config)` returns an `EercClient` with register, balance, deposit, transfer (with an optional encrypted memo) and withdraw, plus five MCP tools configured by `EVALANCHE_EERC_CONTRACT`, `EVALANCHE_EERC_CIRCUITS_DIR` and `EVALANCHE_EERC_MAX_AMOUNT`. See `docs/eerc.md`.
+- `@avalabs/eerc-sdk` is an optional peer dependency loaded on first use; nothing is added to the default install or the tarball beyond the client.
+- Avalanche C-Chain and Fuji only, matching the Ecosystem License. Needs a local key; the external signer keeps denying eERC calls because encrypted amounts cannot be capped there.
+- Writes are queued so each proof uses the latest balance, `maxAmount` caps every payment before a proof is built, and the SDK's console.log output goes to stderr so stdio MCP stays clean.
+- `close()` stops the process-wide snarkjs prover only when the last open eERC client closes, after its pending write, so closing one client never breaks another's proof.
+- Every eERC transaction is checked against the spending policy with its signed calldata just before broadcast, so selector allowlists and `simulateBeforeSend` apply; a refused transaction is never sent.
+- `simulateBeforeSend` and `simulateTransaction` now simulate as the agent's address. They ran as the zero address, so any call that checks the sender (an ERC-20 approval, an eERC write) failed simulation.
+
 ## 1.18.0
 
 - Includes the CCTP V2 Avalanche <-> Base work live in 1.17.0-rc.8 (#36): Avalanche and Base can burn native USDC treasury to treasury, and Avalanche, Base and Polygon can receive. Exact approvals, finality 2000, fee bounds, no hooks, enabled chain/domain checks, and Base-to-Avalanche-only burns remain enforced. CCTP stays off until configured; enabling Avalanche <-> Base requires a separate config change and verifier update. `buildCctpBurn` now requires an explicit `destinationDomain`.

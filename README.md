@@ -137,6 +137,7 @@ Polymarket's official CLI and Avalanche X/P-chain or `platform-cli` signing stil
 - Avalanche and multi-EVM DeFi actions
 - Polymarket market reads plus official-CLI-backed execution
 - Perpetual trading support for Hyperliquid
+- Private payments on Avalanche with eERC: encrypted balances and transfer amounts, with an auditor key ([guide](docs/eerc.md))
 
 ## Also Works Across EVM
 

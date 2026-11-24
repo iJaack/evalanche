@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { request } from 'http';
 import { EvalancheMCPServer } from '../../src/mcp/server';
 import { getNetworkConfig } from '../../src/utils/networks';
@@ -264,6 +264,67 @@ describe('EvalancheMCPServer', () => {
     expect(names).toContain('hyperliquid_get_orders');
     expect(names).toContain('hyperliquid_get_trades');
     expect(names).toContain('find_perp_market');
+  });
+
+  describe('eERC private payment tools', () => {
+    const CONTRACT = '0x1000000000000000000000000000000000000001';
+    const TOKEN = '0x3000000000000000000000000000000000000003';
+    const BOB = '0x4000000000000000000000000000000000000004';
+    const call = (name: string, args: Record<string, unknown>) => server.handleRequest({
+      jsonrpc: '2.0', id: 40, method: 'tools/call', params: { name, arguments: args },
+    }) as Promise<{ result: { content: Array<{ text: string }>; isError?: boolean } }>;
+
+    afterEach(() => vi.unstubAllEnvs());
+
+    it('lists all five tools', async () => {
+      const res = await server.handleRequest({ jsonrpc: '2.0', id: 41, method: 'tools/list' });
+      const names = (res.result as { tools: Array<{ name: string }> }).tools.map((tool) => tool.name);
+      for (const name of ['eerc_register', 'eerc_balance', 'eerc_deposit', 'eerc_transfer', 'eerc_withdraw']) {
+        expect(names).toContain(name);
+      }
+    });
+
+    it('says which settings are missing', async () => {
+      vi.stubEnv('EVALANCHE_EERC_CONTRACT', '');
+      vi.stubEnv('EVALANCHE_EERC_CIRCUITS_DIR', '');
+      const { result } = await call('eerc_balance', { token: TOKEN });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toMatch(/EVALANCHE_EERC_CIRCUITS_DIR/);
+    });
+
+    it('routes calls to one cached client per contract', async () => {
+      vi.stubEnv('EVALANCHE_EERC_CONTRACT', CONTRACT);
+      vi.stubEnv('EVALANCHE_EERC_CIRCUITS_DIR', '/circuits');
+      vi.stubEnv('EVALANCHE_EERC_MAX_AMOUNT', '25');
+      const client = {
+        register: vi.fn().mockResolvedValue({ txHash: '0x01', alreadyRegistered: false }),
+        balance: vi.fn().mockResolvedValue({ token: TOKEN, amount: '3' }),
+        deposit: vi.fn().mockResolvedValue({ txHash: '0x02' }),
+        transfer: vi.fn().mockResolvedValue({ txHash: '0x03' }),
+        withdraw: vi.fn().mockResolvedValue({ txHash: '0x04' }),
+      };
+      const agent = (server as unknown as { agent: { eerc: ReturnType<typeof vi.fn> } }).agent;
+      agent.eerc = vi.fn().mockReturnValue(client);
+
+      expect(JSON.parse((await call('eerc_register', {})).result.content[0].text)).toEqual({ txHash: '0x01', alreadyRegistered: false });
+      expect(JSON.parse((await call('eerc_balance', { token: TOKEN })).result.content[0].text).amount).toBe('3');
+      await call('eerc_deposit', { token: TOKEN, amount: '10' });
+      await call('eerc_transfer', { to: BOB, token: TOKEN, amount: '2', memo: 'hi' });
+      await call('eerc_withdraw', { token: TOKEN, amount: '1' });
+
+      expect(agent.eerc).toHaveBeenCalledTimes(1);
+      expect(agent.eerc).toHaveBeenCalledWith({
+        contract: CONTRACT,
+        circuits: expect.objectContaining({ transfer: { wasm: '/circuits/transfer/circuit.wasm', zkey: '/circuits/transfer/circuit.zkey' } }),
+        maxAmount: '25',
+      });
+      expect(client.deposit).toHaveBeenCalledWith(TOKEN, '10');
+      expect(client.transfer).toHaveBeenCalledWith(BOB, TOKEN, '2', 'hi');
+      expect(client.withdraw).toHaveBeenCalledWith(TOKEN, '1');
+
+      await call('eerc_balance', { token: TOKEN, contract: '0x5000000000000000000000000000000000000005' });
+      expect(agent.eerc).toHaveBeenCalledTimes(2);
+    });
   });
 
   it('handles find_perp_market', async () => {

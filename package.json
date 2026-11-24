@@ -61,6 +61,14 @@
     "ethers": "^6.13.0",
     "viem": "^2.47.6"
   },
+  "peerDependencies": {
+    "@avalabs/eerc-sdk": "^1.0.2"
+  },
+  "peerDependenciesMeta": {
+    "@avalabs/eerc-sdk": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "tsup": "^8.0.0",
     "typescript": "^5.4.0",

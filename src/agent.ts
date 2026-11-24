@@ -39,6 +39,7 @@ import type { LiquidStakingClient } from './defi/liquid-staking';
 import type { VaultClient } from './defi/vaults';
 import type { PolymarketClient } from './polymarket';
 import type { HoldingsClient } from './holdings/client';
+import { EercClient, type EercConfig } from './eerc/client';
 
 /** Configuration for the Evalanche agent */
 export interface EvalancheConfig {
@@ -511,6 +512,8 @@ export class Evalanche {
   async simulateTransaction(intent: TransactionIntent): Promise<SimulationResult> {
     const pending: PendingTransaction = {
       to: intent.to,
+      // Without a sender, eth_call runs as the zero address and calls that check msg.sender revert.
+      from: this.address,
       value: intent.value ? parseEther(intent.value).toString() : undefined,
       data: intent.data,
       chainId: this._chainId,
@@ -548,6 +551,7 @@ export class Evalanche {
 
     const pending: PendingTransaction = {
       to: intent.to,
+      from: this.address,
       value: intent.value ?? '0',
       data: intent.data,
       chainId: this._chainId,
@@ -801,6 +805,14 @@ export class Evalanche {
       this._polymarketClient = new PolymarketClient(this.wallet, 137);
     }
     return this._polymarketClient;
+  }
+
+  /**
+   * Private payments through an eERC converter contract on Avalanche C-Chain or Fuji.
+   * Needs a local key and the optional peer dependency `@avalabs/eerc-sdk`.
+   */
+  eerc(config: EercConfig): EercClient {
+    return new EercClient(this, config);
   }
 
   /**
