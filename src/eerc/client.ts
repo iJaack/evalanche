@@ -156,6 +156,9 @@ export function eercCircuitsFromDir(dir: string): EercCircuits {
   return { register: files('register'), transfer: files('transfer'), withdraw: files('withdraw') };
 }
 
+/** Clients that may still prove with the process-wide prover workers. */
+const openClients = new Set<EercClient>();
+
 let quietDepth = 0;
 let savedLog: typeof console.log | undefined;
 
@@ -338,9 +341,17 @@ export class EercClient {
     });
   }
 
-  /** Stop the prover's worker threads so a script can exit. The client cannot prove again afterwards. */
+  /**
+   * Close this client so a script can exit. snarkjs keeps one set of prover worker threads per
+   * process (`globalThis.curve_bn128`), shared by every client, so they stop only when the last open
+   * client closes, after its pending write. Using the client again reconnects it.
+   */
   async close(): Promise<void> {
-    const curve = (globalThis as { curve_bn128?: { terminate(): Promise<void> } }).curve_bn128;
+    await this.queue;
+    openClients.delete(this);
+    this.session = undefined;
+    if (openClients.size > 0) return;
+    const curve = (globalThis as { curve_bn128?: { terminate(): Promise<void> } | null }).curve_bn128;
     if (curve) await curve.terminate();
   }
 
@@ -395,6 +406,7 @@ export class EercClient {
     const sdk = new EERC(read, write, this.contract, registrar, true,
       { register, transfer, withdraw, mint: register, burn: withdraw }, this.config.decryptionKey);
     if (!this.config.decryptionKey) await quiet(() => sdk.generateDecryptionKey());
+    openClients.add(this);
     return { sdk, read, write, address: account.address, registrar, decimals: Number(decimals) };
   }
 

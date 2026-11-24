@@ -163,7 +163,9 @@ function makeClient(chain: Chain, config: ConstructorParameters<typeof EercClien
   makeSdkHandles.last = handles;
   const { sdk, loader, constructed } = handles;
   const { wallet } = makeSdkHandles.last!;
-  return { eerc: new EercClient(agent, config, loader), agent, sdk, loader, constructed, wallet };
+  const eerc = new EercClient(agent, config, loader);
+  created.push(eerc);
+  return { eerc, agent, sdk, loader, constructed, wallet };
 }
 
 const makeSdkHandles: { last?: ReturnType<typeof makeSdk> } = {};
@@ -175,7 +177,65 @@ async function expectCode(promise: Promise<unknown>, code: EvalancheErrorCode, m
   if (message) expect((error as Error).message).toMatch(message);
 }
 
-afterEach(() => vi.restoreAllMocks());
+// Every client a test opens is closed afterwards, so open clients never leak between tests.
+const created: EercClient[] = [];
+type CurveHolder = { curve_bn128?: { terminate(): Promise<void> } | null };
+
+afterEach(async () => {
+  (globalThis as CurveHolder).curve_bn128 = null;
+  await Promise.all(created.splice(0).map((eerc) => eerc.close().catch(() => undefined)));
+  vi.restoreAllMocks();
+});
+
+function fakeProver() {
+  const terminate = vi.fn(async () => {
+    (globalThis as CurveHolder).curve_bn128 = null;
+  });
+  (globalThis as CurveHolder).curve_bn128 = { terminate };
+  return terminate;
+}
+
+describe('EercClient close', () => {
+  it('keeps the shared prover running while another client is open', async () => {
+    const first = client(makeChain());
+    const second = client(makeChain());
+    await first.eerc.balance(TOKEN);
+    await second.eerc.balance(TOKEN);
+    const terminate = fakeProver();
+    await first.eerc.close();
+    expect(terminate).not.toHaveBeenCalled();
+    await second.eerc.close();
+    expect(terminate).toHaveBeenCalledTimes(1);
+  });
+
+  it('lets its own pending write finish before stopping the prover', async () => {
+    const { eerc, sdk } = client(makeChain(), 10_000n);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    sdk.transfer.mockImplementationOnce(async () => {
+      await gate;
+      return { transactionHash: SDK_TX };
+    });
+    const pending = eerc.transfer(BOB, TOKEN, '1');
+    await vi.waitFor(() => expect(sdk.transfer).toHaveBeenCalled());
+    const terminate = fakeProver();
+    const closing = eerc.close();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(terminate).not.toHaveBeenCalled();
+    release();
+    await expect(pending).resolves.toBeDefined();
+    await closing;
+    expect(terminate).toHaveBeenCalledTimes(1);
+  });
+
+  it('reconnects when a closed client is used again', async () => {
+    const { eerc, constructed } = client(makeChain(), 1234n);
+    await eerc.balance(TOKEN);
+    await eerc.close();
+    await expect(eerc.balance(TOKEN)).resolves.toMatchObject({ amount: '12.34' });
+    expect(constructed).toHaveLength(2);
+  });
+});
 
 describe('EercClient setup', () => {
   it('rejects a bad contract address and missing circuit files', () => {

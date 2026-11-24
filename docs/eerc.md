@@ -58,7 +58,7 @@ await eerc.deposit(USDC, '50');          // public amount in
 await eerc.transfer(peer, USDC, '12.5', 'invoice 42'); // private amount
 console.log(await eerc.balance(USDC));   // { amount: '37.5', … }
 await eerc.withdraw(USDC, '10');         // public amount out
-await eerc.close();                      // let a script exit
+await eerc.close();                      // let a script exit; the shared prover stops when the last client closes
 ```
 
 Amounts are decimal strings in token units. They may not carry more decimals than the contract's own (`decimals()`, 2 in the reference deployment); the client refuses them instead of letting the contract refund dust.
