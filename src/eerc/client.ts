@@ -22,6 +22,7 @@ import {
   getAddress,
   isAddress,
   parseAbi,
+  parseTransaction,
   parseUnits,
   type Hex,
 } from 'viem';
@@ -78,7 +79,7 @@ export interface EercAgentLike {
   readonly provider: { send(method: string, params: unknown[]): Promise<unknown> };
   getChainInfo(): { id: number; name: string };
   requireLocalPrivateKey(capability: string): string;
-  authorizeTransaction(intent: { to: string; valueWei?: string; data?: string }): Promise<void>;
+  authorizeTransaction(intent: { to: string; valueWei?: string; data?: string; gasLimit?: bigint }): Promise<void>;
 }
 
 type Point = { x: bigint; y: bigint };
@@ -218,6 +219,7 @@ export class EercClient {
   private readonly loadSdk: EercSdkLoader;
   private session?: Promise<Session>;
   private queue: Promise<unknown> = Promise.resolve();
+  private refusal: unknown;
 
   constructor(agent: EercAgentLike, config: EercConfig, loadSdk: EercSdkLoader = loadEercSdk) {
     this.contract = checkAddress(config?.contract, 'contract');
@@ -244,7 +246,6 @@ export class EercClient {
   async register(): Promise<{ txHash: string | null; alreadyRegistered: boolean }> {
     return this.exclusive(async (s) => {
       if (await this.isRegistered()) return { txHash: null, alreadyRegistered: true };
-      await this.agent.authorizeTransaction({ to: s.registrar });
       const { transactionHash } = await quiet(() => s.sdk.register());
       await this.confirm(s, transactionHash as Hex);
       return { txHash: transactionHash, alreadyRegistered: false };
@@ -268,8 +269,6 @@ export class EercClient {
       await this.ready(s);
       const tokenDecimals = Number(await s.read.readContract({ address: tokenAddress, abi: ERC20_ABI, functionName: 'decimals' }));
       const units = toUnits(amount, tokenDecimals, Math.min(tokenDecimals, s.decimals));
-      await this.agent.authorizeTransaction({ to: tokenAddress });
-      await this.agent.authorizeTransaction({ to: this.contract });
       const allowance = await s.read.readContract({
         address: tokenAddress, abi: ERC20_ABI, functionName: 'allowance', args: [s.address, this.contract],
       });
@@ -299,7 +298,6 @@ export class EercClient {
       if (!(await this.isRegistered(recipient))) {
         throw new EvalancheError(`${recipient} has not registered for private payments`, EvalancheErrorCode.INVALID_PARAMS);
       }
-      await this.agent.authorizeTransaction({ to: this.contract });
       const { total, cipher } = await this.spendable(s, tokenAddress, units, amount);
       const auditor = await this.auditorKey(s);
       const { transactionHash } = await quiet(() =>
@@ -317,7 +315,6 @@ export class EercClient {
       this.checkCap(amount);
       await this.ready(s);
       const units = toUnits(amount, s.decimals, s.decimals);
-      await this.agent.authorizeTransaction({ to: this.contract });
       const { total, cipher } = await this.spendable(s, tokenAddress, units, amount);
       const auditor = await this.auditorKey(s);
       const { transactionHash } = await quiet(() =>
@@ -334,7 +331,6 @@ export class EercClient {
       if (!(await this.isRegistered(auditor))) {
         throw new EvalancheError(`${auditor} must register before it can be the auditor`, EvalancheErrorCode.INVALID_PARAMS);
       }
-      await this.agent.authorizeTransaction({ to: this.contract });
       const sent = await quiet(() => s.sdk.setContractAuditorPublicKey(auditor));
       const hash = (typeof sent === 'string' ? sent : (sent as TxHash)?.transactionHash) as Hex;
       await this.confirm(s, hash);
@@ -368,8 +364,20 @@ export class EercClient {
     const chain = defineChain({
       id, name, nativeCurrency: { name: 'Avalanche', symbol: 'AVAX', decimals: 18 }, rpcUrls: { default: { http: [] } },
     });
+    // Every transaction the client or the SDK broadcasts passes the agent's spending policy with
+    // its real, signed calldata, so contract and selector allowlists and simulateBeforeSend apply.
+    // A rejected transaction is never sent.
     const transport = custom({
-      request: ({ method, params }) => this.agent.provider.send(method, (params as unknown[] | undefined) ?? []),
+      request: async ({ method, params }) => {
+        const args = (params as unknown[] | undefined) ?? [];
+        if (method === 'eth_sendRawTransaction') await this.authorizeBroadcast(args[0] as Hex);
+        if (method === 'eth_sendTransaction') {
+          throw this.refuse(new EvalancheError(
+            'eERC transactions must be signed by the local key', EvalancheErrorCode.POLICY_VIOLATION,
+          ));
+        }
+        return this.agent.provider.send(method, args);
+      },
     });
     const read = createPublicClient({ chain, transport, pollingInterval: 1_000 });
     const write = createWalletClient({ account, chain, transport });
@@ -390,8 +398,41 @@ export class EercClient {
     return { sdk, read, write, address: account.address, registrar, decimals: Number(decimals) };
   }
 
+  private async authorizeBroadcast(raw: Hex): Promise<void> {
+    const tx = parseTransaction(raw);
+    if (!tx.to) {
+      throw this.refuse(new EvalancheError('eERC transactions never deploy contracts', EvalancheErrorCode.POLICY_VIOLATION));
+    }
+    try {
+      await this.agent.authorizeTransaction({
+        to: tx.to,
+        valueWei: (tx.value ?? 0n).toString(),
+        data: tx.data ?? '0x',
+        gasLimit: tx.gas,
+      });
+    } catch (error) {
+      throw this.refuse(error);
+    }
+  }
+
+  /** Remember why a broadcast was refused: viem and the SDK wrap transport errors in generic RPC errors. */
+  private refuse(error: unknown): unknown {
+    this.refusal = error;
+    return error;
+  }
+
   private exclusive<T>(fn: (s: Session) => Promise<T>): Promise<T> {
-    const run = this.queue.then(async () => fn(await this.connect()));
+    // Writes run one at a time, so the refusal recorded during a write belongs to that write.
+    const run = this.queue.then(async () => {
+      this.refusal = undefined;
+      try {
+        return await fn(await this.connect());
+      } catch (error) {
+        throw this.refusal ?? error;
+      } finally {
+        this.refusal = undefined;
+      }
+    });
     this.queue = run.catch(() => undefined);
     return run;
   }

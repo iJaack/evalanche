@@ -109,26 +109,48 @@ function makeAgent(chain: Chain, authorize = vi.fn(async () => undefined)): Eerc
   };
 }
 
+// Stand-in calldata for each SDK write; the real SDK sends its proofs the same way, through the wallet it is given.
+const SEL = {
+  register: '0x11111111',
+  deposit: '0x22222222',
+  transfer: '0x33333333',
+  withdraw: '0x44444444',
+  setAuditor: '0x55555555',
+} as const;
+
+type FakeWallet = {
+  account: unknown;
+  chain: unknown;
+  sendTransaction(tx: Record<string, unknown>): Promise<Hex>;
+  request(args: { method: string; params?: unknown[] }): Promise<unknown>;
+};
+
 function makeSdk(total = 500n) {
+  let wallet: FakeWallet | undefined;
+  const send = async (data: Hex, to: string = CONTRACT) => {
+    await wallet!.sendTransaction({ to, data, account: wallet!.account, chain: wallet!.chain });
+    return { transactionHash: SDK_TX };
+  };
   const sdk = {
     generateDecryptionKey: vi.fn(async () => 'beef'),
-    register: vi.fn(async () => ({ key: 'beef', transactionHash: SDK_TX })),
-    deposit: vi.fn(async () => ({ transactionHash: SDK_TX })),
-    transfer: vi.fn(async () => ({ transactionHash: SDK_TX })),
-    withdraw: vi.fn(async () => ({ transactionHash: SDK_TX })),
+    register: vi.fn(async () => ({ key: 'beef', ...(await send(`${SEL.register}00`, REGISTRAR)) })),
+    deposit: vi.fn(async () => send(`${SEL.deposit}00`)),
+    transfer: vi.fn(async () => send(`${SEL.transfer}00`)),
+    withdraw: vi.fn(async () => send(`${SEL.withdraw}00`)),
     calculateTotalBalance: vi.fn(() => total),
-    setContractAuditorPublicKey: vi.fn(async () => SDK_TX),
+    setContractAuditorPublicKey: vi.fn(async () => (await send(`${SEL.setAuditor}00`)).transactionHash),
   } satisfies EercSdk;
   const constructed: unknown[][] = [];
   const loader = vi.fn(async () => ({
     EERC: class {
       constructor(...args: unknown[]) {
         constructed.push(args);
+        wallet = args[1] as FakeWallet;
         return sdk;
       }
     } as never,
   }));
-  return { sdk, loader, constructed };
+  return { sdk, loader, constructed, wallet: () => wallet! };
 }
 
 function client(chain: Chain, sdkTotal = 500n, config: Partial<Parameters<typeof makeClient>[1]> = {}) {
@@ -137,9 +159,14 @@ function client(chain: Chain, sdkTotal = 500n, config: Partial<Parameters<typeof
 
 function makeClient(chain: Chain, config: ConstructorParameters<typeof EercClient>[1], sdkTotal: bigint) {
   const agent = makeAgent(chain);
-  const { sdk, loader, constructed } = makeSdk(sdkTotal);
-  return { eerc: new EercClient(agent, config, loader), agent, sdk, loader, constructed };
+  const handles = makeSdk(sdkTotal);
+  makeSdkHandles.last = handles;
+  const { sdk, loader, constructed } = handles;
+  const { wallet } = makeSdkHandles.last!;
+  return { eerc: new EercClient(agent, config, loader), agent, sdk, loader, constructed, wallet };
 }
+
+const makeSdkHandles: { last?: ReturnType<typeof makeSdk> } = {};
 
 async function expectCode(promise: Promise<unknown>, code: EvalancheErrorCode, message?: RegExp) {
   const error = await promise.then(() => undefined, (e: unknown) => e);
@@ -251,7 +278,7 @@ describe('EercClient writes', () => {
     const chain = makeChain({ registered: new Set() });
     const { eerc, sdk, agent } = client(chain);
     expect(await eerc.register()).toEqual({ txHash: SDK_TX, alreadyRegistered: false });
-    expect(agent.authorize).toHaveBeenCalledWith({ to: REGISTRAR });
+    expect(agent.authorize).toHaveBeenCalledWith(expect.objectContaining({ to: REGISTRAR, data: `${SEL.register}00` }));
     chain.registered.add(ME.toLowerCase());
     expect(await eerc.register()).toEqual({ txHash: null, alreadyRegistered: true });
     expect(sdk.register).toHaveBeenCalledTimes(1);
@@ -261,18 +288,21 @@ describe('EercClient writes', () => {
     const chain = makeChain();
     const { eerc, sdk, agent } = client(chain);
     const result = await eerc.deposit(TOKEN, '12.5');
-    expect(chain.sent).toHaveLength(1);
+    expect(chain.sent).toHaveLength(2);
     expect(result).toEqual({ txHash: SDK_TX, approveTxHash: RAW_TX, token: TOKEN, amount: '12.5' });
     expect(sdk.deposit).toHaveBeenCalledWith(12_500_000_000_000_000_000n, TOKEN, 2n);
-    expect(agent.authorize).toHaveBeenCalledWith({ to: TOKEN });
-    expect(agent.authorize).toHaveBeenCalledWith({ to: CONTRACT });
+    const [approve, deposit] = agent.authorize.mock.calls.map(([intent]) => intent as { to: string; data: string; valueWei: string });
+    expect(approve.to).toBe(TOKEN);
+    expect(approve.data.startsWith('0x095ea7b3')).toBe(true);
+    expect(approve.valueWei).toBe('0');
+    expect(deposit).toMatchObject({ to: CONTRACT, data: `${SEL.deposit}00` });
   });
 
   it('skips the approval when the allowance already covers the deposit', async () => {
     const chain = makeChain({ allowance: 10n ** 30n });
     const { eerc } = client(chain);
     const result = await eerc.deposit(TOKEN, '1');
-    expect(chain.sent).toHaveLength(0);
+    expect(chain.sent).toHaveLength(1);
     expect(result.approveTxHash).toBeUndefined();
   });
 
@@ -294,7 +324,7 @@ describe('EercClient writes', () => {
     const result = await eerc.transfer(BOB, TOKEN, '1.25', 'invoice 7');
     expect(result).toEqual({ txHash: SDK_TX, token: TOKEN, amount: '1.25', to: BOB });
     expect(sdk.transfer).toHaveBeenCalledWith(BOB, 125n, [1n, 2n, 3n, 4n], 500n, [7n, 8n], TOKEN, 'invoice 7');
-    expect(agent.authorize).toHaveBeenCalledWith({ to: CONTRACT });
+    expect(agent.authorize).toHaveBeenCalledWith(expect.objectContaining({ to: CONTRACT, data: `${SEL.transfer}00`, valueWei: '0' }));
   });
 
   it('refuses unregistered recipients and amounts above the private balance', async () => {
@@ -323,15 +353,39 @@ describe('EercClient writes', () => {
     expect(agent.authorize).toHaveBeenCalledTimes(1);
   });
 
-  it('stops when the spending policy rejects the contract', async () => {
+  it('never broadcasts a transaction the spending policy rejects', async () => {
     const chain = makeChain();
     const agent = makeAgent(chain, vi.fn(async () => {
       throw new EvalancheError('blocked', EvalancheErrorCode.POLICY_VIOLATION);
     }));
-    const { sdk, loader } = makeSdk();
+    const { loader } = makeSdk();
     const eerc = new EercClient(agent, { contract: CONTRACT, circuits: CIRCUITS }, loader);
     await expectCode(eerc.transfer(BOB, TOKEN, '1'), EvalancheErrorCode.POLICY_VIOLATION);
-    expect(sdk.transfer).not.toHaveBeenCalled();
+    expect(chain.sent).toHaveLength(0);
+  });
+
+  it('checks the real calldata, so a selector allowlist on the contract applies', async () => {
+    const chain = makeChain();
+    // Allow the eERC contract for transfer only, the way allowlistedContracts selectors work.
+    const agent = makeAgent(chain, vi.fn(async (intent: { to: string; data?: string }) => {
+      if (intent.to.toLowerCase() === CONTRACT.toLowerCase() && !intent.data?.startsWith(SEL.transfer)) {
+        throw new EvalancheError(`selector ${intent.data?.slice(0, 10)} not allowed`, EvalancheErrorCode.POLICY_VIOLATION);
+      }
+    }));
+    const { loader } = makeSdk(10_000n);
+    const eerc = new EercClient(agent, { contract: CONTRACT, circuits: CIRCUITS }, loader);
+    await expect(eerc.transfer(BOB, TOKEN, '1')).resolves.toBeDefined();
+    await expectCode(eerc.withdraw(TOKEN, '1'), EvalancheErrorCode.POLICY_VIOLATION, /0x44444444/);
+    expect(chain.sent).toHaveLength(1);
+  });
+
+  it('refuses unsigned sends that would skip the local key and the policy', async () => {
+    const { eerc, sdk, wallet } = client(makeChain());
+    sdk.transfer.mockImplementationOnce(async () => {
+      await wallet().request({ method: 'eth_sendTransaction', params: [{ to: CONTRACT, data: SEL.transfer }] });
+      return { transactionHash: SDK_TX };
+    });
+    await expectCode(eerc.transfer(BOB, TOKEN, '1'), EvalancheErrorCode.POLICY_VIOLATION, /signed by the local key/);
   });
 
   it('reports a reverted transaction', async () => {

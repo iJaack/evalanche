@@ -88,7 +88,7 @@ The SDK logs with console.log. The client routes that output to stderr so the st
 ## Safety behaviour
 
 - **One write at a time.** A spend proof is bound to the current encrypted balance, and the contract rejects any proof built against a balance that has since been spent from. The client queues deposits, transfers and withdrawals, and re-reads and decrypts the balance before every proof.
-- **Spending policy.** Every write goes through the agent's policy hook (chain and contract allowlists). The agent knows the plaintext amount it is sending, so `maxAmount` is enforced before a proof is built, even though the amount is encrypted on chain.
+- **Spending policy.** Every transaction the client broadcasts (approval, register, deposit, transfer, withdraw, auditor change) is checked against the agent's policy with its real signed calldata just before it is sent, so chain and contract allowlists, function-selector allowlists and `simulateBeforeSend` all apply. A rejected transaction is never broadcast, and the policy error is returned as is. The agent knows the plaintext amount it is sending, so `maxAmount` is enforced before a proof is built, even though the amount is encrypted on chain.
 - **Clear failures.** Unregistered sender or recipient, a contract without an auditor, an insufficient private balance and reverted transactions all fail with typed errors before or after the transaction, not as raw revert data.
 
 ## Limits from eERC itself

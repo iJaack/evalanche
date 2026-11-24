@@ -6,6 +6,8 @@
 - `@avalabs/eerc-sdk` is an optional peer dependency loaded on first use; nothing is added to the default install or the tarball beyond the client.
 - Avalanche C-Chain and Fuji only, matching the Ecosystem License. Needs a local key; the external signer keeps denying eERC calls because encrypted amounts cannot be capped there.
 - Writes are queued so each proof uses the latest balance, `maxAmount` caps every payment before a proof is built, and the SDK's console.log output goes to stderr so stdio MCP stays clean.
+- Every eERC transaction is checked against the spending policy with its signed calldata just before broadcast, so selector allowlists and `simulateBeforeSend` apply; a refused transaction is never sent.
+- `simulateBeforeSend` and `simulateTransaction` now simulate as the agent's address. They ran as the zero address, so any call that checks the sender (an ERC-20 approval, an eERC write) failed simulation.
 
 ## 1.18.0
 
