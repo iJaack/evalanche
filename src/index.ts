@@ -196,3 +196,15 @@ export { EvalancheMCPServer } from './mcp/server';
 
 export { listAvalancheL1s, getAvalancheL1Network } from './avalanche/l1';
 export type { AvalancheL1, AvalancheL1Options } from './avalanche/l1';
+export { EercClient, EERC_CHAIN_IDS, eercCircuitsFromDir, loadEercSdk } from './eerc/client';
+export type {
+  EercAgentLike,
+  EercBalance,
+  EercCircuitFiles,
+  EercCircuits,
+  EercConfig,
+  EercSdk,
+  EercSdkConstructor,
+  EercSdkLoader,
+  EercTxResult,
+} from './eerc/client';

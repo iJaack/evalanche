@@ -182,6 +182,17 @@ AVALANCHE_NETWORK=base evalanche-mcp
 |------|-------------|
 | `pay_and_fetch` | x402 payment-gated HTTP request |
 
+### Private payments (eERC, Avalanche C-Chain and Fuji)
+Needs a local key, `@avalabs/eerc-sdk`, `EVALANCHE_EERC_CIRCUITS_DIR` and a contract (argument or `EVALANCHE_EERC_CONTRACT`). See `docs/eerc.md`.
+
+| Tool | Description |
+|------|-------------|
+| `eerc_register` | Register for private payments (once) |
+| `eerc_balance` | Decrypt the private balance of a token |
+| `eerc_deposit` | Move public tokens into the private balance (amount public) |
+| `eerc_transfer` | Send a private amount to a registered address, optional encrypted memo |
+| `eerc_withdraw` | Move tokens back to the public balance (amount public) |
+
 ### Reputation
 | Tool | Description |
 |------|-------------|

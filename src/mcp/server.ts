@@ -18,6 +18,7 @@ import { SettlementClient } from '../economy/settlement';
 import { AgentMemory } from '../economy/memory';
 import { InteropIdentityResolver } from '../interop/identity';
 import { createDefaultDappRegistry, resolveDappTarget } from '../defi/dapp-registry';
+import { eercCircuitsFromDir, type EercClient } from '../eerc/client';
 import type { ChainName } from '../utils/networks';
 import { timingSafeEqual } from 'crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'http';
@@ -1483,7 +1484,32 @@ const TOOLS: MCPTool[] = [
 
     },
   },
+  ...eercTools(),
 ];
+
+/** Private eERC payment tools. The contract defaults to EVALANCHE_EERC_CONTRACT. */
+function eercTools(): MCPTool[] {
+  const contract = { type: 'string', description: 'eERC converter contract (defaults to EVALANCHE_EERC_CONTRACT)' };
+  const token = { type: 'string', description: 'ERC-20 token address' };
+  const amount = { type: 'string', description: 'Amount in token units, e.g. "12.5"' };
+  const tool = (name: string, description: string, properties: Record<string, unknown>, required: string[] = []): MCPTool => ({
+    name,
+    description: `${description} eERC on Avalanche C-Chain or Fuji; needs a local key and @avalabs/eerc-sdk.`,
+    inputSchema: { type: 'object', properties: { ...properties, contract }, ...(required.length ? { required } : {}) },
+  });
+  return [
+    tool('eerc_register', 'Register the agent for private payments (once, before sending or receiving).', {}),
+    tool('eerc_balance', 'Decrypt the agent\'s private balance of a token.', { token }, ['token']),
+    tool('eerc_deposit', 'Move public tokens into the private balance. The amount is public.', { token, amount }, ['token', 'amount']),
+    tool('eerc_transfer', 'Send a private amount to a registered address. Addresses are public, the amount is not.', {
+      to: { type: 'string', description: 'Recipient address (must be registered)' },
+      token,
+      amount,
+      memo: { type: 'string', description: 'Optional note, encrypted to the recipient' },
+    }, ['to', 'token', 'amount']),
+    tool('eerc_withdraw', 'Move tokens from the private balance back to the public balance. The amount is public.', { token, amount }, ['token', 'amount']),
+  ];
+}
 
 /**
  * Evalanche MCP Server — exposes agent wallet capabilities as MCP tools.
@@ -1521,6 +1547,29 @@ export class EvalancheMCPServer {
 
   private requireWalletPrivateKey(capability: string): string {
     return this.agent.requireLocalPrivateKey(capability);
+  }
+
+  private eercCache: { agent: Evalanche; contract: string; client: EercClient } | null = null;
+
+  /** One eERC client per agent and contract, so writes queue and the decryption key is derived once. */
+  private eercClient(contractArg: unknown): EercClient {
+    const contract = (typeof contractArg === 'string' && contractArg) || process.env.EVALANCHE_EERC_CONTRACT;
+    const circuitsDir = process.env.EVALANCHE_EERC_CIRCUITS_DIR;
+    if (!contract || !circuitsDir) {
+      throw new EvalancheError(
+        'Set EVALANCHE_EERC_CIRCUITS_DIR, and EVALANCHE_EERC_CONTRACT or the contract argument, to use eERC tools',
+        EvalancheErrorCode.INVALID_CONFIG,
+      );
+    }
+    const cached = this.eercCache;
+    if (cached && cached.agent === this.agent && cached.contract.toLowerCase() === contract.toLowerCase()) return cached.client;
+    const client = this.agent.eerc({
+      contract,
+      circuits: eercCircuitsFromDir(circuitsDir),
+      maxAmount: process.env.EVALANCHE_EERC_MAX_AMOUNT || undefined,
+    });
+    this.eercCache = { agent: this.agent, contract, client };
+    return client;
   }
 
   private buildPolymarketProcess(): PolymarketCli {
@@ -2774,6 +2823,28 @@ export class EvalancheMCPServer {
           result = { address: addr, balance: formatEther(balance), unit: symbol };
           break;
         }
+
+        case 'eerc_register':
+          result = await this.eercClient(args.contract).register();
+          break;
+
+        case 'eerc_balance':
+          result = await this.eercClient(args.contract).balance(args.token as string);
+          break;
+
+        case 'eerc_deposit':
+          result = await this.eercClient(args.contract).deposit(args.token as string, args.amount as string);
+          break;
+
+        case 'eerc_transfer':
+          result = await this.eercClient(args.contract).transfer(
+            args.to as string, args.token as string, args.amount as string, args.memo as string | undefined,
+          );
+          break;
+
+        case 'eerc_withdraw':
+          result = await this.eercClient(args.contract).withdraw(args.token as string, args.amount as string);
+          break;
 
         case 'get_holdings':
           result = await this.agent.holdings().scan({
